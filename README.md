@@ -1,5 +1,7 @@
 # Aliens Versus Predator: VR
 
+Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest.
+
 ![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-menu.jpg)
 
 ![Screenshot of Aliens Versus Predator: VR in-game playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-marine.jpg)

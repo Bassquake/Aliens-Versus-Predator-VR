@@ -89,9 +89,9 @@ restorecon -R /data/data/com.bassquake.avpvr/
 
 That should now work and try to relaunch the app again.
 
-##Building the apk
-
-When you're building your own apk, the game files will be auto added to the apk if you've copied the game assets into 'assets'. Final apk is copied onto headset and into this projects /build/android folder (game files are compressed into it). You only need to install the apk as normal on the quest by copying the apk to the device 'Downloads' folder and then install it on the device. You'll likely need to have [developer mode](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) active on the Quest.
+When you're building your own apk, the game files will be auto added to the apk if you've copied the game assets into 'assets'. Final apk is copied onto headset and into this projects /build/android folder (game files are compressed into it). Two ways to install the apk on the Quest. You'll likely need to have [developer mode](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) active on the Quest.
+1. By copying the apk to the devices' 'Downloads' folder and then install it on the device using something like ES File Explorer
+2. Or use [SideQuest](https://sidequestvr.com/setup-howto). 
 
 # To do
 - Add rumble effects to controllers

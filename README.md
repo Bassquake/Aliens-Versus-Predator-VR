@@ -95,7 +95,7 @@ When you're building your own apk, the game files will be auto added to the apk 
 
 ## To do
 - Add rumble effects to controllers
-- Add ability to customise controller key mapping
-- Adjust menu as its a bit close
-- Customise some objects such as marines weapons as it has 2 hands attached
 - Add cd music
+- Adjust menu as its a bit close
+- Add ability to customise controller key mapping 
+- Customise some objects such as marines weapons as it has 2 hands attached

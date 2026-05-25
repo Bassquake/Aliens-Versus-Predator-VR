@@ -19,7 +19,7 @@ Video of it in action on a Quest 2 on [YouTube](https://www.youtube.com/watch?v=
 > [!IMPORTANT]
 > You need to supply the games asset files. Buy the game or find cd/disk of Aliens Versus Predator Gold Edition. It has to be the Gold Edition as the standard versions' language.txt file crashes the game. (Check [eBay](https://www.ebay.co.uk/sch/i.html?_nkw=aliens+vs+predator+1999&_sacat=0&_odkw=aliens+vs+predator+2000&_osacat=0&_sop=15) or [GOG](https://www.gog.com/en/game/aliens_versus_predator_classic_2000) or [Steam](https://store.steampowered.com/app/3730/Aliens_versus_Predator_Classic_2000/). Install it to your pc and then copy the games files into the provided 'assets' folder in this project. **ALL** folder and filenames needs to be lowercase (see below on how to easily do this). SDL3, FFmpeg and OpenXR libraries is already included in this project.
 
-### Lowercase the game files
+## Lowercase the game files
 Go to the 'assets' data folder in powershell and run **lowercase.ps1**. All files should now be lowercase.
 
 For reference, the necessary game folders and files to put in the 'assets' folder are:
@@ -36,7 +36,7 @@ default.cfg
 language.txt
 ```
 
-### Controls
+## Controls
 At the moment I've only concentrated on the Marine level as that was my favourite! Alien and Predator will be looked at soon.
 
 ### Keys for Marine level (probably mostly works for Alien and Predator too)
@@ -65,7 +65,7 @@ Project files are in:
 \platform
     \android <-- Select this folder in Android Studio
 ```
-If you've copied the game assets properly, you should be able to just hit 'Run App' in Android Studio and it'll compile and install on the headset for you (plug it in via usb).
+If you've copied the game assets properly, you should be able to just hit 'Run App' in Android Studio and it'll compile and install then run on the headset for you (plug it in via usb).
 
 If you downloaded the apk and just want to get started without compiling, install the apk as normal by uploading the apk to its Downloads folder, then copy the game files into the 'files' folder on your android device. You'll need some file management program on your pc such as the [SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools). Android is a bit of a bugbear when it comes to files and its permissions!
 
@@ -93,7 +93,7 @@ When you're building your own apk, the game files will be auto added to the apk 
 1. By copying the apk to the devices' 'Downloads' folder and then install it on the device using something like ES File Explorer
 2. Or use [SideQuest](https://sidequestvr.com/setup-howto). 
 
-# To do
+## To do
 - Add rumble effects to controllers
 - Add ability to customise controller key mapping
 - Adjust menu as its a bit close

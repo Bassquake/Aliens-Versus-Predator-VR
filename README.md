@@ -19,7 +19,10 @@ Video of it in action on a Quest 2 on [YouTube](https://www.youtube.com/watch?v=
 > [!IMPORTANT]
 > You need to supply the games asset files. Buy the game or find cd/disk of Aliens Versus Predator Gold Edition. It has to be the Gold Edition as the standard versions' language.txt file crashes the game. (Check [eBay](https://www.ebay.co.uk/sch/i.html?_nkw=aliens+vs+predator+1999&_sacat=0&_odkw=aliens+vs+predator+2000&_osacat=0&_sop=15) or [GOG](https://www.gog.com/en/game/aliens_versus_predator_classic_2000) or [Steam](https://store.steampowered.com/app/3730/Aliens_versus_Predator_Classic_2000/). Install it to your pc and then copy the games files into the provided 'assets' folder in this project. **ALL** folder and filenames needs to be lowercase (see below on how to easily do this). SDL3, FFmpeg and OpenXR libraries is already included in this project.
 
-The necessary game folders and files to put in the 'assets' folder are:
+### Lowercase the game files
+Go to the 'assets' data folder in powershell and run **lowercase.ps1**. All files should now be lowercase.
+
+For reference, the necessary game folders and files to put in the 'assets' folder are:
 ```
 \avp_huds
 \avp_rifs
@@ -32,9 +35,6 @@ credits.txt
 default.cfg
 language.txt
 ```
-
-### Lowercase the game files
-Go to the assets data folder in powershell and run lowercase.ps1. All files should now be lowercase.
 
 ### Controls
 At the moment I've only concentrated on the Marine level as that was my favourite! Alien and Predator will be looked at soon.

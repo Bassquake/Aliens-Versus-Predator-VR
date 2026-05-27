@@ -11,33 +11,22 @@ Video of it in action on a Quest 2 on [YouTube](https://www.youtube.com/watch?v=
 > [!NOTE]
 > This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP). I've ported to Android and for it to use OpenXR for VR headsets. I have added binaries as an apk for Android 16 VR headsets. They do not include the game files as its not allowed. See important note below about game assets and there are instructions on how to add them.
 
-## Extra features
-- Can choose different framerate in Video/Video Options, runs fine in 120fps mode!
-- Can turn on/off the cross-hair in Video/Video Options
-- Framerate counter can be toggled in Video/Video Options
-
 > [!IMPORTANT]
-> You need to supply the games asset files. Buy the game or find cd/disk of Aliens Versus Predator Gold Edition. It has to be the Gold Edition as the standard versions' language.txt file crashes the game. (Check [eBay](https://www.ebay.co.uk/sch/i.html?_nkw=aliens+vs+predator+1999&_sacat=0&_odkw=aliens+vs+predator+2000&_osacat=0&_sop=15) or [GOG](https://www.gog.com/en/game/aliens_versus_predator_classic_2000) or [Steam](https://store.steampowered.com/app/3730/Aliens_versus_Predator_Classic_2000/). Install it to your pc and then copy the games files into the provided 'assets' folder in this project. **ALL** folder and filenames needs to be lowercase (see below on how to easily do this). SDL3, FFmpeg and OpenXR libraries is already included in this project.
+> You need to supply the games asset files. Buy the game or find cd/downloads of Aliens Versus Predator Gold Edition. It has to be the Gold Edition as the standard versions 'language.txt' file crashes the game. You can use the standard versions files if you use the Gold Edition language.txt, the videos are different! (Check [eBay](https://www.ebay.co.uk/sch/i.html?_nkw=aliens+versus+predator+gold+edition&_sacat=0&_from=R40&_trksid=m570.l1313&_odkw=aliens+versus+predator+gold&_osacat=0&_sop=15) or [GOG](https://www.gog.com/en/game/aliens_versus_predator_classic_2000) or [Steam](https://store.steampowered.com/app/3730/Aliens_versus_Predator_Classic_2000/).
 
-## Lowercase the game files
-Go to the 'assets' data folder in powershell and run **lowercase.ps1**. All files should now be lowercase.
-
-For reference, the necessary game folders and files to put in the 'assets' folder are:
-```
-\avp_huds
-\avp_rifs
-\fastfile
-\fmvs
-\mpconfig
-\user_profiles
-cd tracks.txt
-credits.txt
-default.cfg
-language.txt
-```
+## Step-by-step
+- Install the pc game from disk/download like normal.
+- Download the **lowercase.ps1** powershell script located in the assets folder of this project into the folder where all game files are (usually 'C:\Program Files (x86)\Fox\Aliens versus Predator').
+- Run the script and all files will now be lowercase.
+- Download the release apk and install it using SideQuest using the "Install APK file from folder on computer". (Your headset probably should be in Developer mode).
+- Now still in SideQuest, go to "Manage files on the headset".
+- Navigate to "sdcard/Android/data".
+- Create a folder called "com.bassquake.avpvr" and inside that create a folder called "files". The folder layout should be like so on your device:
+![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_files.jpg)
 
 ## Controls
-At the moment I've only concentrated on the Marine level as that was my favourite! Alien and Predator will be looked at soon.
+> [!NOTE]
+> At the moment I've only concentrated on the Marine level as that was my favourite! Alien and Predator will be looked at soon.
 
 ### Keys for Marine level (probably mostly works for Alien and Predator too)
 Controls are as follow (Marine level):
@@ -59,41 +48,12 @@ Controls are as follow (Marine level):
 
 I will probably add ability to customise all these.
 
-## Installing
-Project files are in:
-```
-\platform
-    \android <-- Select this folder in Android Studio
-```
-If you've copied the game assets properly, you should be able to just hit 'Run App' in Android Studio and it'll compile and install then run on the headset for you (plug it in via usb).
+## Extra features
+- Can choose different framerate in Video/Video Options, runs fine in 120fps mode!
+- Can turn on/off the cross-hair in Video/Video Options
+- Framerate counter can be toggled in Video/Video Options
 
-If you downloaded the apk and just want to get started without compiling, install the apk as normal by uploading the apk to its Downloads folder, then copy the game files into the 'files' folder on your android device. You'll need some file management program on your pc such as the [SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools). Android is a bit of a bugbear when it comes to files and its permissions!
-
-The folder layout should be like so on your device:
-```
-/
-    >data
-        >data
-            >com.bassquake.avpvr
-                >files <-- game files go in here
-```
-
-If you find you get a "Configuration file not found" or similar and the files are definitely in the right place, its likely due to permissions of the files. You'll need to do the following:
-
-Enter terminal in Android or PowerShell with your headset connected:
-```
-adb shell
-su
-restorecon -R /data/data/com.bassquake.avpvr/
-```
-
-That should now work and try to relaunch the app again.
-
-When you're building your own apk, the game files will be auto added to the apk if you've copied the game assets into 'assets'. Final apk is copied onto headset and into this projects /build/android folder (game files are compressed into it). Two ways to install the apk on the Quest. You'll likely need to have [developer mode](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) active on the Quest.
-1. By copying the apk to the devices' 'Downloads' folder and then install it on the device using something like ES File Explorer
-2. Or use [SideQuest](https://sidequestvr.com/setup-howto). 
-
-## To do
+# To do
 - Add rumble effects to controllers
 - Add cd music
 - Adjust menu as its a bit close

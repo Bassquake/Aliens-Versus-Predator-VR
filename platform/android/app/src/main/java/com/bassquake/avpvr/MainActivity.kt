@@ -1,14 +1,8 @@
 package com.bassquake.avpvr
 
-import androidx.appcompat.app.AppCompatActivity
 import android.content.Intent
 import android.content.ServiceConnection
-import android.os.Bundle
-import android.widget.TextView
-import com.bassquake.avpvr.databinding.ActivityMainBinding
 import org.libsdl.app.SDLActivity
-
-import android.util.Log
 
 class MainActivity : SDLActivity() {
 

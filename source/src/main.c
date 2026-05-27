@@ -577,38 +577,6 @@ static bool load_xr_functions(void)
     return true;
 }
 
-static bool is_vr_intent(void)
-{
-    JNIEnv *env = (JNIEnv*)SDL_GetAndroidJNIEnv();
-    jobject activity = (jobject)SDL_GetAndroidActivity();
-    if (!env || !activity) return false;
-
-    jclass activity_cls = (*env)->GetObjectClass(env, activity);
-    jmethodID get_intent_id = (*env)->GetMethodID(env, activity_cls, "getIntent", "()Landroid/content/Intent;");
-    (*env)->DeleteLocalRef(env, activity_cls);
-    if (!get_intent_id) return false;
-
-    jobject intent = (*env)->CallObjectMethod(env, activity, get_intent_id);
-    if (!intent) return false;
-
-    jclass intent_cls = (*env)->GetObjectClass(env, intent);
-    jmethodID has_cat_id = (*env)->GetMethodID(env, intent_cls, "hasCategory", "(Ljava/lang/String;)Z");
-    (*env)->DeleteLocalRef(env, intent_cls);
-
-    bool result = false;
-    if (has_cat_id) {
-        jstring vr = (*env)->NewStringUTF(env, "com.oculus.intent.category.VR");
-        jstring xr = (*env)->NewStringUTF(env, "org.khronos.openxr.intent.category.IMMERSIVE_HMD");
-        result = (bool)(*env)->CallBooleanMethod(env, intent, has_cat_id, vr)
-              || (bool)(*env)->CallBooleanMethod(env, intent, has_cat_id, xr);
-        (*env)->DeleteLocalRef(env, vr);
-        (*env)->DeleteLocalRef(env, xr);
-    }
-
-    (*env)->DeleteLocalRef(env, intent);
-    return result;
-}
-
 static bool init_xr_instance(void)
 {
     /* Get xrGetInstanceProcAddr from the OpenXR loader */
@@ -777,18 +745,26 @@ static bool init_xr_session(void)
     EGLConfig  egl_cfg  = (EGLConfig)0;
     {
         EGLint cfg_id = 0;
-        eglQueryContext(egl_disp, egl_ctx, EGL_CONFIG_ID, &cfg_id);
-        EGLint num = 0;
-        eglGetConfigs(egl_disp, NULL, 0, &num);
-        if (num > 0) {
-            EGLConfig *cfgs = SDL_malloc((size_t)num * sizeof(EGLConfig));
-            eglGetConfigs(egl_disp, cfgs, num, &num);
-            for (EGLint k = 0; k < num; k++) {
-                EGLint id = 0;
-                eglGetConfigAttrib(egl_disp, cfgs[k], EGL_CONFIG_ID, &id);
-                if (id == cfg_id) { egl_cfg = cfgs[k]; break; }
+        /* Query config ID from context; fall back to current draw surface if that fails */
+        if (eglQueryContext(egl_disp, egl_ctx, EGL_CONFIG_ID, &cfg_id) != EGL_TRUE || cfg_id == 0) {
+            EGLSurface egl_surf = eglGetCurrentSurface(EGL_DRAW);
+            if (egl_surf != EGL_NO_SURFACE)
+                eglQuerySurface(egl_disp, egl_surf, EGL_CONFIG_ID, &cfg_id);
+        }
+        SDL_Log("XR: EGL cfg_id=%d", (int)cfg_id);
+        if (cfg_id != 0) {
+            EGLint num = 0;
+            eglGetConfigs(egl_disp, NULL, 0, &num);
+            if (num > 0) {
+                EGLConfig *cfgs = SDL_malloc((size_t)num * sizeof(EGLConfig));
+                eglGetConfigs(egl_disp, cfgs, num, &num);
+                for (EGLint k = 0; k < num; k++) {
+                    EGLint id = 0;
+                    eglGetConfigAttrib(egl_disp, cfgs[k], EGL_CONFIG_ID, &id);
+                    if (id == cfg_id) { egl_cfg = cfgs[k]; break; }
+                }
+                SDL_free(cfgs);
             }
-            SDL_free(cfgs);
         }
     }
     SDL_Log("XR: EGL display=%p ctx=%p cfg=%p", (void*)egl_disp, (void*)egl_ctx, (void*)egl_cfg);
@@ -808,10 +784,17 @@ static bool init_xr_session(void)
 
     SDL_Log("XR: Creating reference space...");
     XrReferenceSpaceCreateInfo space_info = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
-    space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     space_info.poseInReferenceSpace.orientation.w = 1.0f;
 
+    /* STAGE gives a floor-level origin with room-scale tracking.
+     * It requires a valid guardian boundary; fall back to LOCAL if unavailable. */
+    space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     result = pfn_xrCreateReferenceSpace(xr_session, &space_info, &xr_local_space);
+    if (XR_FAILED(result)) {
+        SDL_Log("XR: STAGE space unavailable (%d), falling back to LOCAL", (int)result);
+        space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+        result = pfn_xrCreateReferenceSpace(xr_session, &space_info, &xr_local_space);
+    }
     SDL_Log("XR: xrCreateReferenceSpace result=%d space=%p", (int)result, (void*)xr_local_space);
     XR_CHECK(result, "Failed to create reference space");
 
@@ -1248,14 +1231,6 @@ void VR_WaitAndBeginFrame(void)
     /* Locate views here (in main.c, same pattern as the working 2D path in render_frame)
      * rather than via VR_LocateViews() wrapper from avpview.c, which returns
      * XR_ERROR_VALIDATION_FAILURE (-1) for reasons not yet understood. */
-    static int locate_log_count = 0;
-    if (locate_log_count < 10) {
-        SDL_Log("VR_WAB#%d vc=%u sp=%p xv=%p",
-                locate_log_count,
-                (unsigned)view_count,
-                (void*)xr_local_space,
-                (void*)xr_views);
-    }
     if (view_count > 0 && xr_local_space != XR_NULL_HANDLE && xr_views != NULL) {
         XrViewState view_state = { XR_TYPE_VIEW_STATE };
         XrViewLocateInfo locate_info = { XR_TYPE_VIEW_LOCATE_INFO };
@@ -1294,25 +1269,6 @@ void VR_WaitAndBeginFrame(void)
             }
         }
 
-        if (locate_log_count < 10) {
-            locate_log_count++;
-            SDL_Log("VR_WAB locate result=%d flags=0x%x out=%u time=%lld",
-                    (int)result, (unsigned)view_state.viewStateFlags,
-                    view_count_out, (long long)xr_predicted_display_time);
-            if (!XR_FAILED(result)) {
-                for (Uint32 i = 0; i < view_count_out; i++) {
-                    SDL_Log("  eye[%u] pos=(%.4f,%.4f,%.4f) fov=(L%.3f R%.3f U%.3f D%.3f)",
-                            i,
-                            xr_views[i].pose.position.x,
-                            xr_views[i].pose.position.y,
-                            xr_views[i].pose.position.z,
-                            xr_views[i].fov.angleLeft,
-                            xr_views[i].fov.angleRight,
-                            xr_views[i].fov.angleUp,
-                            xr_views[i].fov.angleDown);
-                }
-            }
-        }
     }
 
     /* Locate controller grip spaces */
@@ -1619,15 +1575,9 @@ int axes, balls, hats;
         XrActionsSyncInfo sync_info = { XR_TYPE_ACTIONS_SYNC_INFO };
         sync_info.countActiveActionSets = 1;
         sync_info.activeActionSets = &active;
-        XrResult sync_result = pfn_xrSyncActions(xr_session, &sync_info);
+        pfn_xrSyncActions(xr_session, &sync_info);
         /* XR_SESSION_NOT_FOCUSED is a success code — session is VISIBLE but not focused.
          * Input won't be active in that case but we still read what we can. */
-        static int sync_log_throttle = 0;
-        if (++sync_log_throttle >= 120) {
-            SDL_Log("XR input: xrSyncActions result=%d running=%d 2d=%d",
-                    (int)sync_result, (int)xr_session_running, (int)xr_2d_mode);
-            sync_log_throttle = 0;
-        }
 
         XrActionStateGetInfo get_info = { XR_TYPE_ACTION_STATE_GET_INFO };
         get_info.action = xr_left_stick_action;
@@ -1816,7 +1766,6 @@ int axes, balls, hats;
                 if (KeyboardInput[KEY_CR] && !prev_cr) {
                     DebouncedKeyboardInput[KEY_CR] = 1;
                     DebouncedGotAnyKey = 1;
-                    if (x_pressed) SDL_Log("XR menu: X → KEY_CR");
                 }
                 if (KeyboardInput[KEY_CR]) GotAnyKey = 1;
             }
@@ -2666,16 +2615,24 @@ static int SetOGLVideoMode(int Width, int Height)
         /* ---- Native GLES OpenXR initialisation ---- */
 #ifdef __ANDROID__
         if (!xr_enabled) {
-            if (!is_vr_intent()) {
-                SDL_Log("XR: not a VR intent, skipping OpenXR init");
-                goto xr_init_done;
-            }
+            /* Quest's VR shell launches us with a plain MAIN+LAUNCHER intent —
+             * the com.oculus.intent.category.VR category is NOT propagated to
+             * the Activity's Intent, even though the system is in IMMERSIVE
+             * mode and the compositor is waiting for XR frames. So we can't
+             * use the intent to decide whether to init XR. The manifest already
+             * declares this as a VR app; always attempt OpenXR init and fall
+             * back to 2D if it fails. */
+            SDL_Log("XR: attempting OpenXR init (manifest-declared VR app)");
             if (!init_xr_instance()) {
                 SDL_Log("XR: init_xr_instance failed");
                 goto xr_init_done;
             }
             if (!init_xr_session()) {
-                SDL_Log("XR: init_xr_session failed");
+                SDL_Log("XR: init_xr_session failed — destroying instance so compositor stops waiting");
+                if (xr_instance && pfn_xrDestroyInstance) {
+                    pfn_xrDestroyInstance(xr_instance);
+                    xr_instance = XR_NULL_HANDLE;
+                }
                 goto xr_init_done;
             }
             xr_enabled = true;
@@ -3310,11 +3267,11 @@ void InGameFlipBuffers(void)
 {
 #if !defined(NDEBUG)
     check_for_errors();
-#endif
     GLenum err;
     while ((err = glGetError()) != GL_NO_ERROR)
         SDL_Log("GL error: 0x%04X", err);
-    
+#endif
+
     if (xr_enabled) {
         handle_xr_events();
         if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
@@ -3354,7 +3311,7 @@ void FlipBuffers()
 {
     // Always let the game render the menu into surface->pixels first
     // (the existing GL upload below keeps the flat window working too)
-    
+
     if (xr_enabled) {
         handle_xr_events();
         if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
@@ -3535,7 +3492,7 @@ int main(int argc, char *argv[])
     //SDL_Log("DEBUG: gamedatapath is %s", (gamedatapath ? gamedatapath : "NULL"));
 #ifdef __ANDROID__
     if (gamedatapath == NULL)
-        gamedatapath = SDL_GetAndroidInternalStoragePath();
+        gamedatapath = SDL_GetAndroidExternalStoragePath();
 #endif
     InitGameDirectories(argv[0], gamedatapath);
     SDL_Log("BOOT: InitGameDirectories done");
@@ -3567,29 +3524,29 @@ int main(int argc, char *argv[])
     SetOGLVideoMode(0, 0);
     SDL_Log("BOOT: SetOGLVideoMode done");
     SetSoftVideoMode(640, 480, 16);
-    
+
     InitialVideoMode();
     SDL_Log("BOOT: InitialVideoMode done");
-    
+
     /* Env_List can probably be removed */
     Env_List[0]->main = LevelName;
-    
+
     InitialiseSystem();
     SDL_Log("BOOT: InitialiseSystem done");
     InitialiseRenderer();
     SDL_Log("BOOT: InitialiseRenderer done");
-    
+
     LoadKeyConfiguration();
-    
+
     SoundSys_Start();
     SDL_Log("BOOT: SoundSys_Start done");
     if (WantCDRom) CDDA_Start();
-    
+
     InitTextStrings();
     SDL_Log("BOOT: InitTextStrings done");
-    
+
     BuildMultiplayerLevelNameArray();
-    
+
     ChangeDirectDrawObject();
     SDL_Log("BOOT: ChangeDirectDrawObject done");
     AvP.LevelCompleted = 0;
@@ -3667,6 +3624,9 @@ int main(int argc, char *argv[])
         SDL_Log("*** xr_2d_mode set to FALSE — game starting ***");
         
         while(AvP.MainLoopRunning) {
+#ifdef __ANDROID__
+            if (xr_should_quit) break;
+#endif
             CheckForWindowsMessages();
             
             switch(AvP.GameMode) {
@@ -3684,11 +3644,6 @@ int main(int argc, char *argv[])
                             AvpShowViewsVR();
                             InGameFlipBuffers();
                         } else {
-                            static int skip_log = 0;
-                            if (skip_log++ < 5)
-                                SDL_Log("VR skip: en=%d run=%d vc=%u sc=%p",
-                                        (int)xr_enabled, (int)xr_session_running,
-                                        (unsigned)view_count, (void*)vr_swapchains);
 #endif
                             AvpShowViews();
                             InGameFlipBuffers();

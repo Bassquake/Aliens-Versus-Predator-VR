@@ -80,12 +80,8 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
-    sourceSets {
-        getByName("main") {
-            // GAME ASSET FILES PATH
-            assets.srcDirs("${project.rootDir}../../../assets")
-        }
-    }
+    // Assets are NOT bundled — users sideload game files via ADB:
+    //   adb push assets/ /sdcard/Android/data/com.bassquake.avpvr/files/
     externalNativeBuild {
         cmake {
             // SOURCE PATH

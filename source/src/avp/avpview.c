@@ -1177,7 +1177,9 @@ void AvpShowViewsVR(void)
     extern SDL_GLContext context;
     SDL_GLContext current = SDL_GL_GetCurrentContext();
 
+#if !defined(NDEBUG)
     while (glGetError() != GL_NO_ERROR) {}
+#endif
     RestoreGameShaderState();
 
     if (!xr_enabled || !xr_session_running || view_count == 0 || vr_swapchains == NULL) {
@@ -1189,7 +1191,13 @@ void AvpShowViewsVR(void)
     extern void VR_InvalidateTextureCache(void);
 
 #define GAME_UNITS_PER_METRE 2200
+    /* GLCHECK calls glGetError() which forces a CPU↔GPU pipeline sync on tiled
+     * mobile GPUs (Adreno on Quest) — gate to debug builds only. */
+#if defined(NDEBUG)
+    #define GLCHECK(label) ((void)0)
+#else
     #define GLCHECK(label) do { GLenum _e = glGetError(); if (_e) SDL_Log("GL err %s: 0x%x", label, _e); } while(0)
+#endif
 
     GLint saved_vp[4];
     glGetIntegerv(GL_VIEWPORT, saved_vp);
@@ -1201,7 +1209,9 @@ void AvpShowViewsVR(void)
 
     UpdateAllFMVTextures();
 
+#if !defined(NDEBUG)
     while (glGetError() != GL_NO_ERROR) {}
+#endif
 
     FlushD3DZBuffer();
     ThisFramesRenderingHasBegun();

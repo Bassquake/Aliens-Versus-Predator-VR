@@ -20,6 +20,7 @@ Video of it in action on a Quest 2 on [YouTube](https://www.youtube.com/watch?v=
 - Run the script and all files will now be lowercase.
 - Plug your headset in via usb.
 - Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in Developer mode):
+
 ![Screenshot of apk install](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_install.png)
 
 - After install completes, you should see this in the "Currently installed apps":

@@ -33,7 +33,7 @@ Video of it in action on a Quest 2 on [YouTube](https://www.youtube.com/watch?v=
 
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_files.png)
 
-# Run it!
+## Run it!
 Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Have fun!
 > [!CAUTION]
 > This is early stage and I'm not really much of a programmer, this was done using various ai like Claude, Copilot and Gemini.
@@ -67,7 +67,7 @@ I will probably add ability to customise all these.
 - Can turn on/off the cross-hair in Video/Video Options
 - Framerate counter can be toggled in Video/Video Options
 
-# To do
+## To do
 - Add rumble effects to controllers.
 - Add cd music.
 - Adjust menu as its a bit close.

@@ -6,7 +6,7 @@ Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. This is early
 
 ![Screenshot of Aliens Versus Predator: VR in-game playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-marine.jpg)
 
-Video of it in action on a Quest 2 on [YouTube](https://www.youtube.com/watch?v=a33hBV9m_ks).
+Video Short of it in action on a Quest 2 here: [YouTube](https://youtube.com/shorts/92S2EbKzio8?feature=share).
 
 > [!NOTE]
 > This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP). I've ported to Android and for it to use OpenXR for VR headsets. I have added binaries as an apk for Android 16 VR headsets. They do not include the game files as its not allowed. See important note below about game assets and there are instructions on how to add them.

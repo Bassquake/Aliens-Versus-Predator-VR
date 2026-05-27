@@ -6,7 +6,7 @@ Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. This is early
 
 ![Screenshot of Aliens Versus Predator: VR in-game playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-marine.jpg)
 
-Video Short of it in action on a Quest 2 here on ![YouTube}(https://youtube.com/shorts/92S2EbKzio8?feature=share):
+Video Short of it in action on a Quest 2 here on ![YouTube](https://youtube.com/shorts/92S2EbKzio8?feature=share):
 
 [![Watch the video](https://img.youtube.com/vi/92S2EbKzio8/0.jpg)](https://youtube.com/shorts/92S2EbKzio8?feature=share)
 

@@ -35,6 +35,8 @@ Video of it in action on a Quest 2 on [YouTube](https://www.youtube.com/watch?v=
 
 # Run it!
 Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Have fun!
+> [!CAUTION]
+> This is early stage and I'm not really much of a programmer, this was done using various ai like Claude, Copilot and Gemini.
 
 ## Controls
 > [!NOTE]

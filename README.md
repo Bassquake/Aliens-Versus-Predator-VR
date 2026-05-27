@@ -68,8 +68,12 @@ I will probably add ability to customise all these.
 - Framerate counter can be toggled in Video/Video Options
 
 # To do
-- Add rumble effects to controllers
-- Add cd music
-- Adjust menu as its a bit close
-- Add ability to customise controller key mapping 
+- Add rumble effects to controllers.
+- Add cd music.
+- Adjust menu as its a bit close.
+- Add ability to customise controller key mapping.
+- Add shadow effects.
+- Maybe add antialiasing options but not sure if really needed.
 - Customise some objects such as marines weapons as it has 2 hands attached to the main weapon which is a bit weird.
+- Change the menu to be more immersive.
+- Add option for left handed users.

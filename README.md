@@ -69,6 +69,7 @@ I will probably add ability to customise all these.
 
 ## To do
 - Fix any visual issues that come up.
+- Extra options for vr specific things like adding blinders or change snap/smooth turning etc.
 - Add rumble effects to controllers.
 - Add cd music.
 - Adjust menu as its a bit close.

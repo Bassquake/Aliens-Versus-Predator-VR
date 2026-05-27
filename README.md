@@ -68,6 +68,7 @@ I will probably add ability to customise all these.
 - Framerate counter can be toggled in Video/Video Options
 
 ## To do
+- Fix any visual issues that come up.
 - Add rumble effects to controllers.
 - Add cd music.
 - Adjust menu as its a bit close.

@@ -15,15 +15,22 @@ Video of it in action on a Quest 2 on [YouTube](https://www.youtube.com/watch?v=
 > You need to supply the games asset files. Buy the game or find cd/downloads of Aliens Versus Predator Gold Edition. It has to be the Gold Edition as the standard versions 'language.txt' file crashes the game. You can use the standard versions files if you use the Gold Edition language.txt, the videos are different! (Check [eBay](https://www.ebay.co.uk/sch/i.html?_nkw=aliens+versus+predator+gold+edition&_sacat=0&_from=R40&_trksid=m570.l1313&_odkw=aliens+versus+predator+gold&_osacat=0&_sop=15) or [GOG](https://www.gog.com/en/game/aliens_versus_predator_classic_2000) or [Steam](https://store.steampowered.com/app/3730/Aliens_versus_Predator_Classic_2000/).
 
 ## Step-by-step
-- Install the pc game from disk/download like normal.
+- Install the original pc game from disk/download like normal.
 - Download the **lowercase.ps1** powershell script located in the assets folder of this project into the folder where all game files are (usually 'C:\Program Files (x86)\Fox\Aliens versus Predator').
 - Run the script and all files will now be lowercase.
-- Download the release apk and install it using SideQuest using the "Install APK file from folder on computer". (Your headset probably should be in Developer mode).
+- Plug your headset in via usb.
+- Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in Developer mode). After install completes, you should see this in the "Currently installed apps":
+
+![Screenshot of apk location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_installed.png)
+
 - Now still in SideQuest, go to "Manage files on the headset".
 - Navigate to "sdcard/Android/data".
 - Create a folder called "com.bassquake.avpvr" and inside that create a folder called "files". The folder layout should be like so on your device:
-- 
+
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_files.png)
+
+# Run it!
+Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Have fun!
 
 ## Controls
 > [!NOTE]
@@ -59,4 +66,4 @@ I will probably add ability to customise all these.
 - Add cd music
 - Adjust menu as its a bit close
 - Add ability to customise controller key mapping 
-- Customise some objects such as marines weapons as it has 2 hands attached
+- Customise some objects such as marines weapons as it has 2 hands attached to the main weapon which is a bit weird.

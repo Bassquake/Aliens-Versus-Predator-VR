@@ -61,7 +61,6 @@ I will add ability to customise all these.
 - Extra options for vr specific things like adding blinders or change snap/smooth turning etc.
 - Add rumble effects to controllers.
 - Add cd music.
-- Adjust menu as its a bit close.
 - Add ability to customise controller key mapping.
 - Add shadow effects.
 - Maybe add antialiasing options but not sure if really needed.

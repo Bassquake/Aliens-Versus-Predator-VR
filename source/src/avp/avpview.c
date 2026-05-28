@@ -36,6 +36,7 @@ extern int     xr_grip_left_valid;
 extern int     xr_grip_right_valid;
 extern int     xr_trigger_right_pressed;      /* 1 while right trigger is held */
 extern int     xr_grip_right_squeeze_pressed; /* 1 while right grip is squeezed */
+extern void    XR_Haptic_Right(float amplitude, float duration_ms);
 
 #endif
 
@@ -1487,14 +1488,40 @@ void AvpShowViewsVR(void)
         AVPGetInViewVolumeList(Global_VDB_Ptr);
         if (eye == 0) {
             /* Inject right-trigger primary fire before the weapon state machine reads it. */
-            if (xr_trigger_right_pressed) {
-                PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
-                ps->Mvt_InputRequests.Flags.Rqst_FirePrimaryWeapon = 1;
+            {
+                extern int RealFrameTime;
+                static int haptic_ms_remaining = 0;
+                static int prev_trigger = 0;
+                if (xr_trigger_right_pressed) {
+                    PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+                    ps->Mvt_InputRequests.Flags.Rqst_FirePrimaryWeapon = 1;
+                    haptic_ms_remaining -= RealFrameTime;
+                    if (!prev_trigger || haptic_ms_remaining <= 0) {
+                        XR_Haptic_Right(0.7f, 80.0f);
+                        haptic_ms_remaining = 80;
+                    }
+                } else {
+                    haptic_ms_remaining = 0;
+                }
+                prev_trigger = xr_trigger_right_pressed;
             }
             /* Inject right-grip secondary fire. */
-            if (xr_grip_right_squeeze_pressed) {
-                PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
-                ps->Mvt_InputRequests.Flags.Rqst_FireSecondaryWeapon = 1;
+            {
+                extern int RealFrameTime;
+                static int sec_haptic_ms_remaining = 0;
+                static int prev_squeeze = 0;
+                if (xr_grip_right_squeeze_pressed) {
+                    PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+                    ps->Mvt_InputRequests.Flags.Rqst_FireSecondaryWeapon = 1;
+                    sec_haptic_ms_remaining -= RealFrameTime;
+                    if (!prev_squeeze || sec_haptic_ms_remaining <= 0) {
+                        XR_Haptic_Right(0.5f, 80.0f);
+                        sec_haptic_ms_remaining = 80;
+                    }
+                } else {
+                    sec_haptic_ms_remaining = 0;
+                }
+                prev_squeeze = xr_grip_right_squeeze_pressed;
             }
             /* VR aiming: set GunMuzzleSightX/Y from the physical controller aim direction so
              * CalculateWhereGunIsPointing (called inside UpdateWeaponStateMachine) derives the

@@ -1734,6 +1734,9 @@ void ThrowAFlare(void)
 		extern int vr_right_hand_valid;
 		extern MATRIXCH vr_right_hand_mat;
 		extern VECTORCH vr_right_hand_world;
+		extern void XR_Haptic_Right(float amplitude, float duration_ms);
+		if (xr_left_trigger_pressed)
+			XR_Haptic_Right(0.6f, 100.0f);
 		if (xr_left_trigger_pressed && vr_right_hand_valid) {
 			/* In VR, throw in the direction the weapon controller is pointing.
 			 * vr_right_hand_mat is the raw grip-to-game matrix.  CreateGrenadeKernel

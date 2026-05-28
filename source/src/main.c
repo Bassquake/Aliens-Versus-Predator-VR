@@ -295,6 +295,7 @@ static PFN_xrGetActionStateVector2f pfn_xrGetActionStateVector2f = NULL;
 static PFN_xrGetActionStateBoolean pfn_xrGetActionStateBoolean = NULL;
 static PFN_xrCreateActionSpace pfn_xrCreateActionSpace = NULL;
 static PFN_xrLocateSpace pfn_xrLocateSpace = NULL;
+static PFN_xrApplyHapticFeedback pfn_xrApplyHapticFeedback = NULL;
 /* GLES path — instance/session creation, swapchain management */
 static PFN_xrCreateInstance pfn_xrCreateInstance = NULL;
 static PFN_xrCreateSession  pfn_xrCreateSession  = NULL;
@@ -332,6 +333,8 @@ static XrAction xr_right_thumbstick_click_action       = XR_NULL_HANDLE; /* righ
 static XrAction xr_left_trigger_action                 = XR_NULL_HANDLE; /* left trigger — throw flare */
 static XrAction xr_left_grip_action  = XR_NULL_HANDLE;
 static XrAction xr_right_grip_action = XR_NULL_HANDLE;
+static XrAction xr_right_haptic_action = XR_NULL_HANDLE; /* right controller vibration output */
+static XrAction xr_left_haptic_action  = XR_NULL_HANDLE; /* left controller vibration output */
 static XrSpace  xr_left_grip_space   = XR_NULL_HANDLE;
 static XrSpace  xr_right_grip_space  = XR_NULL_HANDLE;
 
@@ -560,6 +563,7 @@ static bool load_xr_functions(void)
     XR_LOAD(xrGetActionStateBoolean);
     XR_LOAD(xrCreateActionSpace);
     XR_LOAD(xrLocateSpace);
+    XR_LOAD(xrApplyHapticFeedback);
     XR_LOAD(xrGetSystem);
     XR_LOAD(xrCreateSession);
     XR_LOAD(xrCreateSwapchain);
@@ -881,9 +885,20 @@ static bool init_xr_session(void)
         result = pfn_xrCreateAction(xr_input_action_set, &act_info, &xr_right_grip_action);
         XR_CHECK(result, "Failed to create right_grip action");
 
+        act_info.actionType = XR_ACTION_TYPE_VIBRATION_OUTPUT;
+        SDL_strlcpy(act_info.actionName,       "right_haptic", XR_MAX_ACTION_NAME_SIZE);
+        SDL_strlcpy(act_info.localizedActionName, "Right Haptic", XR_MAX_LOCALIZED_ACTION_NAME_SIZE);
+        result = pfn_xrCreateAction(xr_input_action_set, &act_info, &xr_right_haptic_action);
+        XR_CHECK(result, "Failed to create right_haptic action");
+
+        SDL_strlcpy(act_info.actionName,       "left_haptic", XR_MAX_ACTION_NAME_SIZE);
+        SDL_strlcpy(act_info.localizedActionName, "Left Haptic", XR_MAX_LOCALIZED_ACTION_NAME_SIZE);
+        result = pfn_xrCreateAction(xr_input_action_set, &act_info, &xr_left_haptic_action);
+        XR_CHECK(result, "Failed to create left_haptic action");
+
         /* Suggest bindings for Touch controller profile */
         XrPath profile_path, left_stick_path, right_stick_path, x_path, y_path, menu_path;
-        XrPath left_grip_path, right_grip_path, right_trigger_path, right_squeeze_path, a_path, left_stick_click_path, b_path, right_stick_click_path, left_trigger_path;
+        XrPath left_grip_path, right_grip_path, right_trigger_path, right_squeeze_path, a_path, left_stick_click_path, b_path, right_stick_click_path, left_trigger_path, right_haptic_path, left_haptic_path;
         pfn_xrStringToPath(xr_instance, "/interaction_profiles/oculus/touch_controller", &profile_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/thumbstick",        &left_stick_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/thumbstick",       &right_stick_path);
@@ -899,8 +914,10 @@ static bool init_xr_session(void)
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/b/click",           &b_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/thumbstick/click", &right_stick_click_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/trigger",           &left_trigger_path);
+        pfn_xrStringToPath(xr_instance, "/user/hand/right/output/haptic",          &right_haptic_path);
+        pfn_xrStringToPath(xr_instance, "/user/hand/left/output/haptic",           &left_haptic_path);
 
-        XrActionSuggestedBinding bindings[14];
+        XrActionSuggestedBinding bindings[16];
         bindings[0].action  = xr_left_stick_action;              bindings[0].binding  = left_stick_path;
         bindings[1].action  = xr_right_stick_action;             bindings[1].binding  = right_stick_path;
         bindings[2].action  = xr_x_button_action;                bindings[2].binding  = x_path;
@@ -914,10 +931,12 @@ static bool init_xr_session(void)
         bindings[10].action = xr_left_thumbstick_click_action;   bindings[10].binding = left_stick_click_path;
         bindings[11].action = xr_b_button_action;                bindings[11].binding = b_path;
         bindings[12].action = xr_right_thumbstick_click_action;  bindings[12].binding = right_stick_click_path;
-        bindings[13].action = xr_left_trigger_action;             bindings[13].binding = left_trigger_path;
+        bindings[13].action = xr_left_trigger_action;            bindings[13].binding = left_trigger_path;
+        bindings[14].action = xr_right_haptic_action;            bindings[14].binding = right_haptic_path;
+        bindings[15].action = xr_left_haptic_action;             bindings[15].binding = left_haptic_path;
         XrInteractionProfileSuggestedBinding suggested = { XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
         suggested.interactionProfile     = profile_path;
-        suggested.countSuggestedBindings = 14;
+        suggested.countSuggestedBindings = 16;
         suggested.suggestedBindings      = bindings;
         pfn_xrSuggestInteractionProfileBindings(xr_instance, &suggested);
 
@@ -1589,9 +1608,10 @@ int axes, balls, hats;
         JoystickData.dwXpos = (DWORD)((xr_left_stick_x  * 32767.0f) + 32768.0f);
         JoystickData.dwYpos = (DWORD)((-xr_left_stick_y * 32767.0f) + 32768.0f);
 
-        /* Right stick: debounced 45° snap turns. */
+        /* Right stick: debounced 45° snap turns (X) + next weapon on stick up (Y). */
         if (xr_right_stick_action) {
             static bool xr_snap_armed = true;
+            static bool xr_next_weapon_armed = true;
             const float SNAP_THRESHOLD  = 0.6f;
             const float SNAP_REARM_ZONE = 0.3f;
             const int   SNAP_ANGLE      = 512; /* 45° in game units (4096 = full circle) */
@@ -1599,11 +1619,13 @@ int axes, balls, hats;
             XrActionStateGetInfo rget = { XR_TYPE_ACTION_STATE_GET_INFO };
             rget.action = xr_right_stick_action;
             XrActionStateVector2f rstate = { XR_TYPE_ACTION_STATE_VECTOR2F };
-            float rx = 0.0f;
+            float rx = 0.0f, ry = 0.0f;
             if (XR_SUCCEEDED(pfn_xrGetActionStateVector2f(xr_session, &rget, &rstate)) && rstate.isActive) {
                 rx = rstate.currentState.x;
+                ry = rstate.currentState.y;
             }
 
+            /* X axis: snap turns */
             if (xr_snap_armed) {
                 if (rx > SNAP_THRESHOLD) {
                     xr_snap_yaw = (xr_snap_yaw + SNAP_ANGLE) & 4095;
@@ -1614,6 +1636,17 @@ int axes, balls, hats;
                 }
             } else if (rx > -SNAP_REARM_ZONE && rx < SNAP_REARM_ZONE) {
                 xr_snap_armed = true;
+            }
+
+            /* Y axis: stick up → next weapon (gameplay only, edge-triggered). */
+            xr_right_thumbstick_click_pressed = 0;
+            if (!xr_2d_mode) {
+                if (xr_next_weapon_armed && ry > SNAP_THRESHOLD) {
+                    xr_right_thumbstick_click_pressed = 1;
+                    xr_next_weapon_armed = false;
+                } else if (ry < SNAP_REARM_ZONE) {
+                    xr_next_weapon_armed = true;
+                }
             }
         }
 
@@ -1672,10 +1705,10 @@ int axes, balls, hats;
                 xr_b_button_pressed = bstate.currentState ? 1 : 0;
         }
 
-        /* Right thumbstick click → next weapon (gameplay only, edge-triggered). */
+        /* Right thumbstick click → throw flare (gameplay only, edge-triggered). */
         {
             static int prev = 0;
-            xr_right_thumbstick_click_pressed = 0;
+            xr_left_trigger_pressed = 0;
             if (!xr_2d_mode && xr_right_thumbstick_click_action && pfn_xrGetActionStateBoolean) {
                 XrActionStateGetInfo rget = { XR_TYPE_ACTION_STATE_GET_INFO };
                 rget.action = xr_right_thumbstick_click_action;
@@ -1684,7 +1717,7 @@ int axes, balls, hats;
                         && rstate.isActive) {
                     int cur = rstate.currentState ? 1 : 0;
                     if (cur && !prev)
-                        xr_right_thumbstick_click_pressed = 1;
+                        xr_left_trigger_pressed = 1;
                     prev = cur;
                 }
             } else {
@@ -1703,25 +1736,7 @@ int axes, balls, hats;
                 xr_y_button_gameplay_pressed = ystate.currentState ? 1 : 0;
         }
 
-        /* Left trigger → throw flare (gameplay only, edge-triggered). */
-        {
-            static int prev = 0;
-            xr_left_trigger_pressed = 0;
-            if (!xr_2d_mode && xr_left_trigger_action && pfn_xrGetActionStateBoolean) {
-                XrActionStateGetInfo ltget = { XR_TYPE_ACTION_STATE_GET_INFO };
-                ltget.action = xr_left_trigger_action;
-                XrActionStateBoolean ltstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
-                if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &ltget, &ltstate))
-                        && ltstate.isActive) {
-                    int cur = ltstate.currentState ? 1 : 0;
-                    if (cur && !prev)
-                        xr_left_trigger_pressed = 1;
-                    prev = cur;
-                }
-            } else {
-                prev = 0;
-            }
-        }
+        /* Left trigger: unbound (throw flare moved to right thumbstick click). */
 
         /* Left menu button → ESC in all modes (opens/closes pause menu in-game,
          * acts as back in the 2D menus). */
@@ -1912,6 +1927,42 @@ int axes, balls, hats;
                 break;
         }
     }
+}
+
+/* Trigger a vibration pulse on the right Touch controller.
+ * amplitude: 0.0–1.0. duration_ms: pulse length in milliseconds. */
+void XR_Haptic_Right(float amplitude, float duration_ms)
+{
+#ifdef __ANDROID__
+    if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_right_haptic_action)
+        return;
+    XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
+    info.action = xr_right_haptic_action;
+    XrHapticVibration vib = { XR_TYPE_HAPTIC_VIBRATION };
+    vib.duration  = (XrDuration)(duration_ms * 1000000.0f); /* ms → ns */
+    vib.frequency = XR_FREQUENCY_UNSPECIFIED;
+    vib.amplitude = amplitude;
+    pfn_xrApplyHapticFeedback(xr_session, &info, (XrHapticBaseHeader*)&vib);
+#else
+    (void)amplitude; (void)duration_ms;
+#endif
+}
+
+void XR_Haptic_Left(float amplitude, float duration_ms)
+{
+#ifdef __ANDROID__
+    if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_left_haptic_action)
+        return;
+    XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
+    info.action = xr_left_haptic_action;
+    XrHapticVibration vib = { XR_TYPE_HAPTIC_VIBRATION };
+    vib.duration  = (XrDuration)(duration_ms * 1000000.0f); /* ms → ns */
+    vib.frequency = XR_FREQUENCY_UNSPECIFIED;
+    vib.amplitude = amplitude;
+    pfn_xrApplyHapticFeedback(xr_session, &info, (XrHapticBaseHeader*)&vib);
+#else
+    (void)amplitude; (void)duration_ms;
+#endif
 }
 
 /* ** */

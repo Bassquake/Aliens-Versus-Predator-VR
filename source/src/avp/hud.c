@@ -624,6 +624,16 @@ static void DoMotionTracker(void)
 			if (MTSoundHandle==SOUND_NOACTIVEINDEX)
 			{
 				int panicFactor = MUL_FIXED(nearestDistance,MOTIONTRACKER_SCALE);
+				#ifdef __ANDROID__
+				{
+					extern void XR_Haptic_Left(float amplitude, float duration_ms);
+					float hapticAmp;
+					if (panicFactor < 21845)        hapticAmp = 0.9f;
+					else if (panicFactor < 21845*2) hapticAmp = 0.6f;
+					else                            hapticAmp = 0.3f;
+					XR_Haptic_Left(hapticAmp, 120.0f);
+				}
+				#endif
 				if (panicFactor < 21845)
 				{
 					Sound_Play(SID_TRACKER_WHEEP_HIGH,"ev",&MTSoundHandle,MOTIONTRACKERVOLUME);

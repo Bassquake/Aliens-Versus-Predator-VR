@@ -253,9 +253,9 @@ typedef struct {
  * To change apparent size without changing distance: scale QUAD_HALF_W/H together.
  * To move the quad further while keeping the same angular size: scale all three
  * proportionally (e.g. multiply everything by 1.5 for 3 m / same fill). */
-#define QUAD_HALF_W  1.50f   /* half-width  in metres */
-#define QUAD_HALF_H  1.125f  /* half-height in metres (4:3 aspect) */
-#define QUAD_DEPTH  -2.00f   /* Z offset from local-space origin */
+#define QUAD_HALF_W  2.00f   /* half-width  in metres */
+#define QUAD_HALF_H  1.50f  /* half-height in metres (4:3 aspect) */
+#define QUAD_DEPTH  -4.00f   /* Z offset from local-space origin */
 
 
 /* CPU staging: RGB565 pixels from surface, converted to RGBA8 for upload */
@@ -1430,13 +1430,12 @@ static void render_frame(void)
                     float eye_y = (view_count >= 2)
                         ? (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f
                         : 1.6f;
-                    /* Place quad 3 m ahead of the user's initial facing direction.
-                     * The quad vertices are at Z=QUAD_DEPTH in model space; RotationY(-yaw)
-                     * aligns model -Z with the captured head forward direction, then
-                     * Translation moves the origin to the head X/Z position. */
+                    /* Rotate the model-space -Z offset to align with head forward,
+                     * then translate to the head position.
+                     * Note: Mat4_Multiply(A,B) = B*A, so arg order is reversed. */
                     Mat4 model = Mat4_Multiply(
-                        Mat4_Translation(menu_quad_cx, eye_y, menu_quad_cz),
-                        Mat4_RotationY(-menu_quad_yaw)
+                        Mat4_RotationY(-menu_quad_yaw),
+                        Mat4_Translation(menu_quad_cx, eye_y, menu_quad_cz)
                     );
                     Mat4 mv    = Mat4_Multiply(model, view_matrix);
                     Mat4 mvp   = Mat4_Multiply(mv, proj_matrix);

@@ -53,8 +53,8 @@ I will add ability to customise all these.
 
 ## Extra features
 - Can choose different framerate in Video/Video Options, runs fine in 120fps mode!
-- Can turn on/off the cross-hair in Video/Video Options
-- Framerate counter can be toggled in Video/Video Options
+- Can turn on/off the cross-hair in Video/Video Options.
+- Framerate counter can be toggled in Video/Video Options.
 
 ## To do
 - Fix any visual issues that come up.

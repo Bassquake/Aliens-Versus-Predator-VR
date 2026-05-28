@@ -1739,6 +1739,17 @@ int axes, balls, hats;
             KeyboardInput[KEY_ESCAPE] = menu_pressed;
         }
 
+        /* In gameplay mode, set DebouncedGotAnyKey on the rising edge of any
+         * face button or trigger so the death-screen "Press any key" works. */
+        if (!xr_2d_mode) {
+            static int prev_any = 0;
+            int cur_any = xr_a_button_pressed | xr_b_button_pressed |
+                          xr_trigger_right_pressed | xr_grip_right_squeeze_pressed;
+            if (cur_any && !prev_any)
+                DebouncedGotAnyKey = 1;
+            prev_any = cur_any;
+        }
+
         /* Menu navigation: only active when not in 3D gameplay. */
         if (xr_2d_mode && pfn_xrGetActionStateBoolean) {
             XrActionStateGetInfo bget = { XR_TYPE_ACTION_STATE_GET_INFO };

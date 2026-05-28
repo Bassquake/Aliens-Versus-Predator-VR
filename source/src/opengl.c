@@ -1883,7 +1883,7 @@ void D3D_RenderHUDString(char *stringPtr,int x,int y,int colour)
 	quadVertices[2].Y = y + HUD_FONT_HEIGHT + 1;
 	quadVertices[3].Y = y + HUD_FONT_HEIGHT + 1;
 	
-	CheckFilteringModeIsCorrect(FILTERING_BILINEAR_OFF);
+	CheckFilteringModeIsCorrect(FILTERING_BILINEAR_ON);
 
 	while( *stringPtr )
 	{
@@ -1901,12 +1901,12 @@ void D3D_RenderHUDString(char *stringPtr,int x,int y,int colour)
 			quadVertices[2].V = topLeftV + HUD_FONT_HEIGHT + 1;
 			quadVertices[3].U = topLeftU - 1;
 			quadVertices[3].V = topLeftV + HUD_FONT_HEIGHT + 1;
-			
+
 			quadVertices[0].X = x - 1;
 			quadVertices[3].X = x - 1;
 			quadVertices[1].X = x + HUD_FONT_WIDTH + 1;
 			quadVertices[2].X = x + HUD_FONT_WIDTH + 1;
-				
+
 			D3D_HUDQuad_Output
 			(
 				AAFontImageNumber,
@@ -1928,7 +1928,7 @@ void D3D_RenderHUDString_Clipped(char *stringPtr,int x,int y,int colour)
 		return;
 	}
 
-	CheckFilteringModeIsCorrect(FILTERING_BILINEAR_OFF);
+	CheckFilteringModeIsCorrect(FILTERING_BILINEAR_ON);
 
 	quadVertices[2].Y = y + HUD_FONT_HEIGHT + 1;
 	quadVertices[3].Y = y + HUD_FONT_HEIGHT + 1;
@@ -1993,7 +1993,7 @@ void D3D_RenderHUDString_Centred(char *stringPtr, int centreX, int y, int colour
 	quadVertices[2].Y = y + MUL_FIXED(HUDScaleFactor,HUD_FONT_HEIGHT + 1);
 	quadVertices[3].Y = y + MUL_FIXED(HUDScaleFactor,HUD_FONT_HEIGHT + 1);
 	
-	CheckFilteringModeIsCorrect(FILTERING_BILINEAR_OFF);
+	CheckFilteringModeIsCorrect(FILTERING_BILINEAR_ON);
 
 	while( *stringPtr )
 	{

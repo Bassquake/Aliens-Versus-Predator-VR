@@ -126,6 +126,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_VR_REFRESH_80:  return "80 Hz";
 			case TEXTSTRING_VR_REFRESH_90:  return "90 Hz";
 			case TEXTSTRING_VR_REFRESH_120: return "120 Hz";
+			case TEXTSTRING_FPS_OFF: return "Off (Default)";
+			case TEXTSTRING_FPS_ON:  return "On";
 			default: break;
 		}
 	}

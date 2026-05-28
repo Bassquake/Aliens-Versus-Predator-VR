@@ -31,14 +31,14 @@ Short video of it in action on a Quest 2 here on ![YouTube](https://youtube.com/
 
 - Now still in SideQuest, go to "Manage files on the headset".
 - Navigate to "sdcard/Android/data".
-- Create a folder called "com.bassquake.avpvr" and inside that create a folder called "files". The folder layout should be like so on your device:
+- Create a folder called "com.bassquake.avpvr" and inside that create a folder called "files" if there isn't one already. The folder layout should be like so on your device:
 
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_files.png)
 
 ## Run it!
 Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Have fun!
 > [!CAUTION]
-> This is early stage and I'm not really much of a programmer, this was done using various ai like Claude, Copilot and Gemini.
+> This is early stage and I'm not really much of a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
 
 ## Controls
 > [!NOTE]

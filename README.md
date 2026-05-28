@@ -46,21 +46,7 @@ Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Hav
 
 ### Keys for Marine level (probably mostly works for Alien and Predator too)
 Controls are as follow (Marine level):
-- Foward is Up on Left Controller Joystick
-- Backwards is Down on Left Controller Joystick
-- Left is you tuen your head left
-- Right is you turn your head right
-- Strafe is Left and Right on Left Controller Joystick
-- Look Up is you look up
-- Look Down is you look down
-- Crouch is Thumbstick on Left Controller Joystick
-- Jump is B on Right Controller
-- Operate is A on Right Controller
-- Fire Primary is Trigger on Right Controller
-- Fire Secondary is Grip on Right Controller
-- Next Weapon is Thumbstick on Right Joystick
-- Image Intensifier is Y on Left Controller
-- Throw Flare is Trigger on Left Controller
+![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-controllers.jpg)
 
 I will probably add ability to customise all these.
 

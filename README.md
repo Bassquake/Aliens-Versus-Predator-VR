@@ -1,6 +1,6 @@
 # Aliens Versus Predator: VR
 
-Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. This is early stage as lots of bugs and fixes are likely needed.
+Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. This is early stage as lots of bugs and fixes are likely needed and I've only been focussing on the Marine level at the moment.
 
 ![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-menu.jpg)
 
@@ -35,6 +35,12 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/KvSl
 
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_files.png)
 
+## CD Music
+You can skip this if you don't have the audio cd that comes with the game, it'll just play without background music. Or provide your own music! Would need 15 tracks.
+- Create a folder in **sdcard/Android/data/com.bassquake.avpvr/files/** called called **cd_tracks**.
+- Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset. Make sure to have them exactly named as track01.ogg, track02.ogg etc.
+- Play game as normal. Volume can be adjusted in-game.
+
 ## Run it!
 Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Have fun!
 > [!CAUTION]
@@ -59,8 +65,8 @@ I will add ability to customise all these.
 ## To do
 - Fix any visual issues that come up.
 - Extra options for vr specific things like adding blinders or change snap/smooth turning etc.
-- Add rumble effects to controllers.
-- Add cd music.
+- ~~Add rumble effects to controllers.~~
+- ~~Add cd music.~~
 - Add ability to customise controller key mapping.
 - Add shadow effects.
 - Maybe add antialiasing options but not sure if really needed.

@@ -44,7 +44,7 @@ You can skip this if you don't have the audio cd that comes with the game, it'll
 ## Run it!
 Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Have fun!
 > [!CAUTION]
-> This is early stage and I'm not really much of a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
+> This is early stage and have only really focused on the Marine campaign. I'm not really much of a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
 
 ## Controls
 > [!NOTE]
@@ -69,7 +69,7 @@ I will add ability to customise all these.
 - ~~Add cd music.~~
 - Add ability to customise controller key mapping.
 - Add shadow effects.
-- Maybe add antialiasing options but not sure if really needed.
+- Maybe add anti-aliasing options but not sure if really needed.
 - Customise some objects such as marines weapons as it has 2 hands attached to the main weapon which is a bit weird.
 - Change the menu to be more immersive.
 - Add option for left handed users.

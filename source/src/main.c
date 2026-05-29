@@ -3603,6 +3603,11 @@ int main(int argc, char *argv[])
     SDL_Log("BOOT: SoundSys_Start done");
     if (WantCDRom) CDDA_Start();
 
+    {
+        extern void PatchCDVolumeMenuForNoMusic(void);
+        if (!CDDA_HasMusicFiles()) PatchCDVolumeMenuForNoMusic();
+    }
+
     InitTextStrings();
     SDL_Log("BOOT: InitTextStrings done");
 

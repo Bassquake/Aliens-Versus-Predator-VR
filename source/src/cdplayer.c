@@ -361,6 +361,18 @@ void CDDA_SwitchOn()
 	if (!music_initialized) CDDA_Start();
 }
 
+int CDDA_HasMusicFiles()
+{
+	if (!GetGlobalDir()) return 0;
+	char path[512];
+	/* Check if at least track01 exists */
+	snprintf(path, sizeof(path), "%s/cd_tracks/track01.ogg", GetGlobalDir());
+	FILE *f = fopen(path, "rb");
+	if (!f) return 0;
+	fclose(f);
+	return 1;
+}
+
 /* ------------------------------------------------------------------ */
 #else
 /* ------------------------------------------------------------------ */
@@ -378,5 +390,6 @@ void CDDA_Play(int CDDATrack) { (void)CDDATrack; }
 void CDDA_PlayLoop(int CDDATrack) { (void)CDDATrack; }
 void CDDA_Stop() {}
 void CDDA_SwitchOn() {}
+int  CDDA_HasMusicFiles() { return 0; }
 
 #endif

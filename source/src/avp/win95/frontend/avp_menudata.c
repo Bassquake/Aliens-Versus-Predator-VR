@@ -1156,6 +1156,26 @@ void MakeConnectionSelectMenu()
 	AvPMenu_MultiplayerConnection[pos].ElementID = AVPMENU_ELEMENT_ENDOFMENU;
 }
 
+extern void PatchCDVolumeMenuForNoMusic()
+{
+	static char no_music_label[] = "No CD music found";
+	AVPMENU_ELEMENT *menus[2] = { AvPMenu_InGameAVOptions, AvPMenu_MainMenuAVOptions };
+	int m;
+	for (m = 0; m < 2; m++) {
+		AVPMENU_ELEMENT *e = menus[m];
+		while (e->ElementID != AVPMENU_ELEMENT_ENDOFMENU) {
+			if (e->ElementID == AVPMENU_ELEMENT_SLIDER &&
+			    e->a.TextDescription == TEXTSTRING_AVOPTIONS_CDVOLUME) {
+				e->ElementID        = AVPMENU_ELEMENT_DUMMYTEXTFIELD;
+				e->a.TextDescription = TEXTSTRING_BLANK;
+				e->c.TextPtr        = no_music_label;
+				break;
+			}
+			e++;
+		}
+	}
+}
+
 extern void MakeOpenIPAddressMenu()
 {
 	IP_Address_Name[0]=0;

@@ -61,6 +61,11 @@ int SetGameDirectories(const char *local, const char *global)
 	return 0;
 }
 
+const char *GetGlobalDir(void)
+{
+	return global_dir;
+}
+
 #define DIR_SEPARATOR	"/"
 
 static char *FixFilename(const char *filename, const char *prefix, int force)

@@ -46,23 +46,23 @@ Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Hav
 > [!CAUTION]
 > This is early stage and have only really focused on the Marine campaign. I'm not really much of a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
 
-# Controls
+## Controls
 > [!NOTE]
 > At the moment I've only concentrated on the Marine level as that was my favourite! Alien and Predator will be looked at soon.
 
-## Keys for Marine level (probably mostly works for Alien and Predator too)
+### Keys for Marine level (probably mostly works for Alien and Predator too)
 Controls are as follow (Marine level):
 
 ![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-controllers.jpg)
 
 I will add ability to customise all these.
 
-# Extra features
+## Extra features
 - Can choose different framerate in Video/Video Options, runs fine in 120fps mode!
 - Can turn on/off the cross-hair in Video/Video Options.
 - Framerate counter can be toggled in Video/Video Options.
 
-# To do
+## To do
 - Fix any visual issues that come up.
 - Extra options for vr specific things like adding blinders or change snap/smooth turning etc.
 - ~~Add rumble effects to controllers.~~

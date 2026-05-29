@@ -8,7 +8,7 @@ Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. This is early
 
 Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/KvSlg3LJQgg).
 
-[![Watch the video](https://img.youtube.com/vi/KvSlg3LJQgg/0.jpg)](https://youtu.be/KvSlg3LJQgg)
+[![Watch the video](https://img.youtube.com/vi/5ci0qwfQivU/0.jpg)](https://youtu.be/5ci0qwfQivU)
 
 > [!NOTE]
 > This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP). I've ported to Android and for it to use OpenXR for VR headsets. I have added binaries as an apk for Android 16 VR headsets. They do not include the game files as its not allowed. See important note below about game assets and there are instructions on how to add them.

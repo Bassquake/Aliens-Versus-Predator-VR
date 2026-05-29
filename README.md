@@ -17,9 +17,9 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/KvSl
 > You need to supply the games asset files. Buy the game or find cd/downloads of Aliens Versus Predator Gold Edition. It has to be the Gold Edition as the standard versions 'language.txt' file crashes the game. You can use the standard versions files if you use the Gold Edition language.txt, the videos are different! Check [eBay](https://www.ebay.co.uk/sch/i.html?_nkw=aliens+versus+predator+gold+edition&_sacat=0&_from=R40&_trksid=m570.l1313&_odkw=aliens+versus+predator+gold&_osacat=0&_sop=15) or [GOG](https://www.gog.com/en/game/aliens_versus_predator_classic_2000) or [Steam](https://store.steampowered.com/app/3730/Aliens_versus_Predator_Classic_2000/).
 
 ## Step-by-step
-1. Install the original pc game from disk/download like normal.
+1. Install the original pc game from disk/download like normal on your pc.
 2. Download the [lowercase.ps1](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/assets/lowercase.ps1) powershell script or find it in the assets folder of this project. Place the script into the folder where all game files are (usually 'C:\Program Files (x86)\Fox\Aliens versus Predator').
-3. Run the script and all files will now be lowercase.
+3. Run the script in Powershell (type **lowercase.ps1**) and all files will now be lowercase.
 4. Plug your headset in via usb.
 5. Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in [Developer](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) mode already):
 
@@ -31,15 +31,15 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/KvSl
 
 7. Now still in SideQuest, go to "Manage files on the headset".
 8. Navigate to "sdcard/Android/data".
-9. Create a folder called "com.bassquake.avpvr" and inside that create a folder called "files" if there isn't one already. The folder layout should be like so on your device:
+9. Create a folder called "com.bassquake.avpvr" and inside that create a folder called "files" if there isn't one already.
+10. Copy all the game assets into that files folder. The layout should be like so on your device:
 
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_files.png)
 
 ## CD Music
 You can skip this if you don't have the audio cd that comes with the game, it'll just play without background music. Or provide your own music! Would need 15 tracks.
-- Create a folder in **sdcard/Android/data/com.bassquake.avpvr/files/** called called **cd_tracks**.
-- Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset. Make sure to have them exactly named as track01.ogg, track02.ogg etc.
-- Play game as normal. Volume can be adjusted in-game.
+- Create a folder in **sdcard/Android/data/com.bassquake.avpvr/files/** called **cd_tracks**.
+- Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
 
 ## Run it!
 Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Have fun!

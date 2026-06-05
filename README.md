@@ -11,17 +11,21 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/Ixnr
 [![Watch the video](https://img.youtube.com/vi/IxnrIYhSEMs/0.jpg)](https://youtu.be/IxnrIYhSEMs)
 
 > [!NOTE]
-> This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP). I've ported to Android and for it to use OpenXR for VR headsets. I have added binaries as an apk for Android 16 VR headsets. They do not include the game files as its not allowed. See important note below about game assets and there are instructions on how to add them.
+> This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. I've ported to Android and for it to use OpenXR for VR headsets. I have added binaries as an apk for Android 16 VR headsets. They do not include the game files as its not allowed. See important note below about game assets and there are instructions on how to add them.
 
 > [!IMPORTANT]
 > You need to supply the games asset files. Buy the game or find cd/downloads of Aliens Versus Predator Gold Edition. It has to be the Gold Edition as the standard versions 'language.txt' file crashes the game. You can use the standard versions files if you use the Gold Edition language.txt, the videos are different! Check [eBay](https://www.ebay.co.uk/sch/i.html?_nkw=aliens+versus+predator+gold+edition&_sacat=0&_from=R40&_trksid=m570.l1313&_odkw=aliens+versus+predator+gold&_osacat=0&_sop=15) or [GOG](https://www.gog.com/en/game/aliens_versus_predator_classic_2000) or [Steam](https://store.steampowered.com/app/3730/Aliens_versus_Predator_Classic_2000/).
 
 ## Step-by-step
 1. Install the original pc game from disk/download like normal on your pc.
-2. Download the [lowercase.ps1](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/assets/lowercase.ps1) powershell script or find it in the assets folder of this project. Place the script into the folder where all game files are (usually 'C:\Program Files (x86)\Fox\Aliens versus Predator').
-3. Run the script in Powershell (type **lowercase.ps1**) and all files will now be lowercase.
-4. Plug your headset in via usb.
-5. Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in [Developer](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) mode already):
+2. Copy the games assets from **C:\Program Files (x86)\Fox\Aliens versus Predator\**. You need the following:
+
+![Screenshot of assets files](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/assets-files.png)
+
+4. Download the [lowercase.ps1](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/assets/lowercase.ps1) powershell script or find it in the assets folder of this project. Place the script into where the assets are.
+5. Run the script in Powershell (type **lowercase.ps1**) and all files will now be lowercase.
+6. Plug your headset in via usb.
+7. Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in [Developer](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) mode already):
 
 ![Screenshot of apk install](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_install.png)
 

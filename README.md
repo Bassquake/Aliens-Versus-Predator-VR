@@ -38,7 +38,7 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/Ixnr
 9. Create a folder called "com.bassquake.avpvr" and inside that create a folder called "files" if there isn't one already.
 10. Copy all the game assets into that files folder. The layout should be like so on your device:
 
-![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_files.png)
+![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/sidequest_files.png)
 
 ## CD Music
 You can skip this if you don't have the audio cd that comes with the game, it'll just play without background music. Or provide your own music! Would need 15 tracks.

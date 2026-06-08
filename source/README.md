@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> This is a copy of the original linux source README.md so not really relevant to this project but might be of interest.
+
 Aliens vs Predator  http://icculus.org/avp/
 ------------------------
 

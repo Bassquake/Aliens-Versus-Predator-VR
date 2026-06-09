@@ -379,6 +379,9 @@ typedef struct {
     XrExtent2Di                    size;
 } VRSwapchain;
 
+enum VrHeadset { PICO, QUEST };
+
+enum VrHeadset vr_headset;
 VRSwapchain *vr_swapchains = NULL;
 XrView *xr_views = NULL;
 Uint32 view_count = 0;
@@ -636,6 +639,13 @@ static bool init_xr_instance(void)
     JavaVM *vm   = NULL;
     (*env)->GetJavaVM(env, &vm);
     jobject activity = (jobject)SDL_GetAndroidActivity();
+
+    jclass buildClass = (*env)->FindClass(env, "android/os/Build");
+    jfieldID manufacturerField = (*env)->GetStaticFieldID(env, buildClass, "MANUFACTURER", "Ljava/lang/String;");
+    jstring manufacturer = (jstring)(*env)->GetStaticObjectField(env, buildClass, manufacturerField);
+    const char* mfr = (*env)->GetStringUTFChars(env, manufacturer, NULL);
+    vr_headset = strcmp(mfr, "Pico") == 0 ? PICO : QUEST;
+    (*env)->ReleaseStringUTFChars(env, manufacturer, mfr);
 
     XrInstanceCreateInfoAndroidKHR android_info = { XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR };
     android_info.applicationVM       = vm;
@@ -899,21 +909,28 @@ static bool init_xr_session(void)
         /* Suggest bindings for Touch controller profile */
         XrPath profile_path, left_stick_path, right_stick_path, x_path, y_path, menu_path;
         XrPath left_grip_path, right_grip_path, right_trigger_path, right_squeeze_path, a_path, left_stick_click_path, b_path, right_stick_click_path, left_trigger_path, right_haptic_path, left_haptic_path;
-        pfn_xrStringToPath(xr_instance, "/interaction_profiles/oculus/touch_controller", &profile_path);
+        if (vr_headset == QUEST) {
+            pfn_xrStringToPath(xr_instance, "/interaction_profiles/oculus/touch_controller", &profile_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/left/input/trigger",       &left_trigger_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/right/input/trigger",      &right_trigger_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/left/input/menu/click",    &menu_path);
+        } else if (vr_headset == PICO) {
+            pfn_xrStringToPath(xr_instance, "/interaction_profiles/pico/neo3_controller", &profile_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/left/input/trigger/click", &left_trigger_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/right/input/trigger/click",&right_trigger_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/left/input/back/click",    &menu_path);
+        }
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/thumbstick",        &left_stick_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/thumbstick",       &right_stick_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/x/click",           &x_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/y/click",           &y_path);
-        pfn_xrStringToPath(xr_instance, "/user/hand/left/input/menu/click",        &menu_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/grip/pose",         &left_grip_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/grip/pose",        &right_grip_path);
-        pfn_xrStringToPath(xr_instance, "/user/hand/right/input/trigger",          &right_trigger_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/squeeze",          &right_squeeze_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/a/click",          &a_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/thumbstick/click",  &left_stick_click_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/b/click",           &b_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/thumbstick/click", &right_stick_click_path);
-        pfn_xrStringToPath(xr_instance, "/user/hand/left/input/trigger",           &left_trigger_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/output/haptic",          &right_haptic_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/output/haptic",           &left_haptic_path);
 

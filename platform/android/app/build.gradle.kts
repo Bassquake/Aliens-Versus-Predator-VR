@@ -32,6 +32,11 @@ android {
     defaultConfig {
         applicationId = "com.bassquake.avpvr"
         minSdk = 24
+        // targetSdk=32 is required for MANAGE_EXTERNAL_STORAGE to be honoured.
+        // The permission must be granted at runtime via:
+        //   adb shell appops set com.bassquake.avpvr MANAGE_EXTERNAL_STORAGE allow
+        // It adds the media_rw GID to the process so libc open/read/access work
+        // on the public /sdcard/AvPVR/ asset folder.
         targetSdk = 32
         versionCode = 1
         versionName = "0.1"

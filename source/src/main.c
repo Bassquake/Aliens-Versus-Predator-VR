@@ -1428,6 +1428,24 @@ static void render_frame(void)
                 Uint32 idx = VR_AcquireAndWaitSwapchainImage((int)i);
                 GLuint sc_tex = sc->images[idx].image;
 
+                /* Symmetrise the per-eye FOV up front so the quad is RENDERED
+                 * with the exact same projection that we SUBMIT to the compositor
+                 * in proj_views[i].fov below.  If these differ, the runtime warps
+                 * the layer: harmless on Quest 2 (parallel panels → already near
+                 * symmetric) but very visible on Quest 3 (canted panels → strongly
+                 * asymmetric FOV), where the menu appears far too close. */
+                float tan_hx = (SDL_tanf(SDL_fabsf(xr_views[i].fov.angleLeft))
+                              + SDL_tanf(SDL_fabsf(xr_views[i].fov.angleRight))) * 0.5f;
+                float tan_hy = (SDL_tanf(SDL_fabsf(xr_views[i].fov.angleUp))
+                              + SDL_tanf(SDL_fabsf(xr_views[i].fov.angleDown))) * 0.5f;
+                XrFovf sym_fov = xr_views[i].fov;
+                if (tan_hx > 0.01f && tan_hy > 0.01f) {
+                    sym_fov.angleLeft  = -SDL_atanf(tan_hx);
+                    sym_fov.angleRight =  SDL_atanf(tan_hx);
+                    sym_fov.angleUp    =  SDL_atanf(tan_hy);
+                    sym_fov.angleDown  = -SDL_atanf(tan_hy);
+                }
+
                 /* Attach swapchain image as FBO color target */
                 glBindFramebuffer(GL_FRAMEBUFFER, menu_fbo_2d);
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
@@ -1445,7 +1463,9 @@ static void render_frame(void)
                     glUniform1i(quad_u_tex, 0);
 
                     Mat4 view_matrix = Mat4_FromXrPose(xr_views[i].pose);
-                    Mat4 proj_matrix = Mat4_Projection(xr_views[i].fov, 0.05f, 100.0f);
+                    /* Render with sym_fov (NOT the raw asymmetric fov) so it
+                     * matches the FOV submitted to the compositor below. */
+                    Mat4 proj_matrix = Mat4_Projection(sym_fov, 0.05f, 100.0f);
                     float eye_y = (view_count >= 2)
                         ? (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f
                         : 1.6f;
@@ -1473,18 +1493,9 @@ static void render_frame(void)
 
                 VR_ReleaseSwapchainImage((int)i);
 
-                /* Projection view for this eye */
-                float tan_hx = (SDL_tanf(SDL_fabsf(xr_views[i].fov.angleLeft))
-                              + SDL_tanf(SDL_fabsf(xr_views[i].fov.angleRight))) * 0.5f;
-                float tan_hy = (SDL_tanf(SDL_fabsf(xr_views[i].fov.angleUp))
-                              + SDL_tanf(SDL_fabsf(xr_views[i].fov.angleDown))) * 0.5f;
-                XrFovf sym_fov = xr_views[i].fov;
-                if (tan_hx > 0.01f && tan_hy > 0.01f) {
-                    sym_fov.angleLeft  = -SDL_atanf(tan_hx);
-                    sym_fov.angleRight =  SDL_atanf(tan_hx);
-                    sym_fov.angleUp    =  SDL_atanf(tan_hy);
-                    sym_fov.angleDown  = -SDL_atanf(tan_hy);
-                }
+                /* Projection view for this eye.  sym_fov was computed at the top
+                 * of the loop and used for the quad's projection matrix, so the
+                 * submitted FOV matches what was rendered. */
                 proj_views[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
                 proj_views[i].pose = xr_views[i].pose;
                 proj_views[i].fov  = sym_fov;

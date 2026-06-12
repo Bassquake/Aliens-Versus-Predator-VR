@@ -1,4 +1,4 @@
-﻿#include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -1020,7 +1020,10 @@ static bool create_swapchains(void)
         SDL_Log("XR: swapchain fmt[%u]=0x%llx", f, (unsigned long long)fmts[f]);
 
     int64_t chosen_fmt = 0;
-    if (has_srgb_write_control) {
+    /* DEBUG: force GL_RGBA8 to rule out sRGB-related Adreno compositor crash */
+    for (Uint32 f = 0; f < fmt_count; f++)
+        if (fmts[f] == GL_RGBA8_FMT) { chosen_fmt = GL_RGBA8_FMT; break; }
+    if (0 && has_srgb_write_control) {
         /* Prefer sRGB — compositor will handle it correctly */
         for (Uint32 f = 0; f < fmt_count; f++)
             if (fmts[f] == GL_SRGB8_ALPHA8_FMT) { chosen_fmt = GL_SRGB8_ALPHA8_FMT; break; }
@@ -1199,9 +1202,13 @@ void VR_ReleaseSwapchainImage(int eye)
     /* Restore sRGB write conversion before releasing */
     if (vr_srgb_swapchain && has_srgb_write_control)
         glEnable(GL_FRAMEBUFFER_SRGB_EXT);
+    static int rel_dbg = 6;
+    if (rel_dbg) SDL_Log("REL: eye %d pre-flush glErr=0x%x", eye, glGetError());
     glFlush(); /* ensure GLES commands reach GPU before compositor reads */
+    if (rel_dbg) SDL_Log("REL: eye %d post-flush glErr=0x%x", eye, glGetError());
     XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-    pfn_xrReleaseSwapchainImage(vr_swapchains[eye].swapchain, &ri);
+    XrResult rr = pfn_xrReleaseSwapchainImage(vr_swapchains[eye].swapchain, &ri);
+    if (rel_dbg) { SDL_Log("REL: eye %d xrRelease=%d", eye, (int)rr); rel_dbg--; }
 }
 
 GLuint VR_GetSwapchainImageTexture(int eye, Uint32 idx)
@@ -1419,14 +1426,21 @@ static void render_frame(void)
         proj_views = SDL_calloc(view_count, sizeof(XrCompositionLayerProjectionView));
 
         if (xr_2d_mode) {
+            static int rf_dbg_first = 5;
+            if (rf_dbg_first) SDL_Log("RF2D: enter view_count=%u shouldRender=%d quad_prog=%u quad_vao=%u menu_tex=%u menu_fbo=%u",
+                view_count, frame_state.shouldRender, quad_program, quad_vao, menu_gles_tex, menu_fbo_2d);
+
             /* Upload menu pixels to GLES texture once per frame */
             upload_menu_gles_texture();
+            if (rf_dbg_first) SDL_Log("RF2D: upload done");
 
             /* Render menu quad into each eye's swapchain image via GLES FBO */
             for (Uint32 i = 0; i < view_count; i++) {
                 VRSwapchain *sc = &vr_swapchains[i];
+                if (rf_dbg_first) SDL_Log("RF2D: eye %u sc=%p img_count=%u", i, (void*)sc->swapchain, sc->image_count);
                 Uint32 idx = VR_AcquireAndWaitSwapchainImage((int)i);
                 GLuint sc_tex = sc->images[idx].image;
+                if (rf_dbg_first) SDL_Log("RF2D: eye %u idx=%u sc_tex=%u", i, idx, sc_tex);
 
                 /* Symmetrise the per-eye FOV up front so the quad is RENDERED
                  * with the exact same projection that we SUBMIT to the compositor
@@ -1450,17 +1464,23 @@ static void render_frame(void)
                 glBindFramebuffer(GL_FRAMEBUFFER, menu_fbo_2d);
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                        GL_TEXTURE_2D, sc_tex, 0);
+                if (rf_dbg_first) {
+                    GLenum st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+                    SDL_Log("RF2D: eye %u FBO status=0x%x glErr=0x%x", i, st, glGetError());
+                }
 
                 glViewport(0, 0, sc->size.width, sc->size.height);
                 glDisable(GL_DEPTH_TEST);
                 glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
                 glClear(GL_COLOR_BUFFER_BIT);
+                if (rf_dbg_first) SDL_Log("RF2D: eye %u clear done glErr=0x%x", i, glGetError());
 
                 if (quad_program && quad_vao && menu_gles_tex) {
                     glUseProgram(quad_program);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, menu_gles_tex);
                     glUniform1i(quad_u_tex, 0);
+                    if (rf_dbg_first) SDL_Log("RF2D: eye %u prog/tex bound glErr=0x%x", i, glGetError());
 
                     Mat4 view_matrix = Mat4_FromXrPose(xr_views[i].pose);
                     /* Render with sym_fov (NOT the raw asymmetric fov) so it
@@ -1479,19 +1499,34 @@ static void render_frame(void)
                     Mat4 mv    = Mat4_Multiply(model, view_matrix);
                     Mat4 mvp   = Mat4_Multiply(mv, proj_matrix);
                     glUniformMatrix4fv(quad_u_mvp, 1, GL_FALSE, mvp.m);
+                    if (rf_dbg_first) SDL_Log("RF2D: eye %u uniforms done glErr=0x%x", i, glGetError());
 
                     glBindVertexArray(quad_vao);
+                    if (rf_dbg_first) SDL_Log("RF2D: eye %u VAO bound glErr=0x%x", i, glGetError());
                     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
+                    if (rf_dbg_first) SDL_Log("RF2D: eye %u draw done glErr=0x%x", i, glGetError());
                     glBindVertexArray(0);
+                    if (rf_dbg_first) SDL_Log("RF2D: eye %u VAO unbind glErr=0x%x", i, glGetError());
                     glBindTexture(GL_TEXTURE_2D, 0);
+                    if (rf_dbg_first) SDL_Log("RF2D: eye %u tex unbind glErr=0x%x", i, glGetError());
                     glUseProgram(0);
+                    if (rf_dbg_first) SDL_Log("RF2D: eye %u prog unbind glErr=0x%x", i, glGetError());
                 }
 
                 glEnable(GL_DEPTH_TEST);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                if (rf_dbg_first) SDL_Log("RF2D: eye %u depth re-en glErr=0x%x", i, glGetError());
 
+                /* Release swapchain image FIRST while it's still attached to the FBO.
+                 * Adreno keeps deferred GPU work referencing the FBO color attachment;
+                 * detaching/unbinding before xrReleaseSwapchainImage triggers a NULL
+                 * deref in libGLESv2_adreno when later GL calls flush the queue. */
                 VR_ReleaseSwapchainImage((int)i);
+                if (rf_dbg_first) SDL_Log("RF2D: eye %u released", i);
+
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+                if (rf_dbg_first) SDL_Log("RF2D: eye %u fbtex detach glErr=0x%x", i, glGetError());
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                if (rf_dbg_first) SDL_Log("RF2D: eye %u fb unbind glErr=0x%x", i, glGetError());
 
                 /* Projection view for this eye.  sym_fov was computed at the top
                  * of the loop and used for the quad's projection matrix, so the
@@ -1505,6 +1540,7 @@ static void render_frame(void)
                 proj_views[i].subImage.imageRect.extent  = sc->size;
                 proj_views[i].subImage.imageArrayIndex   = 0;
             }
+            if (rf_dbg_first) { rf_dbg_first--; SDL_Log("RF2D: pass complete (rem=%d)", rf_dbg_first); }
         } else {
             /* 3D game: AvpShowViewsVR() already rendered directly to swapchain.
              * Just set up projection views for xrEndFrame. */
@@ -1545,7 +1581,15 @@ static void render_frame(void)
     end_info.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     end_info.layerCount           = layer_count;
     end_info.layers               = layers;
-    pfn_xrEndFrame(xr_session, &end_info);
+    {
+        static int ef_dbg = 5;
+        if (ef_dbg) {
+            SDL_Log("EF: pre xrEndFrame displayTime=%lld layerCount=%u proj_views=%p layers[0]=%p",
+                (long long)end_info.displayTime, layer_count, (void*)proj_views, (void*)layers[0]);
+        }
+        XrResult er = pfn_xrEndFrame(xr_session, &end_info);
+        if (ef_dbg) { SDL_Log("EF: post xrEndFrame result=%d", (int)er); ef_dbg--; }
+    }
 
     if (proj_views) SDL_free(proj_views);
 }
@@ -3560,11 +3604,16 @@ int main(int argc, char *argv[])
     }
 #endif
     SDL_Log("BOOT: InitSDL done");
-    //SDL_Log("DEBUG: argv[0] is %s", (argv[0] ? argv[0] : "NULL"));
-    //SDL_Log("DEBUG: gamedatapath is %s", (gamedatapath ? gamedatapath : "NULL"));
 #ifdef __ANDROID__
+    /* Game assets are kept in /sdcard/AvPVR/ (a public top-level folder).
+       MANAGE_EXTERNAL_STORAGE adds the media_rw GID to the process so libc
+       open()/read()/access() succeed on these files. App-private external
+       dirs (/sdcard/Android/data/<pkg>/files/) are NOT used because Android
+       11+ scoped storage blocks libc access there even with permissions
+       granted. */
     if (gamedatapath == NULL)
-        gamedatapath = SDL_GetAndroidExternalStoragePath();
+        gamedatapath = "/sdcard/AvPVR";
+    SDL_Log("BOOT: gamedatapath=%s", gamedatapath);
 #endif
     InitGameDirectories(argv[0], gamedatapath);
     SDL_Log("BOOT: InitGameDirectories done");

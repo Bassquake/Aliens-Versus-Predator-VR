@@ -1619,6 +1619,16 @@ int axes, balls, hats;
         JoystickData.dwXpos = (DWORD)((xr_left_stick_x  * 32767.0f) + 32768.0f);
         JoystickData.dwYpos = (DWORD)((-xr_left_stick_y * 32767.0f) + 32768.0f);
 
+        /* The left stick is delivered by OpenXR, not the SDL gamepad API, so the
+         * usr_io.c locomotion consumer (gated on GotJoystick) must be enabled here:
+         * on Quest, SDL_EVENT_GAMEPAD_ADDED is unreliable while an XrSession owns the
+         * controllers, so GotJoystick may never be set and movement silently dies.
+         * Also force dwPOV to "centered" (-1): if no GAMEPAD_ADDED ever initialised
+         * JoystickData it is zero-filled, and dwPOV==0 reads as a POV hat pushed
+         * forward → phantom auto-walk. (Rudder/trackerball stay gated off.) */
+        JoystickData.dwPOV = (DWORD)-1;
+        GotJoystick = 1;
+
         /* Right stick: debounced 45° snap turns (X) + next weapon on stick up (Y). */
         if (xr_right_stick_action) {
             static bool xr_snap_armed = true;

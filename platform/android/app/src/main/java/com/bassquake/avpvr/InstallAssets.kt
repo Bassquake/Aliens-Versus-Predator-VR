@@ -10,9 +10,13 @@ class InstallAssets : Application() {
         // doesn't crash with a null path on first launch of a new package name.
         cacheDir.mkdirs()
 
-        // Ensure the external files directory exists so the engine can write to it.
-        // Game assets must be placed here manually via ADB:
-        //   adb push assets/ /sdcard/Android/data/com.bassquake.avpvr/files/
-        getExternalFilesDir(null)?.mkdirs()
+        // Game assets live in /sdcard/AvPVR/ (NOT /sdcard/Android/data/<pkg>/files/),
+        // because Android 11+ scoped storage blocks libc-level open()/access() on the
+        // app-private external dir even with READ_EXTERNAL_STORAGE granted. To read
+        // assets from a public top-level dir we use MANAGE_EXTERNAL_STORAGE (granted
+        // via `adb shell appops set <pkg> MANAGE_EXTERNAL_STORAGE allow`), which adds
+        // the media_rw supplementary GID to our process so libc syscalls succeed.
+        // Asset push:
+        //   adb push assets/. /sdcard/AvPVR/
     }
 }

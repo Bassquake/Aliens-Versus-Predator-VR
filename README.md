@@ -20,7 +20,7 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/Ixnr
 
 ## Step-by-step
 1. Install the original pc game from disk/download like normal on your pc.
-2. Copy the games assets from **C:\Program Files (x86)\Fox\Aliens versus Predator\**. You need the following:
+2. Copy the games assets from **C:\Program Files (x86)\Fox\Aliens versus Predator\** or from your Steam/GOG game directory. You need the following:
 
 ![Screenshot of assets files](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/assets-files.png)
 

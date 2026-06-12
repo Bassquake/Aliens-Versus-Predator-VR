@@ -36,6 +36,8 @@ extern int AutoWeaponChangeOn;
 extern int ShowCrosshair;
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
+extern int MSAASampleIndex;
+extern int FSRQualityIndex;
 
 
 List<AVP_USER_PROFILE *> UserProfilesList;
@@ -253,6 +255,8 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	ShowCrosshair = 1;
 	ShowFrameRate = 0;
 	VRRefreshRateIndex = 0;
+	MSAASampleIndex = 1; /* 2x by default */
+	FSRQualityIndex = 0; /* desktop FSR off by default */
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -293,6 +297,8 @@ extern void GetSettingsFromUserProfile(void)
 	ShowCrosshair =				!UserProfilePtr->ShowCrosshairDisabled;
 	ShowFrameRate =				!UserProfilePtr->ShowFrameRateDisabled;
 	VRRefreshRateIndex =			UserProfilePtr->VRRefreshRateIndex;
+	MSAASampleIndex =			UserProfilePtr->MSAASampleIndex;
+	FSRQualityIndex =			UserProfilePtr->FSRQualityIndex;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
 	SetDetailLevelsFromMenu();
@@ -320,6 +326,8 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->ShowCrosshairDisabled =	!ShowCrosshair;
 	profilePtr->ShowFrameRateDisabled =	!ShowFrameRate;
 	profilePtr->VRRefreshRateIndex =	VRRefreshRateIndex;
+	profilePtr->MSAASampleIndex =		MSAASampleIndex;
+	profilePtr->FSRQualityIndex =		FSRQualityIndex;
    	strncpy(profilePtr->MultiplayerCallsign,MP_PlayerName,15);
 }
 

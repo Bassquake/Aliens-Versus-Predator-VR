@@ -116,8 +116,271 @@ void InitGameShader(void)
     glUniform1i(uTex,           0);
     glUniform1i(g_uNoTex,       0);
     glUniform1i(g_uSpecularPass,0);
-    
+
 }
+
+#ifndef __ANDROID__
+// ── FSR 1 (desktop spatial upscaling) ────────────────────────────────────────
+// The in-game frame is rendered into fsr_render_* (low-res), EASU-upscaled into
+// fsr_easu_* (window-res), then RCAS-sharpened to the backbuffer at present.
+// All gated by FSRQualityIndex; when off, FSR_BeginFrame/FSR_Resolve are no-ops.
+
+extern int   FSRQualityIndex;     // 0=off..4 (main.c)
+extern float FSR_RenderScale(void);
+
+static GLuint fsr_render_fbo = 0, fsr_render_color = 0, fsr_render_depth = 0;
+static GLuint fsr_easu_fbo   = 0, fsr_easu_color   = 0;
+static int    fsr_render_w = 0, fsr_render_h = 0;   // current low-res
+static int    fsr_out_w    = 0, fsr_out_h    = 0;   // window size
+static int    fsr_built_w  = 0, fsr_built_h  = 0;   // size the FBOs were built at
+static int    fsr_built_q  = -1;                    // quality the FBOs were built at
+static int    fsr_frame_active = 0;
+
+static GLuint fsr_easu_prog = 0, fsr_rcas_prog = 0;
+static GLuint fsr_quad_vbo  = 0;
+static GLint  fsr_easu_uTex = -1, fsr_easu_uInSize = -1, fsr_easu_uOutSize = -1;
+static GLint  fsr_rcas_uTex = -1, fsr_rcas_uInSize = -1;
+
+// Fullscreen triangle, position in clip space + UV.
+static const char *fsr_vs =
+    "#version 100\n"
+    "attribute vec2 aPos;\n"
+    "attribute vec2 aUV;\n"
+    "varying vec2 vUV;\n"
+    "void main(){ vUV = aUV; gl_Position = vec4(aPos, 0.0, 1.0); }\n";
+
+// EASU pass: edge-adaptive sharpened upscale with an anti-ringing clamp.
+// (FSR 1 in spirit — edge-aware + neighbourhood clamp — not the bit-exact AMD
+//  EASU kernel; written for GLSL ES 1.00 and easy to swap for the full kernel.)
+static const char *fsr_easu_fs =
+    "#version 100\n"
+    "precision highp float;\n"
+    "varying vec2 vUV;\n"
+    "uniform sampler2D uTex;\n"
+    "uniform vec2 uInSize;\n"   // low-res source size (px)
+    "uniform vec2 uOutSize;\n"  // window size (px) — reserved
+    "float luma(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }\n"
+    "void main(){\n"
+    "  vec2 ipx = 1.0/uInSize;\n"
+    "  vec2 pos = vUV*uInSize - 0.5;\n"
+    "  vec2 fp  = floor(pos);\n"
+    "  vec2 f   = pos - fp;\n"
+    "  vec2 uv  = (fp + 0.5)*ipx;\n"
+    // inner 2x2 quad
+    "  vec3 e=texture2D(uTex,uv).rgb;\n"
+    "  vec3 g=texture2D(uTex,uv+vec2( 1.0, 0.0)*ipx).rgb;\n"
+    "  vec3 j=texture2D(uTex,uv+vec2( 0.0, 1.0)*ipx).rgb;\n"
+    "  vec3 k=texture2D(uTex,uv+vec2( 1.0, 1.0)*ipx).rgb;\n"
+    // surrounding ring (8 taps) for edge detection + anti-ringing bounds
+    "  vec3 b=texture2D(uTex,uv+vec2( 0.0,-1.0)*ipx).rgb;\n"
+    "  vec3 c=texture2D(uTex,uv+vec2( 1.0,-1.0)*ipx).rgb;\n"
+    "  vec3 d=texture2D(uTex,uv+vec2(-1.0, 0.0)*ipx).rgb;\n"
+    "  vec3 h=texture2D(uTex,uv+vec2( 2.0, 0.0)*ipx).rgb;\n"
+    "  vec3 i=texture2D(uTex,uv+vec2(-1.0, 1.0)*ipx).rgb;\n"
+    "  vec3 l=texture2D(uTex,uv+vec2( 2.0, 1.0)*ipx).rgb;\n"
+    "  vec3 m=texture2D(uTex,uv+vec2( 0.0, 2.0)*ipx).rgb;\n"
+    "  vec3 n=texture2D(uTex,uv+vec2( 1.0, 2.0)*ipx).rgb;\n"
+    "  vec3 bilin = mix(mix(e,g,f.x), mix(j,k,f.x), f.y);\n"
+    "  vec3 mn = min(min(min(e,g),min(j,k)), min(min(d,h),min(i,l)));\n"
+    "  vec3 mx = max(max(max(e,g),max(j,k)), max(max(d,h),max(i,l)));\n"
+    "  vec3 ring = (b+c+d+h+i+l+m+n) * 0.125;\n"
+    "  float edge = clamp(luma(mx)-luma(mn), 0.0, 1.0);\n"
+    "  vec3 col = bilin + (bilin - ring) * (0.5*edge);\n"  // edge-adaptive sharpen
+    "  gl_FragColor = vec4(clamp(col, mn, mx), 1.0);\n"     // anti-ringing clamp
+    "}\n";
+
+// RCAS pass: contrast-adaptive sharpening with a local min/max clamp (FSR 1 style).
+static const char *fsr_rcas_fs =
+    "#version 100\n"
+    "precision highp float;\n"
+    "varying vec2 vUV;\n"
+    "uniform sampler2D uTex;\n"
+    "uniform vec2 uInSize;\n"   // = output (full) size for RCAS
+    "void main(){\n"
+    "  vec2 px = 1.0/uInSize;\n"
+    "  vec3 e = texture2D(uTex, vUV).rgb;\n"
+    "  vec3 n = texture2D(uTex, vUV+vec2(0.0,-1.0)*px).rgb;\n"
+    "  vec3 s = texture2D(uTex, vUV+vec2(0.0, 1.0)*px).rgb;\n"
+    "  vec3 w = texture2D(uTex, vUV+vec2(-1.0,0.0)*px).rgb;\n"
+    "  vec3 ee= texture2D(uTex, vUV+vec2( 1.0,0.0)*px).rgb;\n"
+    "  vec3 mn = min(e, min(min(n,s), min(w,ee)));\n"
+    "  vec3 mx = max(e, max(max(n,s), max(w,ee)));\n"
+    "  const float sharp = 0.25;\n"   // 0 = none .. ~0.5 = strong
+    "  vec3 res = e + (e*4.0 - n - s - w - ee) * sharp;\n"
+    "  gl_FragColor = vec4(clamp(res, mn, mx), 1.0);\n"
+    "}\n";
+
+static GLuint fsr_link(const char *vs_src, const char *fs_src)
+{
+    GLuint vs = compile_game_shader(GL_VERTEX_SHADER,   vs_src);
+    GLuint fs = compile_game_shader(GL_FRAGMENT_SHADER, fs_src);
+    GLuint p  = glCreateProgram();
+    glAttachShader(p, vs);
+    glAttachShader(p, fs);
+    glBindAttribLocation(p, 0, "aPos");
+    glBindAttribLocation(p, 1, "aUV");
+    glLinkProgram(p);
+    GLint linked = 0; glGetProgramiv(p, GL_LINK_STATUS, &linked);
+    if (!linked) { char log[512]; glGetProgramInfoLog(p, sizeof(log), NULL, log);
+                   fprintf(stderr, "FSR shader link error: %s\n", log); }
+    glDeleteShader(vs); glDeleteShader(fs);
+    return p;
+}
+
+static void fsr_init_once(void)
+{
+    if (fsr_quad_vbo) return;
+    fsr_easu_prog = fsr_link(fsr_vs, fsr_easu_fs);
+    fsr_easu_uTex     = glGetUniformLocation(fsr_easu_prog, "uTex");
+    fsr_easu_uInSize  = glGetUniformLocation(fsr_easu_prog, "uInSize");
+    fsr_easu_uOutSize = glGetUniformLocation(fsr_easu_prog, "uOutSize");
+    fsr_rcas_prog = fsr_link(fsr_vs, fsr_rcas_fs);
+    fsr_rcas_uTex    = glGetUniformLocation(fsr_rcas_prog, "uTex");
+    fsr_rcas_uInSize = glGetUniformLocation(fsr_rcas_prog, "uInSize");
+
+    // Fullscreen triangle: clip-space xy + uv.
+    const float quad[] = {
+        -1.0f, -1.0f,  0.0f, 0.0f,
+         3.0f, -1.0f,  2.0f, 0.0f,
+        -1.0f,  3.0f,  0.0f, 2.0f,
+    };
+    glGenBuffers(1, &fsr_quad_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, fsr_quad_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+static GLuint fsr_make_color(int w, int h)
+{
+    GLuint t; glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return t;
+}
+
+static void fsr_destroy_targets(void)
+{
+    if (fsr_render_fbo)   { glDeleteFramebuffers(1, &fsr_render_fbo);   fsr_render_fbo = 0; }
+    if (fsr_render_color) { glDeleteTextures(1, &fsr_render_color);     fsr_render_color = 0; }
+    if (fsr_render_depth) { glDeleteRenderbuffers(1, &fsr_render_depth); fsr_render_depth = 0; }
+    if (fsr_easu_fbo)     { glDeleteFramebuffers(1, &fsr_easu_fbo);     fsr_easu_fbo = 0; }
+    if (fsr_easu_color)   { glDeleteTextures(1, &fsr_easu_color);       fsr_easu_color = 0; }
+}
+
+static int fsr_build_targets(void)
+{
+    float scale = FSR_RenderScale();
+    fsr_render_w = (int)(fsr_out_w / scale + 0.5f);
+    fsr_render_h = (int)(fsr_out_h / scale + 0.5f);
+    if (fsr_render_w < 1 || fsr_render_h < 1) return 0;
+
+    fsr_destroy_targets();
+
+    // Low-res render target: colour texture + depth/stencil renderbuffer.
+    fsr_render_color = fsr_make_color(fsr_render_w, fsr_render_h);
+    glGenRenderbuffers(1, &fsr_render_depth);
+    glBindRenderbuffer(GL_RENDERBUFFER, fsr_render_depth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, fsr_render_w, fsr_render_h);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    glGenFramebuffers(1, &fsr_render_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fsr_render_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fsr_render_color, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, fsr_render_depth);
+
+    // EASU output target: full window-res colour.
+    fsr_easu_color = fsr_make_color(fsr_out_w, fsr_out_h);
+    glGenFramebuffers(1, &fsr_easu_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fsr_easu_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fsr_easu_color, 0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    fsr_built_w = fsr_out_w; fsr_built_h = fsr_out_h; fsr_built_q = FSRQualityIndex;
+    SDL_Log("FSR: targets %dx%d -> %dx%d (q=%d, scale=%.2f)",
+            fsr_render_w, fsr_render_h, fsr_out_w, fsr_out_h, FSRQualityIndex, scale);
+    return 1;
+}
+
+static void fsr_draw_fullscreen(void)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, fsr_quad_vbo);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(2*sizeof(float)));
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void FSR_SetOutputSize(int w, int h)
+{
+    fsr_out_w = w; fsr_out_h = h;
+}
+
+void FSR_BeginFrame(void)
+{
+    fsr_frame_active = 0;
+    if (FSRQualityIndex <= 0 || fsr_out_w <= 0 || fsr_out_h <= 0) return;
+
+    fsr_init_once();
+    if (fsr_render_fbo == 0 || fsr_built_w != fsr_out_w || fsr_built_h != fsr_out_h
+            || fsr_built_q != FSRQualityIndex) {
+        if (!fsr_build_targets()) return;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fsr_render_fbo);
+    glViewport(0, 0, fsr_render_w, fsr_render_h);
+    fsr_frame_active = 1;
+}
+
+void FSR_Resolve(void)
+{
+    if (!fsr_frame_active) return;
+    fsr_frame_active = 0;
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0);
+
+    // Pass 1: EASU  low-res -> full-res (fsr_easu_fbo)
+    glBindFramebuffer(GL_FRAMEBUFFER, fsr_easu_fbo);
+    glViewport(0, 0, fsr_out_w, fsr_out_h);
+    glUseProgram(fsr_easu_prog);
+    glBindTexture(GL_TEXTURE_2D, fsr_render_color);
+    glUniform1i(fsr_easu_uTex, 0);
+    glUniform2f(fsr_easu_uInSize,  (float)fsr_render_w, (float)fsr_render_h);
+    glUniform2f(fsr_easu_uOutSize, (float)fsr_out_w,    (float)fsr_out_h);
+    fsr_draw_fullscreen();
+
+    // Pass 2: RCAS  full-res -> backbuffer
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, fsr_out_w, fsr_out_h);
+    glUseProgram(fsr_rcas_prog);
+    glBindTexture(GL_TEXTURE_2D, fsr_easu_color);
+    glUniform1i(fsr_rcas_uTex, 0);
+    glUniform2f(fsr_rcas_uInSize, (float)fsr_out_w, (float)fsr_out_h);
+    fsr_draw_fullscreen();
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glUseProgram(0);
+}
+
+void FSR_AbortFrame(void)
+{
+    if (!fsr_frame_active) return;
+    fsr_frame_active = 0;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, fsr_out_w, fsr_out_h);
+}
+#endif // !__ANDROID__
 
 int LightIntensityAtPoint(VECTORCH *pointPtr);
 
@@ -702,6 +965,10 @@ void ThisFramesRenderingHasBegun()
 	RestoreGameShaderState();
 #ifdef __ANDROID__
 	VR_Set2DViewport();
+#else
+	/* Desktop: when FSR is enabled, redirect the in-game frame into the low-res
+	   render target. No-op (native rendering) when FSR is off. */
+	FSR_BeginFrame();
 #endif
 }
 

@@ -24,6 +24,16 @@ void InitGameShader(void);
 void RestoreGameShaderState(void);
 void OGL_RegenerateMipmaps(void);
 
+#ifndef __ANDROID__
+/* Desktop FSR 1 spatial upscaling. The in-game frame is rendered into a low-res
+   FBO, then EASU-upscaled + RCAS-sharpened to the window at present time.
+   Gated by FSRQualityIndex (0 = off → these are no-ops, native rendering). */
+void FSR_SetOutputSize(int w, int h); /* window size; call on (re)size */
+void FSR_BeginFrame(void);            /* bind low-res FBO before the scene renders */
+void FSR_Resolve(void);               /* upscale low-res FBO to the backbuffer     */
+void FSR_AbortFrame(void);            /* discard a pending FBO (e.g. menu present)  */
+#endif
+
 #ifdef __ANDROID__
 /* Clip-space HUD controls — set during MaintainHUD() in VR, reset afterwards.
    vr_hud_clip_scale: < 1.0 shrinks toward centre (1.0 = no scale).

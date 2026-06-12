@@ -367,6 +367,39 @@ bool xr_session_running = false;
 /* VR display refresh rate setting: 0=72, 1=80, 2=90, 3=120 Hz.
  * Written by the AV options menu; applied at frame begin via xrRequestDisplayRefreshRateFB. */
 int VRRefreshRateIndex = 0;
+
+/* MSAA anti-aliasing setting: 0=off, 1=2x, 2=4x. Default 2x.
+ * Written by the AV options menu; read by the VR eye-FBO renderer (avpview.c). */
+int MSAASampleIndex = 1;
+
+/* Map the MSAA menu index to a GL sample count (0/2/4). */
+int MSAA_SampleCount(void)
+{
+    switch (MSAASampleIndex) {
+        case 1:  return 2;
+        case 2:  return 4;
+        default: return 0;
+    }
+}
+
+/* Desktop FSR 1 (spatial) upscaling setting: 0=off, 1=Ultra Quality, 2=Quality,
+ * 3=Balanced, 4=Performance. Written by the AV options menu; read by the desktop
+ * renderer (opengl.c). Quest is unaffected. */
+int FSRQualityIndex = 0;
+
+/* Render-resolution scale factor for the current FSR quality (1.0 = native/off).
+ * The game renders at window_size / scale, then FSR upscales to window size. */
+float FSR_RenderScale(void)
+{
+    switch (FSRQualityIndex) {
+        case 1:  return 1.3f;  /* Ultra Quality */
+        case 2:  return 1.5f;  /* Quality       */
+        case 3:  return 1.7f;  /* Balanced      */
+        case 4:  return 2.0f;  /* Performance   */
+        default: return 1.0f;  /* Off           */
+    }
+}
+
 static bool xr_should_quit = false;
 static bool xr_2d_mode = true;  /* true = show flat game on quad, false = 3D game manages XR */
 static XrTime xr_predicted_display_time = 0;
@@ -2627,9 +2660,11 @@ static int SetOGLVideoMode(int Width, int Height)
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         
-        // These should be configurable video options.
-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
+        /* No MSAA on desktop — desktop anti-aliasing/upscaling is intended to be
+           handled by a post-process upscaler (FSR/DLSS/XeSS) instead. The MSAA
+           menu option applies to the Quest/VR path only. */
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
 #endif
         window = SDL_CreateWindow("Aliens Versus Predator: VR",
                                   WindowWidth,
@@ -2735,6 +2770,7 @@ static int SetOGLVideoMode(int Width, int Height)
     SetWindowSize(Width, Height, 640, 480);
 #else
     SetWindowSize(Width, Height, Width, Height);
+    FSR_SetOutputSize(Width, Height); /* desktop FSR output (window) resolution */
 #endif
 
     int NewWidth, NewHeight;
@@ -3195,6 +3231,9 @@ void CheckForWindowsMessages()
                 if (pglViewport != NULL) {
                     pglViewport(0, 0, WindowWidth, WindowHeight);
                 }
+#ifndef __ANDROID__
+                FSR_SetOutputSize(WindowWidth, WindowHeight); /* rebuild FSR targets at new size */
+#endif
                 break;
             case SDL_EVENT_QUIT:
                 AvP.MainLoopRunning = 0; /* TODO */
@@ -3386,6 +3425,13 @@ void InGameFlipBuffers(void)
         /* XR session not running (e.g. 2D panel mode) — fall through to SDL swap */
     }
 
+#ifndef __ANDROID__
+    /* Desktop: if this in-game frame was rendered into the FSR low-res target,
+       EASU-upscale + RCAS-sharpen it onto the backbuffer before presenting.
+       No-op when FSR is off. */
+    FSR_Resolve();
+#endif
+
     SDL_GL_SwapWindow(window);
 }
 
@@ -3393,6 +3439,13 @@ void FlipBuffers()
 {
     // Always let the game render the menu into surface->pixels first
     // (the existing GL upload below keeps the flat window working too)
+
+#ifndef __ANDROID__
+    /* Safety net: this is the 2D/menu present path. If an FSR in-game frame was
+       begun (low-res FBO bound) but we ended up here, drop it back to the
+       backbuffer so the menu draws to the window, not the FBO. */
+    FSR_AbortFrame();
+#endif
 
     if (xr_enabled) {
         handle_xr_events();
@@ -3602,7 +3655,7 @@ int main(int argc, char *argv[])
     
     WindowWidth = VideoModeList[CurrentVideoMode].w;
     WindowHeight = VideoModeList[CurrentVideoMode].h;
-    
+
     SetOGLVideoMode(0, 0);
     SDL_Log("BOOT: SetOGLVideoMode done");
     SetSoftVideoMode(640, 480, 16);

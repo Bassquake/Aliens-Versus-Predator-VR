@@ -128,6 +128,16 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_VR_REFRESH_120: return "120 Hz";
 			case TEXTSTRING_FPS_OFF: return "Off (Default)";
 			case TEXTSTRING_FPS_ON:  return "On";
+			case TEXTSTRING_AVOPTIONS_MSAA:     return "Anti-Aliasing (MSAA)";
+			case TEXTSTRING_AVOPTIONS_MSAA_OFF: return "Off";
+			case TEXTSTRING_AVOPTIONS_MSAA_2X:  return "2x";
+			case TEXTSTRING_AVOPTIONS_MSAA_4X:  return "4x";
+			case TEXTSTRING_AVOPTIONS_FSR:              return "FSR Upscaling";
+			case TEXTSTRING_AVOPTIONS_FSR_OFF:          return "Off";
+			case TEXTSTRING_AVOPTIONS_FSR_ULTRAQUALITY: return "Ultra Quality";
+			case TEXTSTRING_AVOPTIONS_FSR_QUALITY:      return "Quality";
+			case TEXTSTRING_AVOPTIONS_FSR_BALANCED:     return "Balanced";
+			case TEXTSTRING_AVOPTIONS_FSR_PERFORMANCE:  return "Performance";
 			default: break;
 		}
 	}

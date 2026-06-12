@@ -85,8 +85,10 @@ typedef struct
 	unsigned char ShowCrosshairDisabled : 1;
 	unsigned char ShowFrameRateDisabled : 1;
 	unsigned char VRRefreshRateIndex : 2;
-	unsigned char SpareBits : 3; //not used
-	char Padding[74];
+	unsigned char MSAASampleIndex : 2;
+	unsigned char SpareBits : 1; //not used
+	unsigned char FSRQualityIndex; //desktop FSR upscaling: 0=off..4=performance
+	char Padding[73];
 
 	int CDPlayerVolume;
 

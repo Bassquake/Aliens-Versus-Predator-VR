@@ -78,6 +78,48 @@ static GLuint eye_depth_rb[2] = {0, 0};
 static int    eye_fbo_w       = 0;
 static int    eye_fbo_h       = 0;
 
+/* MSAA (anti-aliasing) for the per-eye 3D render. Uses
+ * GL_EXT_multisampled_render_to_texture so the multisampled colour resolves
+ * implicitly into the single-sample XR swapchain texture — tile-friendly on the
+ * Quest GPU (no separate resolve blit). Falls back to no-MSAA when the extension
+ * is absent or the setting is Off, in which case the render path is byte-for-byte
+ * identical to before. */
+extern int MSAASampleIndex;        /* menu setting: 0=off,1=2x,2=4x (main.c)  */
+extern int MSAA_SampleCount(void); /* setting -> 0/2/4 sample count (main.c)  */
+
+typedef void (*PFN_glRenderbufferStorageMultisampleEXT)(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
+typedef void (*PFN_glFramebufferTexture2DMultisampleEXT)(GLenum, GLenum, GLenum, GLuint, GLint, GLsizei);
+static PFN_glRenderbufferStorageMultisampleEXT  p_glRenderbufferStorageMultisampleEXT  = NULL;
+static PFN_glFramebufferTexture2DMultisampleEXT p_glFramebufferTexture2DMultisampleEXT = NULL;
+static int msaa_ext_checked   = 0;
+static int msaa_ext_available = 0;
+static int eye_fbo_samples    = 0;   /* sample count the eye FBOs were last built with */
+
+static void VR_InitMSAAProcs(void)
+{
+    if (msaa_ext_checked) return;
+    msaa_ext_checked = 1;
+
+    const char *exts = (const char *)glGetString(GL_EXTENSIONS);
+    if (exts && SDL_strstr(exts, "GL_EXT_multisampled_render_to_texture")) {
+        p_glRenderbufferStorageMultisampleEXT =
+            (PFN_glRenderbufferStorageMultisampleEXT)SDL_GL_GetProcAddress("glRenderbufferStorageMultisampleEXT");
+        p_glFramebufferTexture2DMultisampleEXT =
+            (PFN_glFramebufferTexture2DMultisampleEXT)SDL_GL_GetProcAddress("glFramebufferTexture2DMultisampleEXT");
+        msaa_ext_available = (p_glRenderbufferStorageMultisampleEXT &&
+                              p_glFramebufferTexture2DMultisampleEXT) ? 1 : 0;
+    }
+    SDL_Log("VR: MSAA (EXT_multisampled_render_to_texture) %s",
+            msaa_ext_available ? "available" : "unavailable");
+}
+
+/* Effective sample count given the menu setting and extension support (0 = off). */
+static int VR_EffectiveMSAASamples(void)
+{
+    VR_InitMSAAProcs();
+    return msaa_ext_available ? MSAA_SampleCount() : 0;
+}
+
 /* Set to 1 during AvpShowViewsVR so kshape.c can skip the 4/3 Y-axis correction */
 int vr_is_rendering = 0;
 /* Set to 1 before a new game starts; AvpShowViewsVR resets the room-scale anchor
@@ -104,14 +146,21 @@ void VR_InitEyeFBOs(int w, int h)
     eye_fbo_w = w;
     eye_fbo_h = h;
 
+    int samples = VR_EffectiveMSAASamples();
+    eye_fbo_samples = samples;
+
     for (int i = 0; i < 2; i++) {
         if (eye_fbo[i])      { glDeleteFramebuffers(1,  &eye_fbo[i]);      eye_fbo[i]      = 0; }
         if (eye_depth_rb[i]) { glDeleteRenderbuffers(1, &eye_depth_rb[i]); eye_depth_rb[i] = 0; }
 
-        /* Depth+stencil renderbuffer */
+        /* Depth+stencil renderbuffer (multisampled to match the colour attachment
+         * when MSAA is active — both must share the same sample count). */
         glGenRenderbuffers(1, &eye_depth_rb[i]);
         glBindRenderbuffer(GL_RENDERBUFFER, eye_depth_rb[i]);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
+        if (samples > 0)
+            p_glRenderbufferStorageMultisampleEXT(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, w, h);
+        else
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
 
         /* FBO — color attachment is attached per-frame from the XR swapchain */
         glGenFramebuffers(1, &eye_fbo[i]);
@@ -121,7 +170,16 @@ void VR_InitEyeFBOs(int w, int h)
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    SDL_Log("VR: Eye FBOs %dx%d ready (GLES swapchain direct rendering)", w, h);
+    SDL_Log("VR: Eye FBOs %dx%d ready (MSAA %dx)", w, h, samples);
+}
+
+/* Rebuild the eye FBOs if the MSAA menu setting changed since they were created.
+ * Called once per frame before the per-eye render loop. Cheap no-op when unchanged. */
+static void VR_UpdateEyeFBOMSAA(void)
+{
+    if (eye_fbo_w == 0) return; /* not initialised yet */
+    if (VR_EffectiveMSAASamples() != eye_fbo_samples)
+        VR_InitEyeFBOs(eye_fbo_w, eye_fbo_h);
 }
 
 /* Used by MOTIONBLUR path only (always-write for BSP painter's order). */
@@ -1367,6 +1425,8 @@ void AvpShowViewsVR(void)
        63.4° which comfortably covers any current VR headset FOV. */
     enum FrustrumType saved_frustrum = GetFrustrumType();
     SetFrustrumType(FRUSTRUM_TYPE_WIDE);
+    /* Apply any change to the MSAA setting before rendering this frame's eyes. */
+    VR_UpdateEyeFBOMSAA();
     for (int eye = 0; eye < (int)view_count; eye++) {
 
         /* X/Z: room-scale delta relative to where we started (ref_head_x/z).
@@ -1421,8 +1481,14 @@ void AvpShowViewsVR(void)
         Uint32 sc_img_idx = VR_AcquireAndWaitSwapchainImage(eye);
         GLuint sc_tex     = VR_GetSwapchainImageTexture(eye, sc_img_idx);
         glBindFramebuffer(GL_FRAMEBUFFER, eye_fbo[eye]);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D, sc_tex, 0);
+        if (eye_fbo_samples > 0)
+            /* Multisampled render straight into the swapchain texture; the tiler
+             * resolves implicitly when the FBO is unbound at end of the eye pass. */
+            p_glFramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                                   GL_TEXTURE_2D, sc_tex, 0, eye_fbo_samples);
+        else
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D, sc_tex, 0);
         glViewport(0, 0, eye_fbo_w, eye_fbo_h);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1579,10 +1645,18 @@ void AvpShowViewsVR(void)
          * overlay. Render the weapon here instead, once per eye, positioned at the
          * physical right controller grip relative to this eye's tracking position.
          * Rendered after particles so the weapon naturally occludes any light halos. */
-        if (AvP.PlayerType == I_Marine || AvP.PlayerType == I_Predator) {
+        if (AvP.PlayerType == I_Marine || AvP.PlayerType == I_Predator || AvP.PlayerType == I_Alien) {
             extern DISPLAYBLOCK PlayersWeapon;
             extern void RenderThisDisplayblock(DISPLAYBLOCK *dbPtr);
             extern DISPLAYBLOCK PlayersWeaponMuzzleFlash;
+
+            /* The Alien's "weapon" is its claws (WEAPON_ALIEN_CLAW): a first-person
+             * arm/claw HModel whose "Camera Root" bone is the eye (see
+             * GetHierarchicalWeapon in weapons.c), so its visible claws are offset
+             * from the model root by PlayersWeaponCameraOffset. We controller-attach
+             * it like the Marine/Predator guns (see the is_alien branch below), but
+             * the gun-specific barrel pitch / muzzle flash / idle-freeze don't apply. */
+            const int is_alien = (AvP.PlayerType == I_Alien);
 
             /* Fetch weapon state once; used for recoil shake and muzzle flash. */
             PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
@@ -1590,7 +1664,57 @@ void AvpShowViewsVR(void)
             TEMPLATE_WEAPON_DATA *tw = &TemplateWeapon[wpn->WeaponIDNumber];
 
             if (PlayersWeapon.ObShape || PlayersWeapon.HModelControlBlock) {
-                if (vr_right_hand_valid) {
+                if (is_alien) {
+                    /* The claw rig is a first-person HModel: its visible claws are
+                     * offset from the model root by PlayersWeaponCameraOffset (the
+                     * "Camera Root" bone == the eye in the original first-person view).
+                     * To controller-attach it like the Marine/Predator guns, we anchor
+                     * the rig to the right-controller frame instead of the camera frame,
+                     * reusing that same offset so the claws sit relative to the hand the
+                     * way they sat relative to the eye.
+                     *
+                     * Derivation mirrors the working head-locked placement (the else
+                     * branch), which sets root_world = VDB_World + RotateVector(off, ObMat)
+                     * with ObMat = transpose(VDB_Mat).  Swapping the camera frame for the
+                     * controller frame gives ObMat = vr_right_hand_mat and
+                     * root_world = vr_right_hand_world + RotateVector(off, vr_right_hand_mat).
+                     * ObView is then the world->view transform of root_world for this eye. */
+                    extern VECTORCH PlayersWeaponCameraOffset;
+                    VECTORCH off = PlayersWeaponCameraOffset;
+                    off.vx += tw->RestPosition.vx + wpn->PositionOffset.vx;
+                    off.vy += tw->RestPosition.vy + wpn->PositionOffset.vy;
+                    off.vz += tw->RestPosition.vz + wpn->PositionOffset.vz;
+
+                    if (vr_right_hand_valid) {
+                        /* Controller-attached: rig root = hand + off rotated into the
+                         * controller frame; orientation follows the controller. */
+                        VECTORCH rootw = off;
+                        RotateVector(&rootw, &vr_right_hand_mat);
+                        rootw.vx += vr_right_hand_world.vx;
+                        rootw.vy += vr_right_hand_world.vy;
+                        rootw.vz += vr_right_hand_world.vz;
+                        PlayersWeapon.ObWorld = rootw;
+                        VECTORCH ov;
+                        ov.vx = rootw.vx - Global_VDB_Ptr->VDB_World.vx;
+                        ov.vy = rootw.vy - Global_VDB_Ptr->VDB_World.vy;
+                        ov.vz = rootw.vz - Global_VDB_Ptr->VDB_World.vz;
+                        RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
+                        PlayersWeapon.ObView = ov;
+                        PlayersWeapon.ObMat  = vr_right_hand_mat;
+                    } else {
+                        /* Head-locked fallback when the controller pose is unavailable,
+                         * so the claws never vanish. Mirrors PositionPlayersWeapon()'s
+                         * melee branch, per eye. */
+                        PlayersWeapon.ObView = off;
+                        PlayersWeapon.ObMat  = Global_VDB_Ptr->VDB_Mat;
+                        TransposeMatrixCH(&PlayersWeapon.ObMat);
+                        VECTORCH wo = off;
+                        RotateVector(&wo, &PlayersWeapon.ObMat);
+                        PlayersWeapon.ObWorld.vx = Global_VDB_Ptr->VDB_World.vx + wo.vx;
+                        PlayersWeapon.ObWorld.vy = Global_VDB_Ptr->VDB_World.vy + wo.vy;
+                        PlayersWeapon.ObWorld.vz = Global_VDB_Ptr->VDB_World.vz + wo.vz;
+                    }
+                } else if (vr_right_hand_valid) {
                     /* Pull the weapon anchor back along the aim direction so the model
                      * sits over the physical controller rather than ahead of it.
                      * mat21/22/23 of vr_right_hand_mat is the barrel/aim direction in world space.
@@ -1650,7 +1774,7 @@ void AvpShowViewsVR(void)
                  *   - Marine/Predator sub-sequence enums share integer values so
                  *     the idle check must be gated on AvP.PlayerType. */
                 int saved_ti = 0;
-                if (PlayersWeapon.HModelControlBlock) {
+                if (!is_alien && PlayersWeapon.HModelControlBlock) {
                     HMODELCONTROLLER *hmc = PlayersWeapon.HModelControlBlock;
                     saved_ti = hmc->timer_increment;
                     int is_idle = 0;
@@ -1668,7 +1792,7 @@ void AvpShowViewsVR(void)
                         hmc->timer_increment = 0;
                 }
                 RenderThisDisplayblock(&PlayersWeapon);
-                if (PlayersWeapon.HModelControlBlock)
+                if (!is_alien && PlayersWeapon.HModelControlBlock)
                     PlayersWeapon.HModelControlBlock->timer_increment = saved_ti;
 
                 /* Muzzle flash: PositionPlayersWeaponMuzzleFlash reads the barrel

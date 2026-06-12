@@ -95,6 +95,8 @@ int CloudTable[128][128];
 extern char MP_Config_Name[];
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
+extern int MSAASampleIndex;
+extern int FSRQualityIndex;
 
 void HandlePostGameFMVs(void);
 void HandlePreGameFMVs(void);
@@ -306,6 +308,8 @@ int AvP_MainMenus(void)
 		{
 			int savedShowFrameRate = ShowFrameRate;
 			int savedVRRefreshRateIndex = VRRefreshRateIndex;
+			int savedMSAASampleIndex = MSAASampleIndex;
+			int savedFSRQualityIndex = FSRQualityIndex;
 			if (NumberOfUserProfiles() > 0)
 			{
 				GetFirstUserProfile(); /* skip "New Profile" placeholder at index 0 */
@@ -315,6 +319,8 @@ int AvP_MainMenus(void)
 					GetSettingsFromUserProfile();
 					savedShowFrameRate = ShowFrameRate;
 					savedVRRefreshRateIndex = VRRefreshRateIndex;
+					savedMSAASampleIndex = MSAASampleIndex;
+					savedFSRQualityIndex = FSRQualityIndex;
 				}
 			}
 
@@ -329,6 +335,8 @@ int AvP_MainMenus(void)
 
 			ShowFrameRate = savedShowFrameRate;
 			VRRefreshRateIndex = savedVRRefreshRateIndex;
+			MSAASampleIndex = savedMSAASampleIndex;
+			FSRQualityIndex = savedFSRQualityIndex;
 		}
 		AvPMenus.MenusState = MENUSSTATE_MAINMENUS;
 	}

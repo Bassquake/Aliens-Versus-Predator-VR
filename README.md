@@ -4,6 +4,9 @@ Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. Confimed to w
 
 This is early stage as lots of bugs and fixes are likely needed and I've only been focusing on the Marine level at the moment.
 
+> [!WARNING]
+> Turn off Battery Saver on the Quest otherwise it will crash out! when load!
+
 ![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-menu.jpg)
 
 ![Screenshot of Aliens Versus Predator: VR in-game playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-marine.jpg)

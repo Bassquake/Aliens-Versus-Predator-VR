@@ -74,11 +74,11 @@ I will add ability to customise all these.
 - Apparently works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack!
 
 ## To do
-- Fix Battery Saver crash.
+- ~~Fix Battery Saver crash.~~ Fixed.
 - Fix any visual issues that come up.
 - Extra options for vr specific things like adding blinders or change snap/smooth turning etc.
-- ~~Add rumble effects to controllers.~~
-- ~~Add cd music.~~
+- ~~Add rumble effects to controllers.~~ Added.
+- ~~Add cd music.~~ Added.
 - Add ability to customise controller key mapping.
 - Add shadow effects.
 - ~~Maybe add anti-aliasing options but not sure if really needed.~~ Added MSAA options in Audio/Video Options screen.

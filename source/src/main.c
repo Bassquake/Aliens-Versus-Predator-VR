@@ -350,6 +350,7 @@ int xr_left_thumbstick_click_pressed   = 0; /* 1 while left stick is clicked */
 int xr_b_button_pressed                     = 0; /* 1 while right B button is held */
 int xr_right_thumbstick_click_pressed        = 0; /* 1 on right stick click press edge */
 int xr_y_button_gameplay_pressed             = 0; /* 1 while Y held in gameplay (vision toggle) */
+int xr_x_button_gameplay_pressed             = 0; /* 1 while X held in gameplay (crouch) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
 static float xr_left_stick_x = 0.0f;
 static float xr_left_stick_y = 0.0f;
@@ -413,6 +414,11 @@ typedef struct {
 } VRSwapchain;
 
 VRSwapchain *vr_swapchains = NULL;
+/* Dedicated swapchain for the 2D menu quad layer. Kept separate from the per-eye
+ * swapchains because those are rendered with MSAA (glFramebufferTexture2DMultisample)
+ * by the 3D path; reusing an MSAA-touched image for the flat menu made the Quest
+ * compositor null-deref under Battery Saver when opening the in-game pause menu. */
+static VRSwapchain vr_menu_swapchain = {0};
 XrView *xr_views = NULL;
 Uint32 view_count = 0;
 
@@ -466,6 +472,15 @@ static void quit(int rc)
         }
         SDL_free(vr_swapchains);
         vr_swapchains = NULL;
+    }
+
+    /* Dedicated 2D-menu swapchain */
+    if (vr_menu_swapchain.swapchain) {
+        SDL_free(vr_menu_swapchain.images);
+        if (pfn_xrDestroySwapchain) pfn_xrDestroySwapchain(vr_menu_swapchain.swapchain);
+        vr_menu_swapchain.swapchain   = XR_NULL_HANDLE;
+        vr_menu_swapchain.images      = NULL;
+        vr_menu_swapchain.image_count = 0;
     }
 
     if (xr_views) { SDL_free(xr_views); xr_views = NULL; }
@@ -1116,6 +1131,40 @@ static bool create_swapchains(void)
     }
     SDL_free(vcfgs);
 
+    /* Dedicated 4:3 swapchain for the flat 2D menu quad — never rendered with MSAA,
+     * so the compositor doesn't choke on a stale MSAA image under Battery Saver. */
+    if (vr_menu_swapchain.swapchain == XR_NULL_HANDLE) {
+        XrSwapchainCreateInfo msci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+        msci.usageFlags  = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+        msci.format      = chosen_fmt;
+        msci.sampleCount = 1;
+        msci.width       = 1024;
+        msci.height      = 768;   /* 4:3, matches the 640x480 menu surface */
+        msci.faceCount   = 1;
+        msci.arraySize   = 1;
+        msci.mipCount    = 1;
+        result = pfn_xrCreateSwapchain(xr_session, &msci, &vr_menu_swapchain.swapchain);
+        if (XR_FAILED(result)) {
+            SDL_Log("XR: menu xrCreateSwapchain failed: %d", (int)result);
+            return false;
+        }
+        vr_menu_swapchain.size.width  = (int32_t)msci.width;
+        vr_menu_swapchain.size.height = (int32_t)msci.height;
+        pfn_xrEnumerateSwapchainImages(vr_menu_swapchain.swapchain, 0,
+                                       &vr_menu_swapchain.image_count, NULL);
+        vr_menu_swapchain.images = SDL_calloc(vr_menu_swapchain.image_count,
+                                              sizeof(XrSwapchainImageOpenGLESKHR));
+        for (Uint32 j = 0; j < vr_menu_swapchain.image_count; j++)
+            vr_menu_swapchain.images[j].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+        pfn_xrEnumerateSwapchainImages(vr_menu_swapchain.swapchain,
+                                       vr_menu_swapchain.image_count,
+                                       &vr_menu_swapchain.image_count,
+                                       (XrSwapchainImageBaseHeader*)vr_menu_swapchain.images);
+        SDL_Log("XR: menu swapchain: %dx%d, %u images (tex[0]=%u)",
+                msci.width, msci.height, vr_menu_swapchain.image_count,
+                vr_menu_swapchain.image_count > 0 ? vr_menu_swapchain.images[0].image : 0);
+    }
+
     /* Init GLES quad pipeline + resources (once) */
     if (quad_program == 0) {
         if (!create_quad_gles_program())    return false;
@@ -1210,15 +1259,24 @@ static void upload_menu_gles_texture(void)
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-/* Per-eye swapchain helpers — called by avpview.c */
-Uint32 VR_AcquireAndWaitSwapchainImage(int eye)
+/* Acquire+wait on a specific swapchain. Returns image index or UINT32_MAX.
+ * On UINT32_MAX the caller must NOT bind the image (it would attach an invalid
+ * GL texture and crash the driver — seen on the first menu frames under Battery
+ * Saver, whose lowered clocks change frame pacing so the image isn't ready). */
+static Uint32 vr_sc_acquire_wait(VRSwapchain *sc)
 {
     Uint32 idx = 0;
     XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
-    pfn_xrAcquireSwapchainImage(vr_swapchains[eye].swapchain, &ai, &idx);
+    if (XR_FAILED(pfn_xrAcquireSwapchainImage(sc->swapchain, &ai, &idx)))
+        return UINT32_MAX;
     XrSwapchainImageWaitInfo wi = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
     wi.timeout = XR_INFINITE_DURATION;
-    pfn_xrWaitSwapchainImage(vr_swapchains[eye].swapchain, &wi);
+    if (XR_FAILED(pfn_xrWaitSwapchainImage(sc->swapchain, &wi))) {
+        /* Acquired but not usable — release it so the count stays balanced. */
+        XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+        pfn_xrReleaseSwapchainImage(sc->swapchain, &ri);
+        return UINT32_MAX;
+    }
     /* Disable GLES sRGB write conversion so our already-gamma-encoded values
      * are stored unchanged in the sRGB swapchain texture. Without this, GLES
      * would treat our values as linear and apply an extra gamma step → too bright. */
@@ -1227,15 +1285,24 @@ Uint32 VR_AcquireAndWaitSwapchainImage(int eye)
     return idx;
 }
 
-void VR_ReleaseSwapchainImage(int eye)
+static void vr_sc_release(VRSwapchain *sc)
 {
     /* Restore sRGB write conversion before releasing */
     if (vr_srgb_swapchain && has_srgb_write_control)
         glEnable(GL_FRAMEBUFFER_SRGB_EXT);
-    glFlush(); /* ensure GLES commands reach GPU before compositor reads */
+    /* No explicit glFlush here: the OpenXR runtime fences the swapchain image on
+     * xrReleaseSwapchainImage/xrEndFrame, so a manual flush is redundant. Worse,
+     * on Quest under Battery Saver the lowered GPU clock/power state made this
+     * mid-frame glFlush null-deref inside the Adreno KGSL submit path (SIGSEGV at
+     * +0x30 in libGLESv2_adreno), crashing the very first menu present. Letting
+     * the runtime submit at its own sync point avoids that driver path. */
     XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-    pfn_xrReleaseSwapchainImage(vr_swapchains[eye].swapchain, &ri);
+    pfn_xrReleaseSwapchainImage(sc->swapchain, &ri);
 }
+
+/* Per-eye swapchain helpers — called by avpview.c (3D path) */
+Uint32 VR_AcquireAndWaitSwapchainImage(int eye) { return vr_sc_acquire_wait(&vr_swapchains[eye]); }
+void   VR_ReleaseSwapchainImage(int eye)        { vr_sc_release(&vr_swapchains[eye]); }
 
 GLuint VR_GetSwapchainImageTexture(int eye, Uint32 idx)
 {
@@ -1400,13 +1467,15 @@ static void render_frame(void)
 
     XrCompositionLayerProjectionView *proj_views = NULL;
     XrCompositionLayerProjection layer = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
+    XrCompositionLayerQuad quad_layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
     Uint32 layer_count = 0;
     const XrCompositionLayerBaseHeader *layers[1] = {0};
 
     if (frame_state.shouldRender && view_count > 0 && vr_swapchains != NULL) {
 
         /* Re-capture head direction each time the menu is opened. */
-        static float menu_quad_cx = 0.0f, menu_quad_cz = 0.0f, menu_quad_yaw = 0.0f;
+        static float menu_quad_cx = 0.0f, menu_quad_cy = 1.6f, menu_quad_cz = 0.0f,
+                     menu_quad_yaw = 0.0f;
         static int   menu_quad_ready = 0;
         if (!xr_2d_mode) menu_quad_ready = 0;
 
@@ -1441,7 +1510,11 @@ static void render_frame(void)
                 float hz = (vc_out >= 2)
                     ? (xr_views[0].pose.position.z + xr_views[1].pose.position.z) * 0.5f
                     : xr_views[0].pose.position.z;
+                float hy = (vc_out >= 2)
+                    ? (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f
+                    : xr_views[0].pose.position.y;
                 menu_quad_cx  = hx;
+                menu_quad_cy  = hy;
                 menu_quad_cz  = hz;
                 /* atan2(fx, -fz): yaw=0 → looking -Z, yaw=π/2 → looking +X */
                 menu_quad_yaw = SDL_atan2f(fx, -fz);
@@ -1452,92 +1525,66 @@ static void render_frame(void)
         proj_views = SDL_calloc(view_count, sizeof(XrCompositionLayerProjectionView));
 
         if (xr_2d_mode) {
-            /* Upload menu pixels to GLES texture once per frame */
+            /* Upload the menu pixels, then render the menu FLAT into the dedicated
+             * (non-MSAA) menu swapchain. The quad layer below presents that image.
+             * Using a separate swapchain — never touched by the 3D MSAA eye pass —
+             * is what fixes the in-game pause crash: reusing an MSAA-rendered eye
+             * image for the flat menu made the Quest compositor null-deref under
+             * Battery Saver. */
             upload_menu_gles_texture();
 
-            /* Render menu quad into each eye's swapchain image via GLES FBO */
-            for (Uint32 i = 0; i < view_count; i++) {
-                VRSwapchain *sc = &vr_swapchains[i];
-                Uint32 idx = VR_AcquireAndWaitSwapchainImage((int)i);
-                GLuint sc_tex = sc->images[idx].image;
+            VRSwapchain *sc = &vr_menu_swapchain;
+            Uint32 idx = vr_sc_acquire_wait(sc);
+            if (idx == UINT32_MAX) goto endFrame; /* image not ready — submit nothing */
+            GLuint sc_tex = sc->images[idx].image;
 
-                /* Symmetrise the per-eye FOV up front so the quad is RENDERED
-                 * with the exact same projection that we SUBMIT to the compositor
-                 * in proj_views[i].fov below.  If these differ, the runtime warps
-                 * the layer: harmless on Quest 2 (parallel panels → already near
-                 * symmetric) but very visible on Quest 3 (canted panels → strongly
-                 * asymmetric FOV), where the menu appears far too close. */
-                float tan_hx = (SDL_tanf(SDL_fabsf(xr_views[i].fov.angleLeft))
-                              + SDL_tanf(SDL_fabsf(xr_views[i].fov.angleRight))) * 0.5f;
-                float tan_hy = (SDL_tanf(SDL_fabsf(xr_views[i].fov.angleUp))
-                              + SDL_tanf(SDL_fabsf(xr_views[i].fov.angleDown))) * 0.5f;
-                XrFovf sym_fov = xr_views[i].fov;
-                if (tan_hx > 0.01f && tan_hy > 0.01f) {
-                    sym_fov.angleLeft  = -SDL_atanf(tan_hx);
-                    sym_fov.angleRight =  SDL_atanf(tan_hx);
-                    sym_fov.angleUp    =  SDL_atanf(tan_hy);
-                    sym_fov.angleDown  = -SDL_atanf(tan_hy);
-                }
+            glBindFramebuffer(GL_FRAMEBUFFER, menu_fbo_2d);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D, sc_tex, 0);
 
-                /* Attach swapchain image as FBO color target */
-                glBindFramebuffer(GL_FRAMEBUFFER, menu_fbo_2d);
+            /* Guard an incomplete colour target (NULL DRAW_BUFFER0 → Adreno
+             * null-deref at submit, seen under Battery Saver). */
+            if (sc_tex == 0 ||
+                glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                       GL_TEXTURE_2D, sc_tex, 0);
-
-                glViewport(0, 0, sc->size.width, sc->size.height);
-                glDisable(GL_DEPTH_TEST);
-                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT);
-
-                if (quad_program && quad_vao && menu_gles_tex) {
-                    glUseProgram(quad_program);
-                    glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, menu_gles_tex);
-                    glUniform1i(quad_u_tex, 0);
-
-                    Mat4 view_matrix = Mat4_FromXrPose(xr_views[i].pose);
-                    /* Render with sym_fov (NOT the raw asymmetric fov) so it
-                     * matches the FOV submitted to the compositor below. */
-                    Mat4 proj_matrix = Mat4_Projection(sym_fov, 0.05f, 100.0f);
-                    float eye_y = (view_count >= 2)
-                        ? (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f
-                        : 1.6f;
-                    /* Rotate the model-space -Z offset to align with head forward,
-                     * then translate to the head position.
-                     * Note: Mat4_Multiply(A,B) = B*A, so arg order is reversed. */
-                    Mat4 model = Mat4_Multiply(
-                        Mat4_RotationY(-menu_quad_yaw),
-                        Mat4_Translation(menu_quad_cx, eye_y, menu_quad_cz)
-                    );
-                    Mat4 mv    = Mat4_Multiply(model, view_matrix);
-                    Mat4 mvp   = Mat4_Multiply(mv, proj_matrix);
-                    glUniformMatrix4fv(quad_u_mvp, 1, GL_FALSE, mvp.m);
-
-                    glBindVertexArray(quad_vao);
-                    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
-                    glBindVertexArray(0);
-                    glBindTexture(GL_TEXTURE_2D, 0);
-                    glUseProgram(0);
-                }
-
-                glEnable(GL_DEPTH_TEST);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+                                       GL_TEXTURE_2D, 0, 0);
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-                VR_ReleaseSwapchainImage((int)i);
-
-                /* Projection view for this eye.  sym_fov was computed at the top
-                 * of the loop and used for the quad's projection matrix, so the
-                 * submitted FOV matches what was rendered. */
-                proj_views[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
-                proj_views[i].pose = xr_views[i].pose;
-                proj_views[i].fov  = sym_fov;
-                proj_views[i].subImage.swapchain        = sc->swapchain;
-                proj_views[i].subImage.imageRect.offset.x = 0;
-                proj_views[i].subImage.imageRect.offset.y = 0;
-                proj_views[i].subImage.imageRect.extent  = sc->size;
-                proj_views[i].subImage.imageArrayIndex   = 0;
+                vr_sc_release(sc);
+                goto endFrame;
             }
+
+            glViewport(0, 0, sc->size.width, sc->size.height);
+            glDisable(GL_DEPTH_TEST);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            if (quad_program && quad_vao && menu_gles_tex) {
+                glUseProgram(quad_program);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, menu_gles_tex);
+                glUniform1i(quad_u_tex, 0);
+
+                /* Fill the whole image with the flat menu: map the quad's metre
+                 * coords (±QUAD_HALF_W/H, any z) straight to NDC, keeping the VAO's
+                 * UVs (correct orientation). The quad layer's 4:3 size sets aspect. */
+                Mat4 mvp = {{ 1.0f/QUAD_HALF_W, 0.0f, 0.0f, 0.0f,
+                              0.0f, 1.0f/QUAD_HALF_H, 0.0f, 0.0f,
+                              0.0f, 0.0f, 0.0f, 0.0f,
+                              0.0f, 0.0f, 0.0f, 1.0f }};
+                glUniformMatrix4fv(quad_u_mvp, 1, GL_FALSE, mvp.m);
+
+                glBindVertexArray(quad_vao);
+                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
+                glBindVertexArray(0);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                glUseProgram(0);
+            }
+
+            glEnable(GL_DEPTH_TEST);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            vr_sc_release(sc);
         } else {
             /* 3D game: AvpShowViewsVR() already rendered directly to swapchain.
              * Just set up projection views for xrEndFrame. */
@@ -1565,11 +1612,48 @@ static void render_frame(void)
             }
         }
 
-        layer.space     = xr_local_space;
-        layer.viewCount = view_count;
-        layer.views     = proj_views;
-        layers[0]       = (XrCompositionLayerBaseHeader*)&layer;
-        layer_count     = 1;
+        if (xr_2d_mode) {
+            /* Present the 2D menu as a world-locked QUAD layer rather than a stereo
+             * PROJECTION layer. The Quest compositor null-derefs on the 2nd composite
+             * of our projection layer under Battery Saver (frame 0 submits fine,
+             * frame 1 crashes inside xrEndFrame at GL_DRAW_BUFFER0); the quad-layer
+             * compositor path is unaffected. The dedicated menu swapchain was filled
+             * flat with the menu above; the quad is anchored in local space 2 m ahead of where
+             * the head was facing when the menu opened (menu_quad_*), so — like the
+             * old projection menu — it stays put in the world as you turn your head.
+             *
+             * Placement: position = captured head pos + 2 m along captured forward
+             * (fwd = (sin yaw, 0, -cos yaw)). A quad layer shows its image on the +Z
+             * side of its pose, so orient by a Y rotation of -yaw to point +Z back
+             * at the head: quat = (0, -sin(yaw/2), 0, cos(yaw/2)). */
+            float hy = menu_quad_yaw * 0.5f;
+            VRSwapchain *q = &vr_menu_swapchain;
+            quad_layer.layerFlags    = 0;
+            quad_layer.space         = xr_local_space;
+            quad_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+            quad_layer.subImage.swapchain          = q->swapchain;
+            quad_layer.subImage.imageRect.offset.x = 0;
+            quad_layer.subImage.imageRect.offset.y = 0;
+            quad_layer.subImage.imageRect.extent   = q->size;
+            quad_layer.subImage.imageArrayIndex    = 0;
+            quad_layer.pose.orientation.x = 0.0f;
+            quad_layer.pose.orientation.y = -SDL_sinf(hy);
+            quad_layer.pose.orientation.z = 0.0f;
+            quad_layer.pose.orientation.w =  SDL_cosf(hy);
+            quad_layer.pose.position.x = menu_quad_cx + 2.0f * SDL_sinf(menu_quad_yaw);
+            quad_layer.pose.position.y = menu_quad_cy;
+            quad_layer.pose.position.z = menu_quad_cz - 2.0f * SDL_cosf(menu_quad_yaw);
+            quad_layer.size.width  = 2.0f;         /* metres (4:3 with height) */
+            quad_layer.size.height = 1.5f;
+            layers[0]   = (XrCompositionLayerBaseHeader*)&quad_layer;
+            layer_count = 1;
+        } else {
+            layer.space     = xr_local_space;
+            layer.viewCount = view_count;
+            layer.views     = proj_views;
+            layers[0]       = (XrCompositionLayerBaseHeader*)&layer;
+            layer_count     = 1;
+        }
     }
 
     endFrame:;
@@ -1578,6 +1662,7 @@ static void render_frame(void)
     end_info.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     end_info.layerCount           = layer_count;
     end_info.layers               = layers;
+
     pfn_xrEndFrame(xr_session, &end_info);
 
     if (proj_views) SDL_free(proj_views);
@@ -1788,6 +1873,20 @@ int axes, balls, hats;
             if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &yget, &ystate))
                     && ystate.isActive)
                 xr_y_button_gameplay_pressed = ystate.currentState ? 1 : 0;
+        }
+
+        /* X button → crouch in gameplay. This is the left-hand crouch the Alien
+         * needs for wall-climbing: the left-stick *click* also crouches, but you
+         * can't reliably press the stick in while pushing it to move into a wall,
+         * so X gives a crouch that doesn't fight left-stick locomotion. */
+        xr_x_button_gameplay_pressed = 0;
+        if (!xr_2d_mode && xr_x_button_action && pfn_xrGetActionStateBoolean) {
+            XrActionStateGetInfo xget = { XR_TYPE_ACTION_STATE_GET_INFO };
+            xget.action = xr_x_button_action;
+            XrActionStateBoolean xstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
+            if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &xget, &xstate))
+                    && xstate.isActive)
+                xr_x_button_gameplay_pressed = xstate.currentState ? 1 : 0;
         }
 
         /* Left trigger: unbound (throw flare moved to right thumbstick click). */

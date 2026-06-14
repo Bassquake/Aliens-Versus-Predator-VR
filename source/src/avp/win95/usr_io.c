@@ -42,6 +42,7 @@ extern int xr_left_thumbstick_click_pressed;
 extern int xr_b_button_pressed;
 extern int xr_right_thumbstick_click_pressed;
 extern int xr_y_button_gameplay_pressed;
+extern int xr_x_button_gameplay_pressed;
 extern int xr_left_trigger_pressed;
 #endif
 

@@ -1479,6 +1479,7 @@ void AvpShowViewsVR(void)
 
         /* Acquire this eye's swapchain image and attach as FBO color target */
         Uint32 sc_img_idx = VR_AcquireAndWaitSwapchainImage(eye);
+        if (sc_img_idx == UINT32_MAX) continue; /* image not ready — skip this eye, don't attach an invalid texture */
         GLuint sc_tex     = VR_GetSwapchainImageTexture(eye, sc_img_idx);
         glBindFramebuffer(GL_FRAMEBUFFER, eye_fbo[eye]);
         if (eye_fbo_samples > 0)

@@ -367,15 +367,25 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 
 #ifdef __ANDROID__
 /* In VR 3D mode, rotate LinVelocity using the HMD's horizontal heading instead
-   of OrientMat (which never updates when stick-turning is disabled). */
+   of OrientMat (which never updates when stick-turning is disabled).
+   EXCEPTION: when the Alien is wall/ceiling-crawling its gravity reorients away
+   from straight-down and OrientMat aligns to that surface — so move along the
+   surface via OrientMat, otherwise "forward" stays world-horizontal and the
+   Alien can never climb up a wall. GravityDirection.vy ~= ONE_FIXED on the floor,
+   ~0 on a wall, negative on a ceiling. */
 #define ROTATE_VELOCITY_WORLD(dynPtr) \
 	do { \
 		if (VR_IsIn3DMode()) { \
-			MATRIXCH _hm; \
-			_hm.mat11 = xr_hmd_move_cos; _hm.mat12 = 0; _hm.mat13 = -xr_hmd_move_sin; \
-			_hm.mat21 = 0; _hm.mat22 = ONE_FIXED; _hm.mat23 = 0; \
-			_hm.mat31 = xr_hmd_move_sin; _hm.mat32 = 0; _hm.mat33 = xr_hmd_move_cos; \
-			RotateVector(&(dynPtr)->LinVelocity, &_hm); \
+			if ((dynPtr)->GravityDirection.vy < 49152) { \
+				/* on a wall/ceiling — climb along the surface */ \
+				RotateVector(&(dynPtr)->LinVelocity, &(dynPtr)->OrientMat); \
+			} else { \
+				MATRIXCH _hm; \
+				_hm.mat11 = xr_hmd_move_cos; _hm.mat12 = 0; _hm.mat13 = -xr_hmd_move_sin; \
+				_hm.mat21 = 0; _hm.mat22 = ONE_FIXED; _hm.mat23 = 0; \
+				_hm.mat31 = xr_hmd_move_sin; _hm.mat32 = 0; _hm.mat33 = xr_hmd_move_cos; \
+				RotateVector(&(dynPtr)->LinVelocity, &_hm); \
+			} \
 		} else { \
 			RotateVector(&(dynPtr)->LinVelocity, &(dynPtr)->OrientMat); \
 		} \

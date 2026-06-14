@@ -97,6 +97,9 @@ extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int MSAASampleIndex;
 extern int FSRQualityIndex;
+/* Non-zero when Quest Battery Saver is forcing 72 Hz; locks the VR refresh-rate
+ * option to 72 Hz in the AV-options menu. Defined in main.c (returns 0 on desktop). */
+extern int VR_IsBatterySaverActive(void);
 
 void HandlePostGameFMVs(void);
 void HandlePreGameFMVs(void);
@@ -2574,6 +2577,14 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 		case AVPMENU_ELEMENT_TEXTSLIDER:
 		case AVPMENU_ELEMENT_TEXTSLIDER_POINTER:
 		{
+			/* Battery Saver locks the display to 72 Hz: don't let the user change
+			 * the VR refresh-rate option. The saved value is left untouched so the
+			 * choice returns once Battery Saver is turned off. */
+			if (elementPtr->c.SliderValuePtr == &VRRefreshRateIndex
+			    && VR_IsBatterySaverActive())
+			{
+				break;
+			}
 			if ((interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
 			  ||(interactionID == AVPMENU_ELEMENT_INTERACTION_INCREASE))
 			{
@@ -3409,7 +3420,15 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 				//we have the index of the first string
 				textPtr = GetTextString(elementPtr->d.FirstTextSliderString+*(elementPtr->c.SliderValuePtr));
 			}
-			
+
+			/* Battery Saver pins the VR refresh rate to 72 Hz — show that with a
+			 * note instead of the (unchangeable) saved value. */
+			if (elementPtr->c.SliderValuePtr == &VRRefreshRateIndex
+			    && VR_IsBatterySaverActive())
+			{
+				textPtr = "72Hz (Battery Saver Mode is enabled)";
+			}
+
 			if(elementPtr->a.TextDescription!=TEXTSTRING_BLANK)
 			{
 		

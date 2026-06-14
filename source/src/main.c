@@ -306,6 +306,7 @@ typedef XrResult (XRAPI_PTR *PFN_xrGetOpenGLESGraphicsRequirementsKHR)(
     XrInstance instance, XrSystemId systemId, XrGraphicsRequirementsOpenGLESKHR *graphicsRequirements);
 static PFN_xrGetOpenGLESGraphicsRequirementsKHR pfn_xrGetOpenGLESGraphicsRequirementsKHR = NULL;
 static PFN_xrRequestDisplayRefreshRateFB pfn_xrRequestDisplayRefreshRateFB = NULL;
+static PFN_xrGetDisplayRefreshRateFB pfn_xrGetDisplayRefreshRateFB = NULL;
 
 /* ========================================================================
  * Global XR State
@@ -368,6 +369,12 @@ bool xr_session_running = false;
 /* VR display refresh rate setting: 0=72, 1=80, 2=90, 3=120 Hz.
  * Written by the AV options menu; applied at frame begin via xrRequestDisplayRefreshRateFB. */
 int VRRefreshRateIndex = 0;
+
+/* Set by the one-time startup Battery Saver probe (in apply_refresh_rate_if_changed):
+ * 1 if requesting 90 Hz didn't take (panel stayed ≤72), i.e. Battery Saver is on even
+ * though the saved rate is 72 — the case the live-rate signal can't tell apart.
+ * Read by VR_IsBatterySaverActive(). */
+static int vr_bs_probe_result = 0;
 
 /* MSAA anti-aliasing setting: 0=off, 1=2x, 2=4x. Default 2x.
  * Written by the AV options menu; read by the VR eye-FBO renderer (avpview.c). */
@@ -622,6 +629,8 @@ static bool load_xr_functions(void)
         (PFN_xrVoidFunction*)&pfn_xrGetOpenGLESGraphicsRequirementsKHR);
     pfn_xrGetInstanceProcAddr(xr_instance, "xrRequestDisplayRefreshRateFB",
         (PFN_xrVoidFunction*)&pfn_xrRequestDisplayRefreshRateFB);
+    pfn_xrGetInstanceProcAddr(xr_instance, "xrGetDisplayRefreshRateFB",
+        (PFN_xrVoidFunction*)&pfn_xrGetDisplayRefreshRateFB);
 
 #undef XR_LOAD
 
@@ -1309,6 +1318,75 @@ GLuint VR_GetSwapchainImageTexture(int eye, Uint32 idx)
     return vr_swapchains[eye].images[idx].image;
 }
 
+/* Battery Saver detection. Two signals, OR'd together: (1) Android
+ * PowerManager.isPowerSaveMode(); (2) the LIVE display refresh rate being capped
+ * below what we requested (Battery Saver forces 72 Hz). Signal 2 is the reliable
+ * one on Quest — signal 1 may not surface Battery Saver on all OS builds.
+ * (xrEnumerateDisplayRefreshRatesFB does NOT work — it lists all hardware-supported
+ * rates regardless of the cap.) The AV-options menu uses this to pin the VR
+ * refresh-rate option to 72 Hz. Returns 0 on desktop. Throttled + cached because
+ * it's polled each frame while the menu is open. */
+int VR_IsBatterySaverActive(void)
+{
+#ifdef __ANDROID__
+    static int    cached  = -1;
+    static Uint64 last_ms = 0;
+    Uint64 now = SDL_GetTicks();
+    if (cached >= 0 && (now - last_ms) < 500) return cached;
+    last_ms = now;
+
+    /* Signal 1: Android PowerManager.isPowerSaveMode() (may or may not reflect
+     * Quest Battery Saver depending on OS build). */
+    int psm = 0;
+    JNIEnv *env      = (JNIEnv*)SDL_GetAndroidJNIEnv();
+    jobject activity = (jobject)SDL_GetAndroidActivity();
+    if (env && activity) {
+        jclass    actCls  = (*env)->GetObjectClass(env, activity);
+        jclass    ctxCls  = (*env)->FindClass(env, "android/content/Context");
+        jfieldID  pwrFld  = (*env)->GetStaticFieldID(env, ctxCls, "POWER_SERVICE",
+                                                     "Ljava/lang/String;");
+        jstring   pwrName = (jstring)(*env)->GetStaticObjectField(env, ctxCls, pwrFld);
+        jmethodID getSvc  = (*env)->GetMethodID(env, actCls, "getSystemService",
+                                                "(Ljava/lang/String;)Ljava/lang/Object;");
+        jobject   pm      = (*env)->CallObjectMethod(env, activity, getSvc, pwrName);
+        if (pm) {
+            jclass    pmCls = (*env)->GetObjectClass(env, pm);
+            jmethodID isPSM = (*env)->GetMethodID(env, pmCls, "isPowerSaveMode", "()Z");
+            if (isPSM) psm = (*env)->CallBooleanMethod(env, pm, isPSM) ? 1 : 0;
+            (*env)->DeleteLocalRef(env, pmCls);
+            (*env)->DeleteLocalRef(env, pm);
+        }
+        (*env)->DeleteLocalRef(env, pwrName);
+        (*env)->DeleteLocalRef(env, ctxCls);
+        (*env)->DeleteLocalRef(env, actCls);
+        (*env)->DeleteLocalRef(env, activity);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+
+    /* Signal 2: the LIVE display refresh rate is below what we asked for. Battery
+     * Saver caps the panel to 72 Hz even when we've requested 90/120, so
+     * "current < requested" means the system is forcing it down. Comparing against
+     * the requested rate (not a fixed 72) avoids falsely locking a user who
+     * genuinely selected 72 Hz. */
+    float actual = 0.0f, requested = 0.0f;
+    if (pfn_xrGetDisplayRefreshRateFB && xr_session_running
+        && !XR_FAILED(pfn_xrGetDisplayRefreshRateFB(xr_session, &actual)) && actual > 0.0f) {
+        static const float rates[] = { 72.0f, 80.0f, 90.0f, 120.0f };
+        int ri = VRRefreshRateIndex; if (ri < 0) ri = 0; if (ri > 3) ri = 3;
+        requested = rates[ri];
+    }
+    int rate_capped = (actual > 0.0f && requested > 0.0f && actual < requested - 1.0f);
+
+    /* Signal 3: the one-time startup probe (covers "saved rate is 72 + Battery Saver",
+     * which signals 1 and 2 can't detect). */
+    int result = (psm || rate_capped || vr_bs_probe_result);
+    cached = result;
+    return result;
+#else
+    return 0;
+#endif
+}
+
 int VR_IsIn3DMode(void)
 {
     return xr_session_running && !xr_2d_mode;
@@ -1429,6 +1507,31 @@ float VR_GetTargetHz(void)
 
 static void apply_refresh_rate_if_changed(void)
 {
+    /* One-time startup Battery Saver probe. Only needed when the saved rate is 72 Hz
+     * (a >72 selection is already detected by the live-rate signal). We briefly request
+     * 90 Hz and, after letting it settle, check whether the panel actually reached it;
+     * if not, Battery Saver is capping us → flag it. The normal rate-apply below is
+     * held off until the probe finishes so the two don't fight over the rate. */
+    static int probe_state  = 0;   /* 0=start, 1=waiting, 2=done */
+    static int probe_frames = 0;
+    if (probe_state != 2) {
+        if (!pfn_xrRequestDisplayRefreshRateFB || !pfn_xrGetDisplayRefreshRateFB
+            || VRRefreshRateIndex > 0) {
+            probe_state = 2;                 /* nothing to probe; fall through to apply */
+        } else if (probe_state == 0) {
+            pfn_xrRequestDisplayRefreshRateFB(xr_session, 90.0f);
+            probe_frames = 0;
+            probe_state  = 1;
+            return;                          /* let the request settle; don't apply yet */
+        } else {                             /* probe_state == 1: waiting */
+            if (++probe_frames < 30) return; /* ~0.4 s at 72 Hz */
+            float actual = 0.0f;
+            if (!XR_FAILED(pfn_xrGetDisplayRefreshRateFB(xr_session, &actual)) && actual > 0.0f)
+                vr_bs_probe_result = (actual < 89.0f) ? 1 : 0; /* asked 90, got less → Battery Saver */
+            probe_state = 2;                 /* fall through to apply the real rate now */
+        }
+    }
+
     static int vr_applied_refresh = -1;
     if (VRRefreshRateIndex != vr_applied_refresh && pfn_xrRequestDisplayRefreshRateFB) {
         static const float rates[] = {72.0f, 80.0f, 90.0f, 120.0f};

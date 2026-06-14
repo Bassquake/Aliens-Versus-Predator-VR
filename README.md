@@ -70,6 +70,8 @@ I will add ability to customise all these.
 - Can choose different framerate in Video/Video Options, runs fine in 120fps mode!
 - Can turn on/off the cross-hair in Video/Video Options.
 - Framerate counter can be toggled in Video/Video Options.
+- Antialiasing options added for MSAA in Video/Video Options.
+- Apparently works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack!
 
 ## To do
 - Fix Battery Saver crash.

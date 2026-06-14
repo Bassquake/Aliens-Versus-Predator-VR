@@ -384,9 +384,9 @@ int MSAASampleIndex = 1;
 int MSAA_SampleCount(void)
 {
     switch (MSAASampleIndex) {
-        case 1:  return 2;
-        case 2:  return 4;
-        default: return 0;
+        case 1:  return 2;   /* 2x */
+        case 2:  return 4;   /* 4x */
+        default: return 0;   /* 0 → no MSAA */
     }
 }
 

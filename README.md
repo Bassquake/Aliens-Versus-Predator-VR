@@ -72,13 +72,14 @@ I will add ability to customise all these.
 - Framerate counter can be toggled in Video/Video Options.
 
 ## To do
+- Fix Battery Saver crash.
 - Fix any visual issues that come up.
 - Extra options for vr specific things like adding blinders or change snap/smooth turning etc.
 - ~~Add rumble effects to controllers.~~
 - ~~Add cd music.~~
 - Add ability to customise controller key mapping.
 - Add shadow effects.
-- Maybe add anti-aliasing options but not sure if really needed.
+- ~~Maybe add anti-aliasing options but not sure if really needed.~~ Added MSAA options in Audio/Video Options screen.
 - Customise some objects such as marines weapons as it has 2 hands attached to the main weapon which is a bit weird.
 - Change the menu to be more immersive.
 - Add option for left handed users.

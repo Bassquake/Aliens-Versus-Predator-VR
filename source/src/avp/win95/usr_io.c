@@ -42,6 +42,7 @@ extern int xr_left_thumbstick_click_pressed;
 extern int xr_b_button_pressed;
 extern int xr_right_thumbstick_click_pressed;
 extern int xr_y_button_gameplay_pressed;
+extern int xr_y_button_gameplay_edge;
 extern int xr_x_button_gameplay_pressed;
 extern int xr_left_trigger_pressed;
 #endif
@@ -1025,16 +1026,24 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			{
 				extern int CameraZoomLevel;
 				
+				/* Cloak (Period key) → right thumbstick push-in. cloakDebounce in
+				 * DoPlayerCloakingSystem handles one toggle per press. */
 				if(KeyboardInput[primaryInput->d.Cloak]
 				 ||KeyboardInput[secondaryInput->d.Cloak]
 				#ifdef __ANDROID__
-				 ||xr_y_button_gameplay_pressed
+				 ||xr_left_trigger_pressed
 				#endif
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
-				
+
+				/* Cycle Vision Mode (Forward Slash key) → Y button. Uses the press-edge
+				 * signal because ChangePredatorVisionMode has no internal debounce. */
 				if(DebouncedKeyboardInput[primaryInput->e.CycleVisionMode]
-				 ||DebouncedKeyboardInput[secondaryInput->e.CycleVisionMode])
+				 ||DebouncedKeyboardInput[secondaryInput->e.CycleVisionMode]
+				#ifdef __ANDROID__
+				 ||xr_y_button_gameplay_edge
+				#endif
+				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_CycleVisionMode = 1;
 
 				#if !(PREDATOR_DEMO||DEATHMATCH_DEMO)

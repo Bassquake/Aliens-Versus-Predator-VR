@@ -351,6 +351,7 @@ int xr_left_thumbstick_click_pressed   = 0; /* 1 while left stick is clicked */
 int xr_b_button_pressed                     = 0; /* 1 while right B button is held */
 int xr_right_thumbstick_click_pressed        = 0; /* 1 on right stick click press edge */
 int xr_y_button_gameplay_pressed             = 0; /* 1 while Y held in gameplay (vision toggle) */
+int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge (Predator cycle vision mode) */
 int xr_x_button_gameplay_pressed             = 0; /* 1 while X held in gameplay (crouch) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
 static float xr_left_stick_x = 0.0f;
@@ -1967,15 +1968,25 @@ int axes, balls, hats;
             }
         }
 
-        /* Y button → vision toggle in gameplay (Image Intensifier / Cloak / Alt Vision). */
+        /* Y button → vision toggle in gameplay (Marine Image Intensifier / Alien Alt
+         * Vision use the held signal; the Predator's Cycle Vision Mode has no internal
+         * debounce, so it uses the press-edge signal instead). */
         xr_y_button_gameplay_pressed = 0;
+        xr_y_button_gameplay_edge    = 0;
         if (!xr_2d_mode && xr_y_button_action && pfn_xrGetActionStateBoolean) {
+            static int y_prev = 0;
             XrActionStateGetInfo yget = { XR_TYPE_ACTION_STATE_GET_INFO };
             yget.action = xr_y_button_action;
             XrActionStateBoolean ystate = { XR_TYPE_ACTION_STATE_BOOLEAN };
             if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &yget, &ystate))
-                    && ystate.isActive)
-                xr_y_button_gameplay_pressed = ystate.currentState ? 1 : 0;
+                    && ystate.isActive) {
+                int y_cur = ystate.currentState ? 1 : 0;
+                xr_y_button_gameplay_pressed = y_cur;
+                if (y_cur && !y_prev) xr_y_button_gameplay_edge = 1;
+                y_prev = y_cur;
+            } else {
+                y_prev = 0;
+            }
         }
 
         /* X button → crouch in gameplay. This is the left-hand crouch the Alien

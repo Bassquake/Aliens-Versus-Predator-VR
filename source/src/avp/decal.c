@@ -831,29 +831,18 @@ void HandleDecalSystem(void)
 				}
 
 			}
-			RenderDecal(decalPtr);
 			decalPtr++;
 		}
 	}
-	{
-		int i = NumFixedDecals;
-		DECAL dummyDecal;
-		FIXED_DECAL *decalPtr = FixedDecalStorage;
-	//	textprint("Decals Active: %d\n",i);
-		while(i--)
-		{
-			dummyDecal.DecalID = decalPtr->DecalID;
-			dummyDecal.Vertices[0] = decalPtr->Vertices[0];
-			dummyDecal.Vertices[1] = decalPtr->Vertices[1];
-			dummyDecal.Vertices[2] = decalPtr->Vertices[2];
-			dummyDecal.Vertices[3] = decalPtr->Vertices[3];
-			dummyDecal.ModuleIndex = decalPtr->ModuleIndex;
-			dummyDecal.UOffset = decalPtr->UOffset;
 
-			RenderDecal(&dummyDecal);
-			decalPtr++;;
-		}
-	}
+	/* Physics only — return before rendering. All decal rendering (active + fixed
+	   decals, Predator laser target/flares, paintball decal) is done by
+	   RenderDecalsOnly(), which runs once per eye via RenderParticlesOnly(). Drawing
+	   it here as well double-blended decals on the eye that also runs
+	   HandleParticleSystem, making that eye's blood and scorch marks brighter than
+	   the other eye. The code below is kept (unreachable) for reference. */
+	return;
+
 //	CubeOMatic();
 	if (AvP.PlayerType == I_Predator && PredatorLaserTarget.ShouldBeDrawn)
 	{

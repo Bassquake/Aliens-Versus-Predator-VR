@@ -1427,6 +1427,60 @@ void AvpShowViewsVR(void)
     SetFrustrumType(FRUSTRUM_TYPE_WIDE);
     /* Apply any change to the MSAA setting before rendering this frame's eyes. */
     VR_UpdateEyeFBOMSAA();
+
+    /* --- Wall/ceiling climb: tilt the VR view to match the body's gravity
+     * alignment, like the flat game (where the camera follows the player's
+     * OrientMat). When the Alien clings to a wall the view rolls so the wall
+     * becomes "down"; on the ceiling it ends up upside-down.
+     *
+     * The body's local down axis is OrientMat row 2 (mat21..mat23), which the
+     * physics homes smoothly toward the contact-surface normal. We build the
+     * shortest-arc rotation that takes upright-down (0,1,0) onto that axis and
+     * apply it in world space (same right-multiply slot as the snap yaw). Only
+     * the tilt is taken — heading stays with the HMD/snap — so the rotation
+     * axis is always horizontal. When upright the rotation is identity and we
+     * skip it. */
+    MATRIXCH vr_climb_tilt;
+    int      vr_climb_tilt_active = 0;
+    if (Player && Player->ObStrategyBlock && Player->ObStrategyBlock->DynPtr) {
+        MATRIXCH *om = &Player->ObStrategyBlock->DynPtr->OrientMat;
+        float bx = (float)om->mat21 / 65536.0f;   /* body down axis, world space */
+        float by = (float)om->mat22 / 65536.0f;
+        float bz = (float)om->mat23 / 65536.0f;
+        float blen = SDL_sqrtf(bx*bx + by*by + bz*bz);
+        if (blen > 0.0001f) { bx /= blen; by /= blen; bz /= blen; }
+
+        float s = SDL_sqrtf(bx*bx + bz*bz);  /* sin(tilt) = horizontal magnitude */
+        float c = by;                        /* cos(tilt) */
+
+        /* Last well-defined horizontal rotation axis, reused on a flat ceiling
+         * (where down is exactly antipodal to upright and the axis is otherwise
+         * undefined) to keep the roll continuous through the wall→ceiling climb. */
+        static float last_ax = 1.0f, last_az = 0.0f;
+
+        if (s > 0.0001f || c < 0.0f) {            /* not upright → apply tilt */
+            float ax, az, su, cu;
+            if (s > 0.0001f) {
+                ax = bz / s;  az = -bx / s;       /* unit horizontal axis */
+                last_ax = ax; last_az = az;
+                su = s; cu = c;
+            } else {
+                ax = last_ax; az = last_az;       /* flat ceiling: 180° roll */
+                su = 0.0f; cu = -1.0f;
+            }
+            float omc = 1.0f - cu;
+            /* Rodrigues rotation taking (0,1,0) onto the body down axis,
+             * stored standard row-major like snap_mat (axis Y component is 0). */
+            float R11 = cu + ax*ax*omc, R12 = -az*su,         R13 = ax*az*omc;
+            float R21 = az*su,          R22 = cu,             R23 = -ax*su;
+            float R31 = ax*az*omc,      R32 = ax*su,          R33 = cu + az*az*omc;
+            vr_climb_tilt.mat11 = (int)(R11*65536.0f); vr_climb_tilt.mat12 = (int)(R12*65536.0f); vr_climb_tilt.mat13 = (int)(R13*65536.0f);
+            vr_climb_tilt.mat21 = (int)(R21*65536.0f); vr_climb_tilt.mat22 = (int)(R22*65536.0f); vr_climb_tilt.mat23 = (int)(R23*65536.0f);
+            vr_climb_tilt.mat31 = (int)(R31*65536.0f); vr_climb_tilt.mat32 = (int)(R32*65536.0f); vr_climb_tilt.mat33 = (int)(R33*65536.0f);
+            vr_climb_tilt_active = 1;
+        }
+    }
+
     for (int eye = 0; eye < (int)view_count; eye++) {
 
         /* X/Z: room-scale delta relative to where we started (ref_head_x/z).
@@ -1475,6 +1529,14 @@ void AvpShowViewsVR(void)
             MATRIXCH snapped;
             MatrixMultiply(&snap_mat, &Global_VDB_Ptr->VDB_Mat, &snapped);
             Global_VDB_Ptr->VDB_Mat = snapped;
+        }
+
+        /* Apply the wall/ceiling climb tilt in world space (same slot as snap):
+         * VDB_Mat = VDB_Mat * vr_climb_tilt. */
+        if (vr_climb_tilt_active) {
+            MATRIXCH tilted;
+            MatrixMultiply(&vr_climb_tilt, &Global_VDB_Ptr->VDB_Mat, &tilted);
+            Global_VDB_Ptr->VDB_Mat = tilted;
         }
 
         /* Acquire this eye's swapchain image and attach as FBO color target */

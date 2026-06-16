@@ -912,16 +912,13 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 	/* Alien's wall-crawling abilities */
 	if (AvP.PlayerType == I_Alien)
 	{
-		/* let alien walk on walls & ceiling */
-		if ( (playerStatusPtr->ShapeState == PMph_Crouching)
-		   &&(!dynPtr->RequestsToStandUp) )
-		{
-			dynPtr->UseStandardGravity=0;
-		}
-		else
-		{
-			dynPtr->UseStandardGravity=1;
-		}
+		/* Always keep surface-stick gravity on so the Alien climbs walls and
+		   ceilings just by walking into them (no crouch required). On the floor
+		   the collision normal points straight up, so this behaves like normal
+		   gravity; against a wall/ceiling ApplyGravity reorients GravityDirection
+		   to the contact surface; in open air it reverts to down after
+		   TimeNotInContactWithFloor. */
+		dynPtr->UseStandardGravity=0;
 	}
 
 

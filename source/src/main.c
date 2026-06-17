@@ -277,6 +277,7 @@ static PFN_xrDestroyInstance pfn_xrDestroyInstance = NULL;
 static PFN_xrPollEvent pfn_xrPollEvent = NULL;
 static PFN_xrBeginSession pfn_xrBeginSession = NULL;
 static PFN_xrEndSession pfn_xrEndSession = NULL;
+static PFN_xrRequestExitSession pfn_xrRequestExitSession = NULL;
 static PFN_xrWaitFrame pfn_xrWaitFrame = NULL;
 static PFN_xrBeginFrame pfn_xrBeginFrame = NULL;
 static PFN_xrEndFrame pfn_xrEndFrame = NULL;
@@ -456,10 +457,11 @@ static bool  has_srgb_write_control  = false;
  * Cleanup and Quit
  * ======================================================================== */
 
-static void quit(int rc)
+/* Destroy all OpenXR + GLES resources. Safe to call once; every handle is
+ * nulled so a second call (or a later SDL_Quit) is a no-op. Does NOT touch
+ * SDL or terminate the process — see quit() and the normal exit path. */
+static void destroy_xr_resources(void)
 {
-    SDL_Log("Cleaning up...");
-
     /* Wait for GLES to finish */
     if (context) glFinish();
 
@@ -505,6 +507,13 @@ static void quit(int rc)
         pfn_xrDestroyInstance(xr_instance);
         xr_instance = XR_NULL_HANDLE;
     }
+}
+
+static void quit(int rc)
+{
+    SDL_Log("Cleaning up...");
+
+    destroy_xr_resources();
 
     SDL_Quit();
     exit(rc);
@@ -602,6 +611,7 @@ static bool load_xr_functions(void)
     XR_LOAD(xrPollEvent);
     XR_LOAD(xrBeginSession);
     XR_LOAD(xrEndSession);
+    XR_LOAD(xrRequestExitSession);
     XR_LOAD(xrWaitFrame);
     XR_LOAD(xrBeginFrame);
     XR_LOAD(xrEndFrame);
@@ -1245,6 +1255,35 @@ static void handle_xr_events(void)
         event_buffer.type = XR_TYPE_EVENT_DATA_BUFFER;
     }
 }
+
+/* Cleanly tear down the OpenXR session before the process exits.
+ *
+ * Without this the Quest compositor is left holding a live session that was
+ * never ended, so once we exit it has nothing to present and the headset shows
+ * a black screen until it is restarted. We ask the runtime to exit the session
+ * and then pump events so the STOPPING -> EXITING transitions run (xrEndSession
+ * is issued from handle_xr_events() on STOPPING). The loop is bounded so a
+ * misbehaving runtime can never hang the quit. */
+#ifdef __ANDROID__
+static void shutdown_xr_session(void)
+{
+    if (!xr_enabled || !xr_session)
+        return;
+
+    if (pfn_xrRequestExitSession && xr_session_running) {
+        XrResult r = pfn_xrRequestExitSession(xr_session);
+        if (XR_FAILED(r))
+            SDL_Log("xrRequestExitSession failed (result=%d)", (int)r);
+    }
+
+    /* Drive the session through STOPPING/EXITING; ~1s ceiling (200 * 5ms).
+     * handle_xr_events() sets xr_should_quit once EXITING arrives. */
+    for (int i = 0; i < 200 && !xr_should_quit; i++) {
+        handle_xr_events();
+        SDL_Delay(5);
+    }
+}
+#endif /* __ANDROID__ */
 
 /* ========================================================================
  * Rendering helpers
@@ -4130,9 +4169,24 @@ int main(int argc, char *argv[])
     SoundSys_RemoveAll();
     
     ExitSystem();
-    
+
     CDDA_End();
     ClearMemoryPool();
-    
+
+#ifdef __ANDROID__
+    /* End the OpenXR session and destroy all XR/GLES resources so the Quest
+     * compositor isn't left holding a live session (which otherwise leaves the
+     * headset on a black screen).
+     *
+     * Crucially we do NOT call exit() here: returning from main() lets
+     * SDLMain.run() finish the Activity through the normal Android lifecycle
+     * (onDestroy -> SDL_Quit). Killing the process with exit() from this
+     * native thread instead tears the Activity down out of order, which makes
+     * Meta's OVRMetricsToolClient crash on shutdown
+     * ("IllegalArgumentException: Service not registered"). */
+    shutdown_xr_session();
+    destroy_xr_resources();
+#endif
+
     return 0;
 }

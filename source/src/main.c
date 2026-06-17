@@ -368,6 +368,14 @@ int xr_snap_yaw = 0;
 bool xr_enabled = false;   // so you can flip it off quickly if needed
 bool xr_session_running = false;
 
+/* ---- VR controller / turning options (Controller Configuration menu) ---- */
+/* Turning mode: 0 = snap turn (default), 1 = smooth turn. */
+int VRTurnMode = 0;
+/* Snap turn angle: index 0=30, 1=45, 2=60, 3=90 degrees. Default 45 (index 1). */
+int VRSnapAngleIndex = 1;
+/* Smooth turn speed slider 0..10; maps to 60..180 deg/sec. Default 5 (~120 deg/sec). */
+int VRSmoothTurnSpeed = 5;
+
 /* VR display refresh rate setting: 0=72, 1=80, 2=90, 3=120 Hz.
  * Written by the AV options menu; applied at frame begin via xrRequestDisplayRefreshRateFB. */
 int VRRefreshRateIndex = 0;
@@ -1890,13 +1898,15 @@ int axes, balls, hats;
         JoystickData.dwPOV = (DWORD)-1;
         GotJoystick = 1;
 
-        /* Right stick: debounced 45° snap turns (X) + next weapon on stick up (Y). */
+        /* Right stick: X turns (snap or smooth, per Controller Config), Y = next weapon. */
         if (xr_right_stick_action) {
             static bool xr_snap_armed = true;
             static bool xr_next_weapon_armed = true;
             const float SNAP_THRESHOLD  = 0.6f;
             const float SNAP_REARM_ZONE = 0.3f;
-            const int   SNAP_ANGLE      = 512; /* 45° in game units (4096 = full circle) */
+            const float SMOOTH_DEADZONE = 0.2f;
+            /* Snap angles in game units (4096 = full circle): 30/45/60/90 degrees. */
+            static const int SNAP_ANGLES[4] = { 341, 512, 683, 1024 };
 
             XrActionStateGetInfo rget = { XR_TYPE_ACTION_STATE_GET_INFO };
             rget.action = xr_right_stick_action;
@@ -1907,17 +1917,34 @@ int axes, balls, hats;
                 ry = rstate.currentState.y;
             }
 
-            /* X axis: snap turns */
-            if (xr_snap_armed) {
-                if (rx > SNAP_THRESHOLD) {
-                    xr_snap_yaw = (xr_snap_yaw + SNAP_ANGLE) & 4095;
-                    xr_snap_armed = false;
-                } else if (rx < -SNAP_THRESHOLD) {
-                    xr_snap_yaw = (xr_snap_yaw - SNAP_ANGLE) & 4095;
-                    xr_snap_armed = false;
+            /* X axis: turning */
+            if (VRTurnMode == 1) {
+                /* Smooth turn: continuously accumulate yaw, scaled by stick deflection.
+                 * Speed slider 0..100 maps to ~60..180 deg/sec. RealFrameTime is fixed-
+                 * point seconds (65536 = 1s). */
+                if (rx > SMOOTH_DEADZONE || rx < -SMOOTH_DEADZONE) {
+                    extern int RealFrameTime;
+                    float dt          = (float)RealFrameTime / 65536.0f;
+                    float deg_per_sec = 60.0f + (float)VRSmoothTurnSpeed * 12.0f;
+                    float delta_deg   = deg_per_sec * dt * rx;   /* rx carries sign + magnitude */
+                    int   delta_units = (int)(delta_deg * 4096.0f / 360.0f);
+                    xr_snap_yaw = (xr_snap_yaw + delta_units) & 4095;
                 }
-            } else if (rx > -SNAP_REARM_ZONE && rx < SNAP_REARM_ZONE) {
-                xr_snap_armed = true;
+                xr_snap_armed = true; /* keep snap re-armed so a mode switch is clean */
+            } else {
+                /* Snap turn: debounced, configurable angle. */
+                int snap_angle = SNAP_ANGLES[(VRSnapAngleIndex >= 0 && VRSnapAngleIndex < 4) ? VRSnapAngleIndex : 1];
+                if (xr_snap_armed) {
+                    if (rx > SNAP_THRESHOLD) {
+                        xr_snap_yaw = (xr_snap_yaw + snap_angle) & 4095;
+                        xr_snap_armed = false;
+                    } else if (rx < -SNAP_THRESHOLD) {
+                        xr_snap_yaw = (xr_snap_yaw - snap_angle) & 4095;
+                        xr_snap_armed = false;
+                    }
+                } else if (rx > -SNAP_REARM_ZONE && rx < SNAP_REARM_ZONE) {
+                    xr_snap_armed = true;
+                }
             }
 
             /* Y axis: stick up → next weapon (gameplay only, edge-triggered). */

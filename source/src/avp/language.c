@@ -142,6 +142,21 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AVOPTIONS_FSR_QUALITY:      return "Quality";
 			case TEXTSTRING_AVOPTIONS_FSR_BALANCED:     return "Balanced";
 			case TEXTSTRING_AVOPTIONS_FSR_PERFORMANCE:  return "Performance";
+			case TEXTSTRING_CONTROLLERCONFIG_TITLE: return "Controller Configuration";
+			case TEXTSTRING_CONTROLLERCONFIG_HELP:  return "Configure your controllers for playing the game.";
+			case TEXTSTRING_CONTROLLERCONFIG_BACK:  return "Back";
+			case TEXTSTRING_VRTURN_MODE:        return "Turning Mode";
+			case TEXTSTRING_VRTURN_MODE_HELP:   return "Snap rotates in fixed steps; Smooth rotates continuously.";
+			case TEXTSTRING_VRTURN_SNAP:        return "Snap";
+			case TEXTSTRING_VRTURN_SMOOTH:      return "Smooth";
+			case TEXTSTRING_VRSNAP_ANGLE:       return "Snap Turn Angle";
+			case TEXTSTRING_VRSNAP_ANGLE_HELP:  return "How far each snap turn rotates. Used in Snap mode.";
+			case TEXTSTRING_VRSNAP_30:          return "30 Degrees";
+			case TEXTSTRING_VRSNAP_45:          return "45 Degrees";
+			case TEXTSTRING_VRSNAP_60:          return "60 Degrees";
+			case TEXTSTRING_VRSNAP_90:          return "90 Degrees";
+			case TEXTSTRING_VRSMOOTH_SPEED:     return "Smooth Turn Speed";
+			case TEXTSTRING_VRSMOOTH_SPEED_HELP:return "How fast you rotate. Used in Smooth mode.";
 			default: break;
 		}
 	}

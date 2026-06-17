@@ -86,9 +86,11 @@ typedef struct
 	unsigned char ShowFrameRateDisabled : 1;
 	unsigned char VRRefreshRateIndex : 2;
 	unsigned char MSAASampleIndex : 2;
-	unsigned char SpareBits : 1; //not used
+	unsigned char VRTurnMode : 1; //VR turning: 0=snap, 1=smooth (was SpareBits)
 	unsigned char FSRQualityIndex; //desktop FSR upscaling: 0=off..4=performance
-	char Padding[73];
+	unsigned char VRSnapAngleIndex; //VR snap turn angle: 0=30,1=45,2=60,3=90
+	unsigned char VRSmoothTurnSpeed; //VR smooth turn speed: 0..10
+	char Padding[71];
 
 	int CDPlayerVolume;
 

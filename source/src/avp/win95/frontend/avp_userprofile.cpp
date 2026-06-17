@@ -38,6 +38,9 @@ extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int MSAASampleIndex;
 extern int FSRQualityIndex;
+extern int VRTurnMode;
+extern int VRSnapAngleIndex;
+extern int VRSmoothTurnSpeed;
 
 
 List<AVP_USER_PROFILE *> UserProfilesList;
@@ -257,6 +260,9 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRRefreshRateIndex = 0;
 	MSAASampleIndex = 1; /* 2x by default */
 	FSRQualityIndex = 0; /* desktop FSR off by default */
+	VRTurnMode = 0; /* snap turn by default */
+	VRSnapAngleIndex = 1; /* 45 degrees by default */
+	VRSmoothTurnSpeed = 5; /* mid speed by default (0..10) */
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -299,6 +305,9 @@ extern void GetSettingsFromUserProfile(void)
 	VRRefreshRateIndex =			UserProfilePtr->VRRefreshRateIndex;
 	MSAASampleIndex =			UserProfilePtr->MSAASampleIndex;
 	FSRQualityIndex =			UserProfilePtr->FSRQualityIndex;
+	VRTurnMode =				UserProfilePtr->VRTurnMode;
+	VRSnapAngleIndex =			UserProfilePtr->VRSnapAngleIndex;
+	VRSmoothTurnSpeed =			UserProfilePtr->VRSmoothTurnSpeed;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
 	SetDetailLevelsFromMenu();
@@ -328,6 +337,9 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRRefreshRateIndex =	VRRefreshRateIndex;
 	profilePtr->MSAASampleIndex =		MSAASampleIndex;
 	profilePtr->FSRQualityIndex =		FSRQualityIndex;
+	profilePtr->VRTurnMode =		VRTurnMode;
+	profilePtr->VRSnapAngleIndex =		VRSnapAngleIndex;
+	profilePtr->VRSmoothTurnSpeed =		VRSmoothTurnSpeed;
    	strncpy(profilePtr->MultiplayerCallsign,MP_PlayerName,15);
 }
 

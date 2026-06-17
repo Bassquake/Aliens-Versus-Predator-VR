@@ -97,6 +97,9 @@ extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int MSAASampleIndex;
 extern int FSRQualityIndex;
+extern int VRTurnMode;
+extern int VRSnapAngleIndex;
+extern int VRSmoothTurnSpeed;
 /* Non-zero when Quest Battery Saver is forcing 72 Hz; locks the VR refresh-rate
  * option to 72 Hz in the AV-options menu. Defined in main.c (returns 0 on desktop). */
 extern int VR_IsBatterySaverActive(void);
@@ -313,6 +316,9 @@ int AvP_MainMenus(void)
 			int savedVRRefreshRateIndex = VRRefreshRateIndex;
 			int savedMSAASampleIndex = MSAASampleIndex;
 			int savedFSRQualityIndex = FSRQualityIndex;
+			int savedVRTurnMode = VRTurnMode;
+			int savedVRSnapAngleIndex = VRSnapAngleIndex;
+			int savedVRSmoothTurnSpeed = VRSmoothTurnSpeed;
 			if (NumberOfUserProfiles() > 0)
 			{
 				GetFirstUserProfile(); /* skip "New Profile" placeholder at index 0 */
@@ -324,6 +330,9 @@ int AvP_MainMenus(void)
 					savedVRRefreshRateIndex = VRRefreshRateIndex;
 					savedMSAASampleIndex = MSAASampleIndex;
 					savedFSRQualityIndex = FSRQualityIndex;
+					savedVRTurnMode = VRTurnMode;
+					savedVRSnapAngleIndex = VRSnapAngleIndex;
+					savedVRSmoothTurnSpeed = VRSmoothTurnSpeed;
 				}
 			}
 
@@ -340,6 +349,9 @@ int AvP_MainMenus(void)
 			VRRefreshRateIndex = savedVRRefreshRateIndex;
 			MSAASampleIndex = savedMSAASampleIndex;
 			FSRQualityIndex = savedFSRQualityIndex;
+			VRTurnMode = savedVRTurnMode;
+			VRSnapAngleIndex = savedVRSnapAngleIndex;
+			VRSmoothTurnSpeed = savedVRSmoothTurnSpeed;
 		}
 		AvPMenus.MenusState = MENUSSTATE_MAINMENUS;
 	}

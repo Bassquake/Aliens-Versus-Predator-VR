@@ -1961,6 +1961,15 @@ void AvpShowViewsVR(void)
         /* Flush remaining batched HUD geometry into the eye FBO */
         FlushRenderBuffer();
 
+        /* Comfort vignette over the finished eye image (peripheral darkening
+         * while smooth-turning). No-op unless enabled and currently faded in.
+         * Restore the full-eye viewport first in case HUD rendering changed it. */
+        {
+            extern void VR_DrawVignette(void);
+            glViewport(0, 0, eye_fbo_w, eye_fbo_h);
+            VR_DrawVignette();
+        }
+
         /* Restore */
         Global_VDB_Ptr->VDB_ClipLeft  = saved_ClipLeft;
         Global_VDB_Ptr->VDB_ClipRight = saved_ClipRight;

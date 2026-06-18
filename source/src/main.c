@@ -375,6 +375,14 @@ int VRTurnMode = 0;
 int VRSnapAngleIndex = 1;
 /* Smooth turn speed slider 0..10; maps to 60..180 deg/sec. Default 5 (~120 deg/sec). */
 int VRSmoothTurnSpeed = 5;
+/* Smooth turn deadzone slider 0..10; maps to 0.0..0.5 stick deflection. Default 4 (0.2). */
+int VRSmoothDeadzone = 4;
+/* Comfort vignette while smooth-turning: on/off + strength 0..10 (tunnel closure). */
+int VRVignetteOn = 1;
+int VRVignetteStrength = 5;
+/* Current smoothed vignette opacity 0..1, fades in/out as smooth-turn starts/stops.
+ * Updated in the input read each frame; consumed by VR_DrawVignette() per eye. */
+float vr_vignette_strength = 0.0f;
 
 /* VR display refresh rate setting: 0=72, 1=80, 2=90, 3=120 Hz.
  * Written by the AV options menu; applied at frame begin via xrRequestDisplayRefreshRateFB. */
@@ -449,6 +457,13 @@ static GLint  quad_u_tex    = -1;
 static GLuint menu_gles_tex = 0;
 static GLuint menu_fbo_2d   = 0;
 
+/* Comfort vignette (peripheral tunnel) drawn over each eye while smooth-turning. */
+static GLuint vignette_program = 0;
+static GLuint vignette_vao     = 0;
+static GLint  vignette_u_fade  = -1;
+static GLint  vignette_u_inner = -1;
+static GLint  vignette_u_outer = -1;
+
 /* Swapchain color-space management.
  * Quest's compositor treats GL_RGBA8 swapchains as LINEAR, then applies sRGB
  * gamma for display — this double-encodes our already-gamma content (too bright).
@@ -480,6 +495,8 @@ static void destroy_xr_resources(void)
     if (quad_ibo)     { glDeleteBuffers(1, &quad_ibo); quad_ibo = 0; }
     if (menu_gles_tex){ glDeleteTextures(1, &menu_gles_tex); menu_gles_tex = 0; }
     if (menu_fbo_2d)  { glDeleteFramebuffers(1, &menu_fbo_2d); menu_fbo_2d = 0; }
+    if (vignette_program) { glDeleteProgram(vignette_program); vignette_program = 0; }
+    if (vignette_vao)     { glDeleteVertexArrays(1, &vignette_vao); vignette_vao = 0; }
 
     /* XR swapchains */
     if (vr_swapchains) {
@@ -596,6 +613,102 @@ static bool create_quad_gles_program(void)
 }
 
 /* Dummy — kept so load_quad_shader callers below don't break during transition */
+
+/* ========================================================================
+ * Comfort Vignette
+ * Draws a black peripheral tunnel over the current eye FBO while the player is
+ * smooth-turning, to reduce motion sickness. Uses a VBO-less fullscreen
+ * triangle (gl_VertexID) so it needs no geometry buffers.
+ * ======================================================================== */
+
+static const char *vignette_vs_src =
+    "#version 300 es\n"
+    "out vec2 vPos;\n"
+    "void main() {\n"
+    "    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+    "    vPos = p * 2.0 - 1.0;\n"            /* -1..1 across the screen */
+    "    gl_Position = vec4(vPos, 0.0, 1.0);\n"
+    "}\n";
+
+static const char *vignette_fs_src =
+    "#version 300 es\n"
+    "precision mediump float;\n"
+    "in vec2 vPos;\n"
+    "uniform float uFade;\n"   /* overall opacity 0..1 */
+    "uniform float uInner;\n"  /* radius where darkening starts */
+    "uniform float uOuter;\n"  /* radius of full black */
+    "out vec4 oColor;\n"
+    "void main() {\n"
+    "    float r = length(vPos);\n"
+    "    float a = smoothstep(uInner, uOuter, r) * uFade;\n"
+    "    oColor = vec4(0.0, 0.0, 0.0, a);\n"
+    "}\n";
+
+static bool create_vignette_gles_program(void)
+{
+    GLuint vs = compile_gles_shader(GL_VERTEX_SHADER,   vignette_vs_src);
+    GLuint fs = compile_gles_shader(GL_FRAGMENT_SHADER, vignette_fs_src);
+    if (!vs || !fs) { glDeleteShader(vs); glDeleteShader(fs); return false; }
+    vignette_program = glCreateProgram();
+    glAttachShader(vignette_program, vs);
+    glAttachShader(vignette_program, fs);
+    glLinkProgram(vignette_program);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    GLint ok = 0;
+    glGetProgramiv(vignette_program, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char buf[512];
+        glGetProgramInfoLog(vignette_program, sizeof(buf), NULL, buf);
+        SDL_Log("Vignette program link error: %s", buf);
+        glDeleteProgram(vignette_program); vignette_program = 0;
+        return false;
+    }
+    vignette_u_fade  = glGetUniformLocation(vignette_program, "uFade");
+    vignette_u_inner = glGetUniformLocation(vignette_program, "uInner");
+    vignette_u_outer = glGetUniformLocation(vignette_program, "uOuter");
+    glGenVertexArrays(1, &vignette_vao);
+    SDL_Log("GLES vignette program ready");
+    return true;
+}
+
+/* Draw the comfort vignette into the currently-bound eye FBO. Expects the eye
+ * viewport to already be set. No-op unless the vignette is enabled and currently
+ * faded in. Saves/restores the GL state it touches. */
+void VR_DrawVignette(void)
+{
+    if (!VRVignetteOn || vr_vignette_strength <= 0.001f) return;
+    if (!vignette_program && !create_vignette_gles_program()) return;
+
+    /* Strength 0..10 closes the tunnel: stronger = smaller clear centre. */
+    float s     = (float)VRVignetteStrength / 10.0f;     /* 0..1 */
+    float inner = 1.05f - s * 0.75f;                     /* 1.05 (subtle) .. 0.30 (strong) */
+    float outer = inner + 0.35f;                         /* soft edge width */
+
+    GLboolean had_depth = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean had_cull  = glIsEnabled(GL_CULL_FACE);
+    GLboolean had_blend = glIsEnabled(GL_BLEND);
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+
+    glUseProgram(vignette_program);
+    glUniform1f(vignette_u_fade,  vr_vignette_strength);
+    glUniform1f(vignette_u_inner, inner);
+    glUniform1f(vignette_u_outer, outer);
+
+    glBindVertexArray(vignette_vao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+
+    glDepthMask(GL_TRUE);
+    if (!had_blend) glDisable(GL_BLEND);
+    if (had_depth)  glEnable(GL_DEPTH_TEST);
+    if (had_cull)   glEnable(GL_CULL_FACE);
+}
 
 /* ========================================================================
  * OpenXR Function Loading
@@ -1904,7 +2017,7 @@ int axes, balls, hats;
             static bool xr_next_weapon_armed = true;
             const float SNAP_THRESHOLD  = 0.6f;
             const float SNAP_REARM_ZONE = 0.3f;
-            const float SMOOTH_DEADZONE = 0.2f;
+            const float SMOOTH_DEADZONE = (float)VRSmoothDeadzone * 0.05f; /* 0..10 -> 0.0..0.5 */
             /* Snap angles in game units (4096 = full circle): 30/45/60/90 degrees. */
             static const int SNAP_ANGLES[4] = { 341, 512, 683, 1024 };
 
@@ -1918,6 +2031,7 @@ int axes, balls, hats;
             }
 
             /* X axis: turning */
+            bool smooth_turning = false;
             if (VRTurnMode == 1) {
                 /* Smooth turn: continuously accumulate yaw, scaled by stick deflection.
                  * Speed slider 0..100 maps to ~60..180 deg/sec. RealFrameTime is fixed-
@@ -1929,6 +2043,7 @@ int axes, balls, hats;
                     float delta_deg   = deg_per_sec * dt * rx;   /* rx carries sign + magnitude */
                     int   delta_units = (int)(delta_deg * 4096.0f / 360.0f);
                     xr_snap_yaw = (xr_snap_yaw + delta_units) & 4095;
+                    smooth_turning = true;
                 }
                 xr_snap_armed = true; /* keep snap re-armed so a mode switch is clean */
             } else {
@@ -1945,6 +2060,18 @@ int axes, balls, hats;
                 } else if (rx > -SNAP_REARM_ZONE && rx < SNAP_REARM_ZONE) {
                     xr_snap_armed = true;
                 }
+            }
+
+            /* Comfort vignette: fade in while smooth-turning, fade out otherwise. */
+            {
+                extern int RealFrameTime;
+                float dt     = (float)RealFrameTime / 65536.0f;
+                float target = (VRVignetteOn && smooth_turning) ? 1.0f : 0.0f;
+                float step   = 6.0f * dt;   /* ~1/6 s full fade */
+                if (vr_vignette_strength < target)
+                    vr_vignette_strength = SDL_min(target, vr_vignette_strength + step);
+                else
+                    vr_vignette_strength = SDL_max(target, vr_vignette_strength - step);
             }
 
             /* Y axis: stick up → next weapon (gameplay only, edge-triggered). */

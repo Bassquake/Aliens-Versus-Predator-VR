@@ -41,6 +41,9 @@ extern int FSRQualityIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
+extern int VRSmoothDeadzone;
+extern int VRVignetteOn;
+extern int VRVignetteStrength;
 
 
 List<AVP_USER_PROFILE *> UserProfilesList;
@@ -263,6 +266,9 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRTurnMode = 0; /* snap turn by default */
 	VRSnapAngleIndex = 1; /* 45 degrees by default */
 	VRSmoothTurnSpeed = 5; /* mid speed by default (0..10) */
+	VRSmoothDeadzone = 4; /* 0.2 deflection by default (0..10) */
+	VRVignetteOn = 1; /* comfort vignette on by default */
+	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -308,6 +314,9 @@ extern void GetSettingsFromUserProfile(void)
 	VRTurnMode =				UserProfilePtr->VRTurnMode;
 	VRSnapAngleIndex =			UserProfilePtr->VRSnapAngleIndex;
 	VRSmoothTurnSpeed =			UserProfilePtr->VRSmoothTurnSpeed;
+	VRSmoothDeadzone =			UserProfilePtr->VRSmoothDeadzone;
+	VRVignetteOn =				UserProfilePtr->VRVignetteOn;
+	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
 	SetDetailLevelsFromMenu();
@@ -340,6 +349,9 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRTurnMode =		VRTurnMode;
 	profilePtr->VRSnapAngleIndex =		VRSnapAngleIndex;
 	profilePtr->VRSmoothTurnSpeed =		VRSmoothTurnSpeed;
+	profilePtr->VRSmoothDeadzone =		VRSmoothDeadzone;
+	profilePtr->VRVignetteOn =		VRVignetteOn;
+	profilePtr->VRVignetteStrength =	VRVignetteStrength;
    	strncpy(profilePtr->MultiplayerCallsign,MP_PlayerName,15);
 }
 

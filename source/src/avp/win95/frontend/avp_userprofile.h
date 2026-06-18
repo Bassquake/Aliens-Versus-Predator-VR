@@ -90,7 +90,10 @@ typedef struct
 	unsigned char FSRQualityIndex; //desktop FSR upscaling: 0=off..4=performance
 	unsigned char VRSnapAngleIndex; //VR snap turn angle: 0=30,1=45,2=60,3=90
 	unsigned char VRSmoothTurnSpeed; //VR smooth turn speed: 0..10
-	char Padding[71];
+	unsigned char VRSmoothDeadzone; //VR smooth turn deadzone: 0..10
+	unsigned char VRVignetteOn; //VR comfort vignette: 0=off, 1=on
+	unsigned char VRVignetteStrength; //VR comfort vignette strength: 0..10
+	char Padding[68];
 
 	int CDPlayerVolume;
 

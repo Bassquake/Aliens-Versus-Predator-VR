@@ -147,16 +147,27 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CONTROLLERCONFIG_BACK:  return "Back";
 			case TEXTSTRING_VRTURN_MODE:        return "Turning Mode";
 			case TEXTSTRING_VRTURN_MODE_HELP:   return "Snap rotates in fixed steps; Smooth rotates continuously.";
-			case TEXTSTRING_VRTURN_SNAP:        return "Snap";
+			case TEXTSTRING_VRTURN_SNAP:        return "Snap (Default)";
 			case TEXTSTRING_VRTURN_SMOOTH:      return "Smooth";
 			case TEXTSTRING_VRSNAP_ANGLE:       return "Snap Turn Angle";
 			case TEXTSTRING_VRSNAP_ANGLE_HELP:  return "How far each snap turn rotates. Used in Snap mode.";
 			case TEXTSTRING_VRSNAP_30:          return "30 Degrees";
-			case TEXTSTRING_VRSNAP_45:          return "45 Degrees";
+			case TEXTSTRING_VRSNAP_45:          return "45 Degrees (Default)";
 			case TEXTSTRING_VRSNAP_60:          return "60 Degrees";
 			case TEXTSTRING_VRSNAP_90:          return "90 Degrees";
 			case TEXTSTRING_VRSMOOTH_SPEED:     return "Smooth Turn Speed";
 			case TEXTSTRING_VRSMOOTH_SPEED_HELP:return "How fast you rotate. Used in Smooth mode.";
+			case TEXTSTRING_VRSMOOTH_DEADZONE:     return "Smooth Turn Deadzone";
+			case TEXTSTRING_VRSMOOTH_DEADZONE_HELP:return "How far the stick must move before turning. Used in Smooth mode.";
+			case TEXTSTRING_VRVIGNETTE:          return "Comfort Vignette";
+			case TEXTSTRING_VRVIGNETTE_HELP:     return "Darkens your peripheral vision while smooth turning to reduce motion sickness.";
+			case TEXTSTRING_VRVIGNETTE_OFF:      return "Off";
+			case TEXTSTRING_VRVIGNETTE_ON:       return "On (Default)";
+			case TEXTSTRING_VRVIGNETTE_STRENGTH: return "Vignette Strength";
+			case TEXTSTRING_VRVIGNETTE_STRENGTH_HELP:return "How much the peripheral vision closes in while smooth turning.";
+			case TEXTSTRING_USERPROFILE_HELP_VR: return "Press X or A button to auto-select a name and again to Continue.";
+			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press X or A to continue.";
+			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";
 			default: break;
 		}
 	}

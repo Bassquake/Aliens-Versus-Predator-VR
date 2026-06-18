@@ -100,6 +100,9 @@ extern int FSRQualityIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
+extern int VRSmoothDeadzone;
+extern int VRVignetteOn;
+extern int VRVignetteStrength;
 /* Non-zero when Quest Battery Saver is forcing 72 Hz; locks the VR refresh-rate
  * option to 72 Hz in the AV-options menu. Defined in main.c (returns 0 on desktop). */
 extern int VR_IsBatterySaverActive(void);
@@ -319,6 +322,9 @@ int AvP_MainMenus(void)
 			int savedVRTurnMode = VRTurnMode;
 			int savedVRSnapAngleIndex = VRSnapAngleIndex;
 			int savedVRSmoothTurnSpeed = VRSmoothTurnSpeed;
+			int savedVRSmoothDeadzone = VRSmoothDeadzone;
+			int savedVRVignetteOn = VRVignetteOn;
+			int savedVRVignetteStrength = VRVignetteStrength;
 			if (NumberOfUserProfiles() > 0)
 			{
 				GetFirstUserProfile(); /* skip "New Profile" placeholder at index 0 */
@@ -333,6 +339,9 @@ int AvP_MainMenus(void)
 					savedVRTurnMode = VRTurnMode;
 					savedVRSnapAngleIndex = VRSnapAngleIndex;
 					savedVRSmoothTurnSpeed = VRSmoothTurnSpeed;
+					savedVRSmoothDeadzone = VRSmoothDeadzone;
+					savedVRVignetteOn = VRVignetteOn;
+					savedVRVignetteStrength = VRVignetteStrength;
 				}
 			}
 
@@ -352,6 +361,9 @@ int AvP_MainMenus(void)
 			VRTurnMode = savedVRTurnMode;
 			VRSnapAngleIndex = savedVRSnapAngleIndex;
 			VRSmoothTurnSpeed = savedVRSmoothTurnSpeed;
+			VRSmoothDeadzone = savedVRSmoothDeadzone;
+			VRVignetteOn = savedVRVignetteOn;
+			VRVignetteStrength = savedVRVignetteStrength;
 		}
 		AvPMenus.MenusState = MENUSSTATE_MAINMENUS;
 	}
@@ -1988,8 +2000,21 @@ static void RenderLoadGameMenu(void)
 static void RenderHelpString()
 {
 	AVPMENU_ELEMENT *elementPtr = &AvPMenus.MenuElements[AvPMenus.CurrentlySelectedElement];
+	enum TEXTSTRING_ID helpString = elementPtr->HelpString;
 
-	if(elementPtr->HelpString!=TEXTSTRING_BLANK && AvPMenus.MenusState != MENUSSTATE_INGAMEMENUS)
+#ifdef __ANDROID__
+	/* VR: the profile-select help depends on which slot is highlighted —
+	 * the blank "New Profile" slot (UserProfileNumber 0) needs the name+continue
+	 * instructions; an existing profile just needs the continue prompt. */
+	if (elementPtr->ElementID == AVPMENU_ELEMENT_USERPROFILE)
+	{
+		helpString = (UserProfileNumber == 0)
+			? TEXTSTRING_USERPROFILE_HELP_VR_NEW
+			: TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE;
+	}
+#endif
+
+	if(helpString!=TEXTSTRING_BLANK && AvPMenus.MenusState != MENUSSTATE_INGAMEMENUS)
 	{
 		RECT area;
 		//draw the attached string at the bottom of the screen
@@ -1999,8 +2024,8 @@ static void RenderHelpString()
 		area.top=420;
 		area.bottom=ScreenDescriptorBlock.SDB_Height;
 
-		RenderSmallFontString_Wrapped(GetTextString(elementPtr->HelpString),&area,BRIGHTNESS_OF_HIGHLIGHTED_ELEMENT,0,0);
-		
+		RenderSmallFontString_Wrapped(GetTextString(helpString),&area,BRIGHTNESS_OF_HIGHLIGHTED_ELEMENT,0,0);
+
 	}
 }
 

@@ -4,9 +4,6 @@ Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. Confimed to w
 
 This is early stage as lots of bugs and fixes are likely needed and I've only been focusing on the Marine level at the moment.
 
-> [!WARNING]
-> ~~Turn off Battery Saver on the Quest otherwise it will crash out when load the game! Am looking into it.~~ Fixed.
-
 ![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-menu.jpg)
 
 ![Screenshot of Aliens Versus Predator: VR in-game playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-marine.jpg)
@@ -38,7 +35,7 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/Ixnr
 
 ![Screenshot of apk location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_installed.png)
 
-7. Run the Aliens Versus Predator:VR in Unknown Sources. This will crash out as the assets havent been added yet, this is to set the folders in place. 
+7. On the headset, run the Aliens Versus Predator:VR in Unknown Sources. This will crash out as the assets havent been added yet, this is to set the folders and their permissions in place. 
 8. Now still in SideQuest, go to "Manage files on the headset".
 9. Navigate to "sdcard/Android/data/com.bassquake.avpvr/files".
 10. Copy all the game assets into that files folder. The layout should be like so on your device:
@@ -51,7 +48,7 @@ You can skip this if you don't have the audio cd that comes with the game, it'll
 - Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
 
 ## Run it!
-Go to Unknown Sources on the headset and click on Aliens Versus Predator:VR. Have fun!
+Go to Unknown Sources on the headset and click on Aliens Versus Predator: VR. Have fun!
 > [!CAUTION]
 > This is early stage and have only really focused on the Marine campaign. I'm not really much of a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
 
@@ -64,7 +61,7 @@ Controls are as follow (Marine level):
 
 ![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-controllers.jpg)
 
-I will add ability to customise all these.
+I will soon add ability to customise all these.
 
 ## Extra features
 - Can choose different framerate in Video/Video Options, runs fine in 120fps mode!
@@ -75,13 +72,13 @@ I will add ability to customise all these.
 
 ## To do
 - ~~Fix Battery Saver crash.~~ Fixed.
-- Fix any visual issues that come up.
-- Extra options for vr specific things like adding blinders or change snap/smooth turning etc.
+- ~~Fix audio direction.~~ Fixed.
+- ~~Extra options for vr specific things like adding blinders or change snap/smooth turning etc.~~ Added.
 - ~~Add rumble effects to controllers.~~ Added.
 - ~~Add cd music.~~ Added.
-- Add ability to customise controller key mapping.
-- Add shadow effects.
 - ~~Maybe add anti-aliasing options but not sure if really needed.~~ Added MSAA options in Audio/Video Options screen.
-- Customise some objects such as marines weapons as it has 2 hands attached to the main weapon which is a bit weird.
-- Change the menu to be more immersive.
+- Fix any visual issues that come up.
 - Add option for left handed users.
+- Add ability to customise controller key mapping.
+- Customise some objects such as marines weapons as it has 2 hands attached to the main weapon which is a bit weird.
+- Add shadow/fog effects?

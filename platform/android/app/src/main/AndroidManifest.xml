@@ -67,6 +67,8 @@
         <!--<meta-data android:name="com.oculus.intent.category.2D" android:value="true" />-->
         <meta-data android:name="com.oculus.handtracking.version" android:value="V2.0" />
         <meta-data android:name="com.oculus.handtracking.frequency" android:value="HIGH" />
+        <!-- Pico devices support -->
+        <meta-data android:name="pvr.app.type" android:value="vr" />
         <!-- Flat / Panel Mode Entry -->
         <activity
             android:name=".MainActivity"

@@ -68,6 +68,14 @@ extern void    XR_Haptic_Right(float amplitude, float duration_ms);
 #define UseLocalAssert Yes
 #include "ourasert.h"
 
+/* Head orientation captured during the VR eye render so the 3D-audio listener
+ * can use the real HMD-tracked facing (head yaw + snap/smooth turn) instead of
+ * the player body orientation, which never rotates with the headset. Consumed by
+ * PlatUpdatePlayer() in openal.c; vr_listener_mat_valid stays 0 on non-VR builds
+ * so the audio path is unchanged there. */
+MATRIXCH vr_listener_mat;
+int      vr_listener_mat_valid = 0;
+
 #ifdef __ANDROID__
 #include <GLES3/gl3.h>
 #include <SDL3/SDL.h>
@@ -1537,6 +1545,14 @@ void AvpShowViewsVR(void)
             MATRIXCH tilted;
             MatrixMultiply(&vr_climb_tilt, &Global_VDB_Ptr->VDB_Mat, &tilted);
             Global_VDB_Ptr->VDB_Mat = tilted;
+        }
+
+        /* Capture the head-tracked orientation (same for both eyes) for 3D audio.
+         * This is the full facing the player actually sees — head yaw + snap turn —
+         * so the OpenAL listener matches the view rather than the body. */
+        if (eye == 0) {
+            vr_listener_mat       = Global_VDB_Ptr->VDB_Mat;
+            vr_listener_mat_valid = 1;
         }
 
         /* Acquire this eye's swapchain image and attach as FBO color target */

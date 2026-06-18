@@ -825,21 +825,29 @@ void PlatUpdatePlayer()
 	if (Global_VDB_Ptr != NULL) {
 		extern int NormalFrameTime;
 		extern int DopplerShiftIsOn;
-		
+
+		/* In VR the listener must face where the headset is looking (head yaw +
+		 * snap/smooth turn), not the player body. avpview.c captures that
+		 * orientation each VR frame; fall back to the game camera otherwise. */
+		extern MATRIXCH vr_listener_mat;
+		extern int vr_listener_mat_valid;
+		MATRIXCH *listenerMat = vr_listener_mat_valid ? &vr_listener_mat
+		                                              : &Global_VDB_Ptr->VDB_Mat;
+
 		if (AvP.PlayerType != I_Alien) {
-			or[0] = (float) ((Global_VDB_Ptr->VDB_Mat.mat13) / 65536.0F);
+			or[0] = (float) ((listenerMat->mat13) / 65536.0F);
 			or[1] = 0.0;
-			or[2] = (float) ((Global_VDB_Ptr->VDB_Mat.mat33) / 65536.0F);
+			or[2] = (float) ((listenerMat->mat33) / 65536.0F);
 			or[3] = 0.0;
 			or[4] = -1.0; /* negated for openal */
 			or[5] = 0.0;
 		} else {
-			or[0] = (float) ((Global_VDB_Ptr->VDB_Mat.mat13) / 65536.0F);
-			or[1] = (float) ((Global_VDB_Ptr->VDB_Mat.mat23) / 65536.0F);
-			or[2] = (float) ((Global_VDB_Ptr->VDB_Mat.mat33) / 65536.0F);
-			or[3] = -(float) ((Global_VDB_Ptr->VDB_Mat.mat12) / 65536.0F);
-			or[4] = -(float) ((Global_VDB_Ptr->VDB_Mat.mat22) / 65536.0F); /* negated for openal */
-			or[5] = -(float) ((Global_VDB_Ptr->VDB_Mat.mat32) / 65536.0F);
+			or[0] = (float) ((listenerMat->mat13) / 65536.0F);
+			or[1] = (float) ((listenerMat->mat23) / 65536.0F);
+			or[2] = (float) ((listenerMat->mat33) / 65536.0F);
+			or[3] = -(float) ((listenerMat->mat12) / 65536.0F);
+			or[4] = -(float) ((listenerMat->mat22) / 65536.0F); /* negated for openal */
+			or[5] = -(float) ((listenerMat->mat32) / 65536.0F);
 		}
 
 		static int useVel = 0;

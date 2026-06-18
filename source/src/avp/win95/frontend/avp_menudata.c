@@ -992,39 +992,45 @@ extern void MakeSelectSessionMenu(void)
 
 extern void MakeInGameMenu(void)
 {
+#ifndef __ANDROID__
 	/* KJL 14:51:28 06/11/98 - set the only available key config to be that of the player's
 	cyrrent character */
 	/*Adjust both variants of the menu -Richard*/
+	/* Indices match the in-game menu layouts: the species key-config row sits just
+	 * below "Controller Configuration". In VR (Android) the key-config rows are
+	 * removed entirely, so there is nothing to set here — skipping also avoids
+	 * overwriting the (now lower-indexed) Abort Play / AV Options entries. */
 	switch (AvP.PlayerType)
 	{
 		case I_Marine:
 		{
-			AvPMenu_InGame[6].a.TextDescription = TEXTSTRING_MARINEKEYCONTROLS_TITLE;
-			AvPMenu_InGame[6].b.MenuToGoTo = AVPMENU_MARINEKEYCONFIG;
-			
-			AvPMenu_InNetGame[3].a.TextDescription = TEXTSTRING_MARINEKEYCONTROLS_TITLE;
-			AvPMenu_InNetGame[3].b.MenuToGoTo = AVPMENU_MARINEKEYCONFIG;
+			AvPMenu_InGame[7].a.TextDescription = TEXTSTRING_MARINEKEYCONTROLS_TITLE;
+			AvPMenu_InGame[7].b.MenuToGoTo = AVPMENU_MARINEKEYCONFIG;
+
+			AvPMenu_InNetGame[4].a.TextDescription = TEXTSTRING_MARINEKEYCONTROLS_TITLE;
+			AvPMenu_InNetGame[4].b.MenuToGoTo = AVPMENU_MARINEKEYCONFIG;
 			break;
 		}
 		case I_Predator:
 		{
-			AvPMenu_InGame[6].a.TextDescription = TEXTSTRING_PREDATORKEYCONTROLS_TITLE;
-			AvPMenu_InGame[6].b.MenuToGoTo = AVPMENU_PREDATORKEYCONFIG;
-			
-			AvPMenu_InNetGame[3].a.TextDescription = TEXTSTRING_PREDATORKEYCONTROLS_TITLE;
-			AvPMenu_InNetGame[3].b.MenuToGoTo = AVPMENU_PREDATORKEYCONFIG;
+			AvPMenu_InGame[7].a.TextDescription = TEXTSTRING_PREDATORKEYCONTROLS_TITLE;
+			AvPMenu_InGame[7].b.MenuToGoTo = AVPMENU_PREDATORKEYCONFIG;
+
+			AvPMenu_InNetGame[4].a.TextDescription = TEXTSTRING_PREDATORKEYCONTROLS_TITLE;
+			AvPMenu_InNetGame[4].b.MenuToGoTo = AVPMENU_PREDATORKEYCONFIG;
 			break;
 		}
 		case I_Alien:
 		{
-			AvPMenu_InGame[6].a.TextDescription = TEXTSTRING_ALIENKEYCONTROLS_TITLE;
-			AvPMenu_InGame[6].b.MenuToGoTo = AVPMENU_ALIENKEYCONFIG;
-			
-			AvPMenu_InNetGame[3].a.TextDescription = TEXTSTRING_ALIENKEYCONTROLS_TITLE;
-			AvPMenu_InNetGame[3].b.MenuToGoTo = AVPMENU_ALIENKEYCONFIG;
+			AvPMenu_InGame[7].a.TextDescription = TEXTSTRING_ALIENKEYCONTROLS_TITLE;
+			AvPMenu_InGame[7].b.MenuToGoTo = AVPMENU_ALIENKEYCONFIG;
+
+			AvPMenu_InNetGame[4].a.TextDescription = TEXTSTRING_ALIENKEYCONTROLS_TITLE;
+			AvPMenu_InNetGame[4].b.MenuToGoTo = AVPMENU_ALIENKEYCONFIG;
 			break;
 		}
 	}
+#endif
 }
 
 extern void MakePredatorKeyConfigMenu(void)

@@ -127,7 +127,19 @@ static ALuint music_source      = 0;
 static ALuint music_buffer      = 0;
 static int    music_initialized = 0;
 
-void CheckCDVolume() {}
+/* Last volume actually pushed to the OpenAL source. Starts at -1 so the first
+ * CheckCDVolume() always syncs the source gain to the menu's CDPlayerVolume. */
+static int    last_applied_volume = -1;
+
+/* Called every frame (psnd.c). The CD-volume menu slider writes straight into
+ * CDPlayerVolume, so poll it here and push any change to the source gain. */
+void CheckCDVolume()
+{
+	if (CDPlayerVolume != last_applied_volume) {
+		CDDA_ChangeVolume(CDPlayerVolume);
+		last_applied_volume = CDPlayerVolume;
+	}
+}
 
 void CDDA_Start()
 {
@@ -332,6 +344,10 @@ static void play_internal(int track, int loop)
 	alSourcei(music_source, AL_BUFFER,  (ALint)music_buffer);
 	alSourcei(music_source, AL_LOOPING, loop ? AL_TRUE : AL_FALSE);
 	alSourcePlay(music_source);
+
+	/* Apply the current menu volume to the freshly (re)started source — its gain
+	 * would otherwise default to full until the slider is next moved. */
+	CDDA_ChangeVolume(CDPlayerVolume);
 }
 
 void CDDA_Play(int CDDATrack)

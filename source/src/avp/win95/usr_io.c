@@ -45,6 +45,9 @@ extern int xr_y_button_gameplay_pressed;
 extern int xr_y_button_gameplay_edge;
 extern int xr_x_button_gameplay_pressed;
 extern int xr_left_trigger_pressed;
+extern int xr_left_trigger_gameplay_pressed;
+extern int xr_left_trigger_gameplay_edge;
+extern int xr_left_squeeze_gameplay_pressed;
 #endif
 
 FIXED_INPUT_CONFIGURATION FixedInputConfig =
@@ -995,7 +998,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 				#if !(MARINE_DEMO||DEATHMATCH_DEMO)
 				if(KeyboardInput[primaryInput->f.Jetpack]
-				 ||KeyboardInput[secondaryInput->f.Jetpack])
+				 ||KeyboardInput[secondaryInput->f.Jetpack]
+				#ifdef __ANDROID__
+				 ||xr_left_trigger_gameplay_pressed
+				#endif
+				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jetpack = 1;
 				#endif
 				
@@ -1048,7 +1055,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 				#if !(PREDATOR_DEMO||DEATHMATCH_DEMO)
 				if(DebouncedKeyboardInput[primaryInput->h.GrapplingHook]
-				 ||DebouncedKeyboardInput[secondaryInput->h.GrapplingHook])
+				 ||DebouncedKeyboardInput[secondaryInput->h.GrapplingHook]
+				#ifdef __ANDROID__
+				 ||xr_left_trigger_gameplay_edge
+				#endif
+				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_GrapplingHook = 1;
 				#endif
 
@@ -1070,7 +1081,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 					StartPlayerTaunt();
 
 				if(KeyboardInput[primaryInput->i.RecallDisc]
-				 ||KeyboardInput[secondaryInput->i.RecallDisc])
+				 ||KeyboardInput[secondaryInput->i.RecallDisc]
+				#ifdef __ANDROID__
+				 ||xr_left_squeeze_gameplay_pressed
+				#endif
+				)
 					Recall_Disc();
 					
 				if(DebouncedKeyboardInput[primaryInput->k.Predator_MessageHistory]

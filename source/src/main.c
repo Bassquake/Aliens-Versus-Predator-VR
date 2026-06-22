@@ -328,6 +328,7 @@ static XrAction xr_y_button_action = XR_NULL_HANDLE;  /* left controller Y — m
 static XrAction xr_menu_button_action = XR_NULL_HANDLE; /* left controller menu — ESC */
 static XrAction xr_right_trigger_action = XR_NULL_HANDLE; /* right trigger — fire primary */
 static XrAction xr_right_squeeze_action = XR_NULL_HANDLE; /* right grip squeeze — fire secondary */
+static XrAction xr_left_squeeze_action  = XR_NULL_HANDLE; /* left grip squeeze — Predator recall disc */
 static XrAction xr_a_button_action           = XR_NULL_HANDLE; /* right controller A — operate */
 static XrAction xr_left_thumbstick_click_action = XR_NULL_HANDLE; /* left stick click — crouch */
 static XrAction xr_b_button_action                    = XR_NULL_HANDLE; /* right controller B — jump */
@@ -337,6 +338,7 @@ static XrAction xr_left_grip_action  = XR_NULL_HANDLE;
 static XrAction xr_right_grip_action = XR_NULL_HANDLE;
 static XrAction xr_right_haptic_action = XR_NULL_HANDLE; /* right controller vibration output */
 static XrAction xr_left_haptic_action  = XR_NULL_HANDLE; /* left controller vibration output */
+void XR_Haptic_Left(float amplitude, float duration_ms);  /* defined below; used by the input loop */
 static XrSpace  xr_left_grip_space   = XR_NULL_HANDLE;
 static XrSpace  xr_right_grip_space  = XR_NULL_HANDLE;
 
@@ -355,6 +357,9 @@ int xr_y_button_gameplay_pressed             = 0; /* 1 while Y held in gameplay 
 int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge (Predator cycle vision mode) */
 int xr_x_button_gameplay_pressed             = 0; /* 1 while X held in gameplay (crouch) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
+int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (Marine jetpack) */
+int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger press edge (Predator grappling hook) */
+int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squeeze is held (Predator recall disc) */
 static float xr_left_stick_x = 0.0f;
 static float xr_left_stick_y = 0.0f;
 
@@ -1063,6 +1068,11 @@ static bool init_xr_session(void)
         result = pfn_xrCreateAction(xr_input_action_set, &act_info, &xr_left_trigger_action);
         XR_CHECK(result, "Failed to create left_trigger action");
 
+        SDL_strlcpy(act_info.actionName,       "left_squeeze", XR_MAX_ACTION_NAME_SIZE);
+        SDL_strlcpy(act_info.localizedActionName, "Left Grip Squeeze", XR_MAX_LOCALIZED_ACTION_NAME_SIZE);
+        result = pfn_xrCreateAction(xr_input_action_set, &act_info, &xr_left_squeeze_action);
+        XR_CHECK(result, "Failed to create left_squeeze action");
+
         act_info.actionType = XR_ACTION_TYPE_POSE_INPUT;
         SDL_strlcpy(act_info.actionName,       "left_grip", XR_MAX_ACTION_NAME_SIZE);
         SDL_strlcpy(act_info.localizedActionName, "Left Grip Pose", XR_MAX_LOCALIZED_ACTION_NAME_SIZE);
@@ -1087,7 +1097,7 @@ static bool init_xr_session(void)
 
         /* Suggest bindings for Touch controller profile */
         XrPath profile_path, left_stick_path, right_stick_path, x_path, y_path, menu_path;
-        XrPath left_grip_path, right_grip_path, right_trigger_path, right_squeeze_path, a_path, left_stick_click_path, b_path, right_stick_click_path, left_trigger_path, right_haptic_path, left_haptic_path;
+        XrPath left_grip_path, right_grip_path, right_trigger_path, right_squeeze_path, a_path, left_stick_click_path, b_path, right_stick_click_path, left_trigger_path, left_squeeze_path, right_haptic_path, left_haptic_path;
         pfn_xrStringToPath(xr_instance, "/interaction_profiles/oculus/touch_controller", &profile_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/thumbstick",        &left_stick_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/thumbstick",       &right_stick_path);
@@ -1103,10 +1113,11 @@ static bool init_xr_session(void)
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/b/click",           &b_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/thumbstick/click", &right_stick_click_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/trigger",           &left_trigger_path);
+        pfn_xrStringToPath(xr_instance, "/user/hand/left/input/squeeze",           &left_squeeze_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/output/haptic",          &right_haptic_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/output/haptic",           &left_haptic_path);
 
-        XrActionSuggestedBinding bindings[16];
+        XrActionSuggestedBinding bindings[17];
         bindings[0].action  = xr_left_stick_action;              bindings[0].binding  = left_stick_path;
         bindings[1].action  = xr_right_stick_action;             bindings[1].binding  = right_stick_path;
         bindings[2].action  = xr_x_button_action;                bindings[2].binding  = x_path;
@@ -1123,9 +1134,10 @@ static bool init_xr_session(void)
         bindings[13].action = xr_left_trigger_action;            bindings[13].binding = left_trigger_path;
         bindings[14].action = xr_right_haptic_action;            bindings[14].binding = right_haptic_path;
         bindings[15].action = xr_left_haptic_action;             bindings[15].binding = left_haptic_path;
+        bindings[16].action = xr_left_squeeze_action;            bindings[16].binding = left_squeeze_path;
         XrInteractionProfileSuggestedBinding suggested = { XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
         suggested.interactionProfile     = profile_path;
-        suggested.countSuggestedBindings = 16;
+        suggested.countSuggestedBindings = 17;
         suggested.suggestedBindings      = bindings;
         pfn_xrSuggestInteractionProfileBindings(xr_instance, &suggested);
 
@@ -2108,6 +2120,19 @@ int axes, balls, hats;
                 xr_grip_right_squeeze_pressed = sstate.currentState ? 1 : 0;
         }
 
+        /* Left grip squeeze → Predator recall disc (gameplay only). Recall_Disc has
+         * its own field-charge gate and is safe to call every frame while held, so
+         * this mirrors the keyboard binding's held signal. */
+        xr_left_squeeze_gameplay_pressed = 0;
+        if (!xr_2d_mode && xr_left_squeeze_action && pfn_xrGetActionStateBoolean) {
+            XrActionStateGetInfo lsget = { XR_TYPE_ACTION_STATE_GET_INFO };
+            lsget.action = xr_left_squeeze_action;
+            XrActionStateBoolean lsstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
+            if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &lsget, &lsstate))
+                    && lsstate.isActive)
+                xr_left_squeeze_gameplay_pressed = lsstate.currentState ? 1 : 0;
+        }
+
         /* A button → operate (gameplay only). */
         xr_a_button_pressed = 0;
         if (!xr_2d_mode && xr_a_button_action && pfn_xrGetActionStateBoolean) {
@@ -2196,7 +2221,33 @@ int axes, balls, hats;
                 xr_x_button_gameplay_pressed = xstate.currentState ? 1 : 0;
         }
 
-        /* Left trigger: unbound (throw flare moved to right thumbstick click). */
+        /* Left trigger → Marine jetpack (held) and Predator grappling hook (press
+         * edge). The jetpack thrusts for as long as the trigger is held, so it uses
+         * the held signal; the grappling hook fires once per press, so it uses the
+         * rising edge. (Throw flare / cloak live on the right thumbstick click and
+         * keep the legacy name xr_left_trigger_pressed.) */
+        xr_left_trigger_gameplay_pressed = 0;
+        xr_left_trigger_gameplay_edge    = 0;
+        if (!xr_2d_mode && xr_left_trigger_action && pfn_xrGetActionStateBoolean) {
+            static int lt_prev = 0;
+            XrActionStateGetInfo ltget = { XR_TYPE_ACTION_STATE_GET_INFO };
+            ltget.action = xr_left_trigger_action;
+            XrActionStateBoolean ltstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
+            if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &ltget, &ltstate))
+                    && ltstate.isActive) {
+                int lt_cur = ltstate.currentState ? 1 : 0;
+                xr_left_trigger_gameplay_pressed = lt_cur;
+                if (lt_cur && !lt_prev) {
+                    xr_left_trigger_gameplay_edge = 1;
+                    /* Confirm the press with a short pulse on the left controller
+                     * (jetpack engage / grappling-hook fire). */
+                    XR_Haptic_Left(0.6f, 80.0f);
+                }
+                lt_prev = lt_cur;
+            } else {
+                lt_prev = 0;
+            }
+        }
 
         /* Left menu button → ESC in all modes (opens/closes pause menu in-game,
          * acts as back in the 2D menus). */

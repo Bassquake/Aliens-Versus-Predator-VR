@@ -48,6 +48,7 @@ extern int xr_left_trigger_pressed;
 extern int xr_left_trigger_gameplay_pressed;
 extern int xr_left_trigger_gameplay_edge;
 extern int xr_left_squeeze_gameplay_pressed;
+extern void XR_Haptic_Left(float amplitude, float duration_ms);
 #endif
 
 FIXED_INPUT_CONFIGURATION FixedInputConfig =
@@ -1000,10 +1001,13 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->f.Jetpack]
 				 ||KeyboardInput[secondaryInput->f.Jetpack]
 				#ifdef __ANDROID__
-				 ||xr_left_trigger_gameplay_pressed
+				 /* Left trigger only engages the jetpack if the marine has one. */
+				 ||(xr_left_trigger_gameplay_pressed && playerStatusPtr->JetpackEnabled)
 				#endif
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jetpack = 1;
+				/* The jetpack rumble is continuous while thrusting, so it lives in
+				 * pmove.c where the thrust is actually applied — not here. */
 				#endif
 				
 				if(KeyboardInput[primaryInput->g.MarineTaunt]
@@ -1057,10 +1061,18 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(DebouncedKeyboardInput[primaryInput->h.GrapplingHook]
 				 ||DebouncedKeyboardInput[secondaryInput->h.GrapplingHook]
 				#ifdef __ANDROID__
-				 ||xr_left_trigger_gameplay_edge
+				 /* Left trigger only fires the hook if the predator has one. */
+				 ||(xr_left_trigger_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
 				#endif
 				)
+				{
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_GrapplingHook = 1;
+					#ifdef __ANDROID__
+					/* Confirm the fire with a single pulse on the press edge. */
+					if(xr_left_trigger_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
+						XR_Haptic_Left(0.6f, 80.0f);
+					#endif
+				}
 				#endif
 
 				if(DebouncedKeyboardInput[primaryInput->f.ZoomIn]

@@ -2237,12 +2237,12 @@ int axes, balls, hats;
                     && ltstate.isActive) {
                 int lt_cur = ltstate.currentState ? 1 : 0;
                 xr_left_trigger_gameplay_pressed = lt_cur;
-                if (lt_cur && !lt_prev) {
+                /* The press edge drives the grappling hook and the confirm haptic,
+                 * but both are gated on the player actually owning the ability, so
+                 * that decision is made in the gameplay layer (usr_io.c) where the
+                 * player status is available — not here. */
+                if (lt_cur && !lt_prev)
                     xr_left_trigger_gameplay_edge = 1;
-                    /* Confirm the press with a short pulse on the left controller
-                     * (jetpack engage / grappling-hook fire). */
-                    XR_Haptic_Left(0.6f, 80.0f);
-                }
                 lt_prev = lt_cur;
             } else {
                 lt_prev = 0;

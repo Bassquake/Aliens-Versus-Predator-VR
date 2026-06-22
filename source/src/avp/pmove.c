@@ -142,6 +142,13 @@ extern bool bTurnSpeedAdjust;
 #define JETPACK_MAX_SPEED 10000
 #define JETPACK_THRUST 40000
 
+#ifdef __ANDROID__
+/* Milliseconds left on the current jetpack rumble pulse (see the firing block in
+ * the player movement code). Counts down each frame and is reset to 0 when the
+ * jetpack stops, so the rumble restarts cleanly next time it fires. */
+static int jetpack_haptic_ms_remaining = 0;
+#endif
+
 /*----------------------------------------------------------- 
 Initialise player movement data
 -------------------------------------------------------------*/
@@ -633,6 +640,21 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 				Sound_Play(SID_ED_JETPACK_START,"h");
 				Sound_Play(SID_ED_JETPACK_MID,"el",&playerStatusPtr->soundHandle5);
 			}
+			#ifdef __ANDROID__
+			/* Continuous rumble on the left controller while the jetpack fires.
+			 * Re-issue an 80 ms pulse whenever the previous one is about to end so
+			 * the buzz stays unbroken across frames (mirrors the weapon-fire haptic
+			 * in avpview.c). The counter is reset in the else branch below. */
+			{
+				extern int RealFrameTime;
+				extern void XR_Haptic_Left(float amplitude, float duration_ms);
+				jetpack_haptic_ms_remaining -= RealFrameTime;
+				if (jetpack_haptic_ms_remaining <= 0) {
+					XR_Haptic_Left(0.4f, 80.0f);
+					jetpack_haptic_ms_remaining = 80;
+				}
+			}
+			#endif
 
 		} else {
 			/* Sound handling. */
@@ -640,6 +662,9 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 				Sound_Play(SID_ED_JETPACK_END,"h");
 				Sound_Stop(playerStatusPtr->soundHandle5);
 			}
+			#ifdef __ANDROID__
+			jetpack_haptic_ms_remaining = 0;
+			#endif
 		}
 
 		#if FLY_MODE_CHEAT_ON

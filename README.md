@@ -56,12 +56,12 @@ Go to Unknown Sources on the headset and click on Aliens Versus Predator: VR. Ha
 > [!NOTE]
 > At the moment I've only concentrated on the Marine level as that was my favourite! Alien and Predator will be looked at soon.
 
-### Keys for Marine level (probably mostly works for Alien and Predator too)
-Controls are as follow (Marine level):
+### Keys
+Controls are as follow:
 
-![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-controllers.jpg)
+![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers.jpg)
 
-I will soon add ability to customise all these.
+I will probably add ability to customise all these.
 
 ## Extra features
 - Can choose different framerate in Video/Video Options, runs fine in 120fps mode!

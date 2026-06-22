@@ -355,7 +355,7 @@ int xr_b_button_pressed                     = 0; /* 1 while right B button is he
 int xr_right_thumbstick_click_pressed        = 0; /* 1 on right stick click press edge */
 int xr_y_button_gameplay_pressed             = 0; /* 1 while Y held in gameplay (vision toggle) */
 int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge (Predator cycle vision mode) */
-int xr_x_button_gameplay_pressed             = 0; /* 1 while X held in gameplay (crouch) */
+int xr_x_button_gameplay_pressed             = 0; /* 1 on X press edge in gameplay (taunt) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
 int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (Marine jetpack) */
 int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger press edge (Predator grappling hook) */
@@ -2207,18 +2207,28 @@ int axes, balls, hats;
             }
         }
 
-        /* X button → crouch in gameplay. This is the left-hand crouch the Alien
-         * needs for wall-climbing: the left-stick *click* also crouches, but you
-         * can't reliably press the stick in while pushing it to move into a wall,
-         * so X gives a crouch that doesn't fight left-stick locomotion. */
+        /* X button → taunt in gameplay (Marine/Predator/Alien all map to the same
+         * StartPlayerTaunt). Edge-triggered, NOT held: X also confirms menu
+         * selections (KEY_CR), so the X press that starts the game is still down on
+         * the first gameplay frame. Tracking x_prev every frame — including while in
+         * 2D/menu mode — means that carried-over hold produces no rising edge, so the
+         * player must release and press X again in-game to taunt. (Crouch lives on
+         * the left-stick click, xr_left_thumbstick_click_pressed.) */
         xr_x_button_gameplay_pressed = 0;
-        if (!xr_2d_mode && xr_x_button_action && pfn_xrGetActionStateBoolean) {
-            XrActionStateGetInfo xget = { XR_TYPE_ACTION_STATE_GET_INFO };
-            xget.action = xr_x_button_action;
-            XrActionStateBoolean xstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
-            if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &xget, &xstate))
-                    && xstate.isActive)
-                xr_x_button_gameplay_pressed = xstate.currentState ? 1 : 0;
+        {
+            static int x_prev = 0;
+            int x_cur = 0;
+            if (xr_x_button_action && pfn_xrGetActionStateBoolean) {
+                XrActionStateGetInfo xget = { XR_TYPE_ACTION_STATE_GET_INFO };
+                xget.action = xr_x_button_action;
+                XrActionStateBoolean xstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
+                if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &xget, &xstate))
+                        && xstate.isActive)
+                    x_cur = xstate.currentState ? 1 : 0;
+            }
+            if (!xr_2d_mode && x_cur && !x_prev)
+                xr_x_button_gameplay_pressed = 1;
+            x_prev = x_cur;
         }
 
         /* Left trigger → Marine jetpack (held) and Predator grappling hook (press

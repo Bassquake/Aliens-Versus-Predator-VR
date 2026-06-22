@@ -1011,7 +1011,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#endif
 				
 				if(KeyboardInput[primaryInput->g.MarineTaunt]
-				 ||KeyboardInput[secondaryInput->g.MarineTaunt])
+				 ||KeyboardInput[secondaryInput->g.MarineTaunt]
+				#ifdef __ANDROID__
+				 ||xr_x_button_gameplay_pressed
+				#endif
+				)
 					StartPlayerTaunt();
 				
 				if(DebouncedKeyboardInput[primaryInput->h.Marine_MessageHistory]
@@ -1089,7 +1093,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				MaintainZoomingLevel();
 				
 				if(KeyboardInput[primaryInput->j.PredatorTaunt]
-				 ||KeyboardInput[secondaryInput->j.PredatorTaunt])
+				 ||KeyboardInput[secondaryInput->j.PredatorTaunt]
+				#ifdef __ANDROID__
+				 ||xr_x_button_gameplay_pressed
+				#endif
+				)
 					StartPlayerTaunt();
 
 				if(KeyboardInput[primaryInput->i.RecallDisc]
@@ -1130,7 +1138,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
 
 				if(KeyboardInput[primaryInput->b.Taunt]
-				 ||KeyboardInput[secondaryInput->b.Taunt])
+				 ||KeyboardInput[secondaryInput->b.Taunt]
+				#ifdef __ANDROID__
+				 ||xr_x_button_gameplay_pressed
+				#endif
+				)
 					StartPlayerTaunt();
 	
 				if(DebouncedKeyboardInput[primaryInput->c.Alien_MessageHistory]

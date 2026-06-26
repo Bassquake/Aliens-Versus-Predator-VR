@@ -168,6 +168,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_USERPROFILE_HELP_VR: return "Press X or A button to auto-select a name and again to Continue.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press X or A to continue.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";
+			case TEXTSTRING_SAVEPROGRESS_TITLE: return "Save progress?";
 			default: break;
 		}
 	}

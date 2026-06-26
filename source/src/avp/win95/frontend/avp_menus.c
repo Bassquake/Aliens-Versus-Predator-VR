@@ -843,6 +843,14 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 	enum AVPMENU_ID previousMenuID = AvPMenus.CurrentMenu;
 	AvPMenus.CurrentMenu = menuID;
 
+	/* The "abort and save" intent only survives the hop from the Save progress?
+	   screen to the Save Game slot picker. Opening any other menu (e.g. backing
+	   out of the slot picker) cancels it, so a later ordinary save never quits. */
+	if (menuID != AVPMENU_SAVEGAME)
+	{
+		AbortToMainMenuAfterSave = 0;
+	}
+
 	/* set pointer to the start of the menu's element data */
 	AvPMenus.MenuElements = AvPMenusData[menuID].MenuElements; // could use default
 
@@ -1313,12 +1321,21 @@ static void RenderMenu(void)
 	{
 		char *textPtr = GetTextString(AvPMenusData[AvPMenus.CurrentMenu].MenuTitle);
 		RenderMenuText(textPtr,MENU_CENTREX,70,ONE_FIXED,AVPMENUFORMAT_CENTREJUSTIFIED);
-		
+
 #if 1 // and now we've been told to remove the "Gamers Edition" etc. :)
 		// main menu subtitle e.g. "Gamers Edition" etc.
 		if (AvPMenusData[AvPMenus.CurrentMenu].MenuTitle==TEXTSTRING_MAINMENU_TITLE)
 			RenderMenuText(GetTextString(TEXTSTRING_MAINMENU_SUBTITLE),MENU_CENTREX,100,ONE_FIXED,AVPMENUFORMAT_CENTREJUSTIFIED);
 #endif
+	}
+	else if (AvPMenus.CurrentMenu == AVPMENU_SAVEPROGRESS)
+	{
+		/* In-game menus don't normally draw a title (the generic branch below is
+		   disabled), but this confirm screen needs one - otherwise it's just a
+		   bare Yes/No. Draw it centred, just above the centred Yes/No options. */
+		char *textPtr = GetTextString(AvPMenusData[AvPMenus.CurrentMenu].MenuTitle);
+		int titleY = (ScreenDescriptorBlock.SDB_Height - AvPMenus.MenuHeight)/2 - 2*HUD_FONT_HEIGHT;
+		Hardware_RenderSmallMenuText(textPtr,MENU_CENTREX,titleY,ONE_FIXED,AVPMENUFORMAT_CENTREJUSTIFIED);
 	}
 
 	#if 0
@@ -2746,7 +2763,19 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 			}
 			break;
 		}
-		
+
+		case AVPMENU_ELEMENT_SAVEPROGRESS_YES:
+		{
+			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
+			{
+				/* "Save progress?" -> Yes: go to the Save Game slot picker, flagging
+				   that a successful save should then drop us back to the main menu. */
+				AbortToMainMenuAfterSave = 1;
+				SetupNewMenu(elementPtr->b.MenuToGoTo);
+			}
+			break;
+		}
+
 		case AVPMENU_ELEMENT_USERPROFILE:
 		{
 			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
@@ -3389,6 +3418,7 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 		GLOBALASSERT("UNKNOWN MENU ELEMENT"==0);
 		case AVPMENU_ELEMENT_GOTOMENU:
 		case AVPMENU_ELEMENT_QUITGAME:
+		case AVPMENU_ELEMENT_SAVEPROGRESS_YES:
 		case AVPMENU_ELEMENT_STARTMPGAME:
 		case AVPMENU_ELEMENT_JOINMPGAME:
 		case AVPMENU_ELEMENT_VIDEOMODEOK:

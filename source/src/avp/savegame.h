@@ -5,6 +5,9 @@
 extern int LoadGameRequest; //slot number of game to be loaded
 extern int SaveGameRequest;	//slot number of game to be saved
 
+/* Set by the in-game "Save progress?" -> Yes abort flow; consumed by SaveGame(). */
+extern int AbortToMainMenuAfterSave;
+
 extern int NumberOfSavesLeft;
 
 typedef enum save_block_type

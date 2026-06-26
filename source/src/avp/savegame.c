@@ -61,6 +61,11 @@ static struct
 int LoadGameRequest = SAVELOAD_REQUEST_NONE; //slot number of game to be loaded
 int SaveGameRequest = SAVELOAD_REQUEST_NONE; //slot number of game to be saved
 
+/* Set when the player chose "Save progress?" -> Yes while aborting play from the
+   in-game menu. Consumed by SaveGame(): on a successful save we then quit to the
+   main menu. If the save can't be written the player simply stays in the game. */
+int AbortToMainMenuAfterSave = 0;
+
 
 #define NUM_SAVES_FOR_EASY_MODE 99
 #define NUM_SAVES_FOR_MEDIUM_MODE 24
@@ -403,6 +408,11 @@ void SaveGame()
 	int headerLength;
 	HuffmanPackage *packagePtr;
 
+	/* Consume the abort-after-save intent up front so it never lingers past this
+	   attempt. We only honour it once the save has actually been written. */
+	BOOL abortToMainMenu = AbortToMainMenuAfterSave;
+	AbortToMainMenuAfterSave = 0;
+
 	//make sure there is a save request
 	if(SaveGameRequest ==  SAVELOAD_REQUEST_NONE) return;
 
@@ -475,6 +485,13 @@ void SaveGame()
 
 	NewOnScreenMessage(GetTextString(TEXTSTRING_SAVEGAME_GAMESAVED));
 	DisplaySavesLeft();
+
+	/* The save succeeded. If the player reached here by aborting play and choosing
+	   to save first, drop out of the game loop so we return to the main menu. */
+	if (abortToMainMenu)
+	{
+		AvP.MainLoopRunning = FALSE;
+	}
 }
 
 

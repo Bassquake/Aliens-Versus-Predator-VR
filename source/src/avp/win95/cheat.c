@@ -166,6 +166,16 @@ void GiveAllWeaponsToPlayer(PLAYER_STATUS *playerStatusPtr)
 				continue;
 			}
 
+			if (wdPtr->WeaponIDNumber==WEAPON_PRED_PISTOL) {
+				/* The pistol fires from FieldCharge, but the generic out-of-ammo
+				 * check still trips on 0 rounds/mags and swaps the weapon away.
+				 * Give it the nominal rounds the normal predator init uses. */
+				wdPtr->PrimaryRoundsRemaining=ONE_FIXED;
+				wdPtr->SecondaryRoundsRemaining=ONE_FIXED;
+				wdPtr->Possessed=1;
+				continue;
+			}
+
 	 		wdPtr->Possessed=1;
 
         }

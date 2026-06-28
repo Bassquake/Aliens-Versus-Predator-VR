@@ -835,12 +835,27 @@ void PlatUpdatePlayer()
 		                                              : &Global_VDB_Ptr->VDB_Mat;
 
 		if (AvP.PlayerType != I_Alien) {
-			or[0] = (float) ((listenerMat->mat13) / 65536.0F);
-			or[1] = 0.0;
-			or[2] = (float) ((listenerMat->mat33) / 65536.0F);
-			or[3] = 0.0;
-			or[4] = -1.0; /* negated for openal */
-			or[5] = 0.0;
+			#ifdef __ANDROID__
+			if (vr_listener_mat_valid) {
+				/* VR: use the full head orientation (incl. pitch & roll) so vertical
+				 * direction is reproduced - looking up/down with the headset now pans
+				 * sounds above/below. Same form as the Alien branch. */
+				or[0] = (float) ((listenerMat->mat13) / 65536.0F);
+				or[1] = (float) ((listenerMat->mat23) / 65536.0F);
+				or[2] = (float) ((listenerMat->mat33) / 65536.0F);
+				or[3] = -(float) ((listenerMat->mat12) / 65536.0F);
+				or[4] = -(float) ((listenerMat->mat22) / 65536.0F); /* negated for openal */
+				or[5] = -(float) ((listenerMat->mat32) / 65536.0F);
+			} else
+			#endif
+			{
+				or[0] = (float) ((listenerMat->mat13) / 65536.0F);
+				or[1] = 0.0;
+				or[2] = (float) ((listenerMat->mat33) / 65536.0F);
+				or[3] = 0.0;
+				or[4] = -1.0; /* negated for openal */
+				or[5] = 0.0;
+			}
 		} else {
 			or[0] = (float) ((listenerMat->mat13) / 65536.0F);
 			or[1] = (float) ((listenerMat->mat23) / 65536.0F);

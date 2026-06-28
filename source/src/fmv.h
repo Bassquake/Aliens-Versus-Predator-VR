@@ -47,7 +47,8 @@ typedef struct
 	int   fmv_audio_stream_idx;    // -1 if no audio stream
 	void *fmv_audio_codec_ctx;     // AVCodecContext* for audio
 	void *fmv_audio_frame;         // AVFrame* for audio
-	void *fmv_sdl_audio;           // SDL_AudioStream*
+	void *fmv_sdl_audio;           // SDL_AudioStream* (device stream on desktop; mono converter on Android)
+	int   fmv_al_stream;           // OpenAL positional stream handle for in-world screens (-1 = none)
 
 } FMVTEXTURE;
 

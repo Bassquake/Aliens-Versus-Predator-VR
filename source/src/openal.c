@@ -814,6 +814,139 @@ fprintf(stderr, "OPENAL: Sound : (%f, %f, %f) [%d] [%d,%d]\n", ActiveSounds[acti
 }
 
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * Positional streaming audio for in-world video screens (FMV messages).
+ * fmv.c decodes + downmixes a screen's audio to mono S16 and feeds it here; we
+ * play it through an OpenAL streaming source positioned at the screen so it
+ * spatialises with the head-tracked listener (true 3D) instead of flat 2D.
+ * Listener sits at the origin and game sources are placed at (world - VDB_World),
+ * so we do the same and apply our own distance attenuation (AL rolloff off).
+ * ────────────────────────────────────────────────────────────────────────── */
+#define FMV_AL_STREAM_COUNT   4
+#define FMV_AL_BUFFER_COUNT   8
+
+typedef struct {
+	int       inUse;
+	ALuint    source;
+	ALuint    buffers[FMV_AL_BUFFER_COUNT];
+	ALuint    freeBuf[FMV_AL_BUFFER_COUNT];
+	int       numFree;
+	int       rate;
+	long long totalSamples; /* cumulative mono samples actually queued (diagnostic) */
+} FMV_AL_STREAM;
+
+static FMV_AL_STREAM FmvAlStreams[FMV_AL_STREAM_COUNT];
+
+int OpenAL_FmvStreamOpen(int sampleRate)
+{
+	int h, i;
+	if (!SoundActivated) return -1;
+
+	for (h = 0; h < FMV_AL_STREAM_COUNT; h++)
+		if (!FmvAlStreams[h].inUse) break;
+	if (h == FMV_AL_STREAM_COUNT) return -1;
+
+	FMV_AL_STREAM *s = &FmvAlStreams[h];
+	memset(s, 0, sizeof(*s));
+
+	alGetError();
+	alGenSources(1, &s->source);
+	if (alGetError() != AL_NO_ERROR) return -1;
+	alGenBuffers(FMV_AL_BUFFER_COUNT, s->buffers);
+	if (alGetError() != AL_NO_ERROR) { alDeleteSources(1, &s->source); return -1; }
+
+	for (i = 0; i < FMV_AL_BUFFER_COUNT; i++) s->freeBuf[i] = s->buffers[i];
+	s->numFree = FMV_AL_BUFFER_COUNT;
+	s->rate    = sampleRate;
+
+	alSourcef(s->source, AL_ROLLOFF_FACTOR, 0.0f); /* we set gain ourselves */
+	alSourcei(s->source, AL_SOURCE_RELATIVE, AL_FALSE);
+	alSourcef(s->source, AL_GAIN, 1.0f);
+
+	s->inUse = 1;
+	return h;
+}
+
+void OpenAL_FmvStreamQueue(int h, const short *mono16, int numSamples)
+{
+	if (h < 0 || h >= FMV_AL_STREAM_COUNT || !FmvAlStreams[h].inUse) return;
+	FMV_AL_STREAM *s = &FmvAlStreams[h];
+
+	/* reclaim played buffers */
+	ALint processed = 0;
+	alGetSourcei(s->source, AL_BUFFERS_PROCESSED, &processed);
+	while (processed-- > 0) {
+		ALuint b = 0;
+		alSourceUnqueueBuffers(s->source, 1, &b);
+		if (s->numFree < FMV_AL_BUFFER_COUNT) s->freeBuf[s->numFree++] = b;
+	}
+
+	if (mono16 && numSamples > 0 && s->numFree > 0) {
+		ALuint b = s->freeBuf[--s->numFree];
+		alBufferData(b, AL_FORMAT_MONO16, mono16, numSamples * (int)sizeof(short), s->rate);
+		alSourceQueueBuffers(s->source, 1, &b);
+		s->totalSamples += numSamples;
+	}
+
+	/* (re)start playback once a little is buffered (slack against underruns) or
+	 * after an underrun left buffers queued but the source stopped. */
+	ALint queued = 0, state = 0;
+	alGetSourcei(s->source, AL_BUFFERS_QUEUED, &queued);
+	alGetSourcei(s->source, AL_SOURCE_STATE, &state);
+	if (queued >= 2 && state != AL_PLAYING) alSourcePlay(s->source);
+}
+
+void OpenAL_FmvStreamSetWorldPos(int h, int wx, int wy, int wz, int innerRange, int outerRange)
+{
+	if (h < 0 || h >= FMV_AL_STREAM_COUNT || !FmvAlStreams[h].inUse) return;
+	if (Global_VDB_Ptr == NULL) return;
+
+	FMV_AL_STREAM *s = &FmvAlStreams[h];
+	VECTORCH rel;
+	rel.vx = wx - Global_VDB_Ptr->VDB_World.vx;
+	rel.vy = wy - Global_VDB_Ptr->VDB_World.vy;
+	rel.vz = wz - Global_VDB_Ptr->VDB_World.vz;
+
+	int dist = Magnitude(&rel);
+	float gain;
+	if (dist <= innerRange)       gain = 1.0f;
+	else if (dist >= outerRange)  gain = 0.0f;
+	else                          gain = (float)(outerRange - dist) / (float)(outerRange - innerRange);
+
+	ALfloat pos[3];
+	pos[0] = (ALfloat)rel.vx;
+	pos[1] = (ALfloat)rel.vy;
+	pos[2] = (ALfloat)rel.vz;
+	alSourcef(s->source, AL_GAIN, gain);
+	alSourcefv(s->source, AL_POSITION, pos);
+}
+
+/* Diagnostic: cumulative mono samples queued, and the playback rate. */
+long long OpenAL_FmvStreamTotalSamples(int h)
+{
+	if (h < 0 || h >= FMV_AL_STREAM_COUNT || !FmvAlStreams[h].inUse) return 0;
+	return FmvAlStreams[h].totalSamples;
+}
+
+int OpenAL_FmvStreamRate(int h)
+{
+	if (h < 0 || h >= FMV_AL_STREAM_COUNT || !FmvAlStreams[h].inUse) return 0;
+	return FmvAlStreams[h].rate;
+}
+
+void OpenAL_FmvStreamClose(int h)
+{
+	if (h < 0 || h >= FMV_AL_STREAM_COUNT || !FmvAlStreams[h].inUse) return;
+	FMV_AL_STREAM *s = &FmvAlStreams[h];
+
+	alSourceStop(s->source);
+	alSourcei(s->source, AL_BUFFER, 0); /* detach all buffers so they can be deleted */
+	alDeleteSources(1, &s->source);
+	alDeleteBuffers(FMV_AL_BUFFER_COUNT, s->buffers);
+	s->inUse = 0;
+}
+
+
 void PlatUpdatePlayer()
 {
 	ALfloat vel[3], or[6], pos[3];

@@ -151,6 +151,42 @@ void* InitVideoScreen(void* bhdata,STRATEGYBLOCK *sbPtr)
 
 
 
+#ifdef __ANDROID__
+/* Nearest video screen to the player, accumulated each frame by VideoScreenBehaviour
+ * (runs per screen during strategy execution) and consumed once per frame by fmv.c
+ * to position in-world video-screen (FMV message) audio in 3D. Video screens are
+ * static, so "nearest" is a stable, cheap proxy for where the message audio is. */
+static int vsNearWX, vsNearWY, vsNearWZ;
+static int vsNearDist  = 0x7fffffff;
+static int vsNearValid = 0;
+
+int VideoScreen_ConsumeNearest(int *wx, int *wy, int *wz)
+{
+	int valid = vsNearValid;
+	if (valid) { *wx = vsNearWX; *wy = vsNearWY; *wz = vsNearWZ; }
+	/* reset the running minimum so the next frame accumulates afresh */
+	vsNearDist  = 0x7fffffff;
+	vsNearValid = 0;
+	return valid;
+}
+
+static void VideoScreen_ReportPosition(VECTORCH *pos)
+{
+	VECTORCH rel;
+	int dist;
+	if (Player == NULL) return;
+	rel.vx = pos->vx - Player->ObWorld.vx;
+	rel.vy = pos->vy - Player->ObWorld.vy;
+	rel.vz = pos->vz - Player->ObWorld.vz;
+	dist = Magnitude(&rel);
+	if (!vsNearValid || dist < vsNearDist) {
+		vsNearDist  = dist;
+		vsNearWX = pos->vx; vsNearWY = pos->vy; vsNearWZ = pos->vz;
+		vsNearValid = 1;
+	}
+}
+#endif
+
 void VideoScreenBehaviour(STRATEGYBLOCK *sbPtr)
 {
 	DISPLAYBLOCK* dptr;
@@ -158,6 +194,11 @@ void VideoScreenBehaviour(STRATEGYBLOCK *sbPtr)
 	GLOBALASSERT(sbPtr);
 	videoScreen = sbPtr->SBdataptr;
 	GLOBALASSERT(videoScreen);
+
+	#ifdef __ANDROID__
+	/* Report this screen's position for the nearest-screen 3D audio placement. */
+	if (sbPtr->DynPtr) VideoScreen_ReportPosition(&sbPtr->DynPtr->Position);
+	#endif
 
 	dptr = sbPtr->SBdptr;
 	if(dptr)

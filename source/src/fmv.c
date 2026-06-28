@@ -36,6 +36,16 @@ extern void OGL_RegenerateMipmaps(void);
 int VolumeOfNearestVideoScreen;
 int PanningOfNearestVideoScreen;
 
+#ifdef __ANDROID__
+/* Distance attenuation range (game units) for positional video-screen audio. */
+#define FMV_AUDIO_INNER_RANGE  3000
+#define FMV_AUDIO_OUTER_RANGE  35000
+/* Nearest video screen to the player this frame, captured once per UpdateAllFMVTextures
+ * from bh_videoscreen.c; used to place every active in-world FMV's 3D audio source. */
+static int g_fmvAudioWX, g_fmvAudioWY, g_fmvAudioWZ, g_fmvAudioPosValid;
+extern int VideoScreen_ConsumeNearest(int *wx, int *wy, int *wz);
+#endif
+
 extern char *ScreenBuffer;
 extern int GotAnyKey;
 extern void DirectReadKeyboard(void);
@@ -97,6 +107,13 @@ static int64_t fmv_seek(void *opaque, int64_t offset, int whence)
 
 static void fmv_close_decoder(FMVTEXTURE *ftPtr)
 {
+#ifdef __ANDROID__
+	if (ftPtr->fmv_al_stream >= 0) {
+		extern void OpenAL_FmvStreamClose(int h);
+		OpenAL_FmvStreamClose(ftPtr->fmv_al_stream);
+		ftPtr->fmv_al_stream = -1;
+	}
+#endif
 	if (ftPtr->fmv_sdl_audio) {
 		SDL_DestroyAudioStream((SDL_AudioStream *)ftPtr->fmv_sdl_audio);
 		ftPtr->fmv_sdl_audio = NULL;
@@ -158,6 +175,7 @@ static void fmv_close_decoder(FMVTEXTURE *ftPtr)
 
 static void fmv_open_file(FMVTEXTURE *ftPtr, const char *path)
 {
+	ftPtr->fmv_al_stream = -1; /* no positional audio stream until one is opened */
 	/* FixFilename in files.c starts tolower() at the SECOND char of the
 	   filename, so "FMVs/..." survives as "Fmvs/..." and misses the dir.
 	   Pre-lowercase the whole path so OpenGameFile always finds it. */
@@ -335,6 +353,31 @@ static void fmv_open_file(FMVTEXTURE *ftPtr, const char *path)
 						spec.format   = sdl_fmt;
 						spec.channels = actx->ch_layout.nb_channels;
 						spec.freq     = actx->sample_rate;
+						ftPtr->fmv_al_stream = -1;
+#ifdef __ANDROID__
+						/* In-world video screen: convert to mono S16 and play through a
+						 * positional OpenAL source so message audio spatialises at the
+						 * screen (true 3D) instead of a flat 2D device stream. The SDL
+						 * stream is now just a format/down-mix converter (not bound to a
+						 * device); UpdateFMVTexture pulls mono frames and queues them to
+						 * OpenAL each tick. */
+						{
+							extern int OpenAL_FmvStreamOpen(int sampleRate);
+							SDL_AudioSpec dst;
+							dst.format   = SDL_AUDIO_S16;
+							dst.channels = 1;
+							dst.freq     = actx->sample_rate;
+							SDL_AudioStream *astream = SDL_CreateAudioStream(&spec, &dst);
+							if (astream) {
+								ftPtr->fmv_sdl_audio = astream;
+								ftPtr->fmv_al_stream = OpenAL_FmvStreamOpen(actx->sample_rate);
+								FMV_LOG("fmv_open_file: 3D audio codec=%s ch=%d rate=%d alHandle=%d",
+								        acodec->name, spec.channels, spec.freq, ftPtr->fmv_al_stream);
+							} else {
+								FMV_LOG("fmv_open_file: SDL_CreateAudioStream failed: %s", SDL_GetError());
+							}
+						}
+#else
 						SDL_AudioStream *astream = SDL_OpenAudioDeviceStream(
 						    SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
 						if (astream) {
@@ -347,6 +390,7 @@ static void fmv_open_file(FMVTEXTURE *ftPtr, const char *path)
 							FMV_LOG("fmv_open_file: SDL audio open failed: %s",
 							        SDL_GetError());
 						}
+#endif
 					}
 				}
 			}
@@ -1117,6 +1161,13 @@ void UpdateAllFMVTextures(void)
 	extern void UpdateFMVTexture(FMVTEXTURE *ftPtr);
 	int i = NumberOfFMVTextures;
 
+#ifdef __ANDROID__
+	/* Capture the nearest video screen to the player for this frame (and reset the
+	 * per-frame accumulator in bh_videoscreen.c). All active in-world FMVs place
+	 * their 3D audio source there. */
+	g_fmvAudioPosValid = VideoScreen_ConsumeNearest(&g_fmvAudioWX, &g_fmvAudioWY, &g_fmvAudioWZ);
+#endif
+
 	while(i--)
 	{
 		UpdateFMVTexture(&FMVTexture[i]);
@@ -1417,27 +1468,62 @@ void SetupFMVTexture(FMVTEXTURE *ftPtr)
 // Originally in d3d_render.cpp
 void UpdateFMVTexture(FMVTEXTURE *ftPtr)
 {
+#ifdef __ANDROID__
+	/* Pump in-world video-screen audio every tick: drain converted mono frames from
+	 * the SDL converter into the positional OpenAL source and place it at the nearest
+	 * video screen. Video frames are throttled, but audio must flow continuously. */
+	if (ftPtr->fmv_active && ftPtr->fmv_al_stream >= 0 && ftPtr->fmv_sdl_audio) {
+		extern void OpenAL_FmvStreamQueue(int h, const short *mono16, int numSamples);
+		extern void OpenAL_FmvStreamSetWorldPos(int h, int wx, int wy, int wz, int innerRange, int outerRange);
+		extern long long OpenAL_FmvStreamTotalSamples(int h);
+		extern int OpenAL_FmvStreamRate(int h);
+		/* Pace audio to the video clock. The container muxes audio ahead of the video,
+		 * so draining it all into the (FIFO) OpenAL source makes the audio play that far
+		 * ahead while the video stays PTS-paced - which looks like the video crawling.
+		 * Only queue audio up to the current video content time + a small safety lead,
+		 * holding the muxed-ahead remainder in the SDL converter. */
+		int rate    = OpenAL_FmvStreamRate(ftPtr->fmv_al_stream);
+		int videoMs = (int)(ftPtr->fmv_next_frame_ms - ftPtr->fmv_start_ms);
+		short pcm[2048];
+		while (rate > 0) {
+			long long q = OpenAL_FmvStreamTotalSamples(ftPtr->fmv_al_stream);
+			if ((int)(q * 1000 / rate) >= videoMs + 150) break; /* queued enough for now */
+			int got = SDL_GetAudioStreamData((SDL_AudioStream *)ftPtr->fmv_sdl_audio,
+			                                 pcm, (int)sizeof(pcm));
+			if (got <= 0) break;
+			OpenAL_FmvStreamQueue(ftPtr->fmv_al_stream, pcm, got / (int)sizeof(short));
+		}
+		if (g_fmvAudioPosValid)
+			OpenAL_FmvStreamSetWorldPos(ftPtr->fmv_al_stream,
+			                            g_fmvAudioWX, g_fmvAudioWY, g_fmvAudioWZ,
+			                            FMV_AUDIO_INNER_RANGE, FMV_AUDIO_OUTER_RANGE);
+	}
+#endif
 #if 1
 	if (ftPtr->fmv_active) {
-		int decoded = fmv_decode_next_frame(ftPtr);
-		if (decoded > 0) {
+		/* The video advances at most one decoded frame per call. If the call rate or
+		 * decode ever dips below the clip's frame rate, it would fall permanently
+		 * behind real-time and play in slow motion (drifting out of sync with the
+		 * real-time audio). So after the first decode, keep decoding while we're still
+		 * behind wall-clock - skipping the GL upload for the intermediate frames and
+		 * uploading only the latest - so the video tracks the clock. A guard caps the
+		 * catch-up so one long hitch can't stall a render frame. */
+		int decoded = 0;
+		int produced = 0;
+		int guard = 8;
+		do {
+			decoded = fmv_decode_next_frame(ftPtr);
+			if (decoded > 0) produced = 1;
+			else break;
+		} while ((unsigned int)SDL_GetTicks() >= ftPtr->fmv_next_frame_ms && --guard > 0);
+
+		if (produced) {
 			unsigned int texid = ftPtr->ImagePtr->D3DTexture->id;
 			fmv_compute_lighting_rgb(ftPtr);
 			pglBindTexture(GL_TEXTURE_2D, texid);
 			pglTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 128, 128,
 			                 GL_RGBA, GL_UNSIGNED_BYTE, ftPtr->RGBBuf);
 			OGL_RegenerateMipmaps();
-			if (ftPtr->fmv_frame_number <= 3) {
-				/* center pixel at (64,48) = offset (48*128+64)*4 */
-				int mid = (48 * 128 + 64) * 4;
-				GLenum err = pglGetError();
-				FMV_LOG("UpdateFMVTexture: frame %d texid=%u "
-				        "tl=[%d,%d,%d] mid=[%d,%d,%d] glerr=%u",
-				        ftPtr->fmv_frame_number, texid,
-				        ftPtr->RGBBuf[0], ftPtr->RGBBuf[1], ftPtr->RGBBuf[2],
-				        ftPtr->RGBBuf[mid], ftPtr->RGBBuf[mid+1], ftPtr->RGBBuf[mid+2],
-				        (unsigned)err);
-			}
 			return;
 		} else if (decoded < 0) {
 			FMV_LOG("UpdateFMVTexture: video finished, falling through to static");

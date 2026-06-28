@@ -46,6 +46,7 @@ extern int xr_y_button_gameplay_pressed;
 extern int xr_y_button_gameplay_edge;
 extern int xr_y_button_gameplay_tap;
 extern int xr_y_button_gameplay_long_edge;
+extern int xr_menu_button_msg_history_edge;
 extern int xr_x_button_gameplay_pressed;
 extern int xr_left_trigger_pressed;
 extern int xr_left_trigger_gameplay_pressed;
@@ -1022,7 +1023,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 					StartPlayerTaunt();
 				
 				if(DebouncedKeyboardInput[primaryInput->h.Marine_MessageHistory]
-				 ||DebouncedKeyboardInput[secondaryInput->h.Marine_MessageHistory])
+				 ||DebouncedKeyboardInput[secondaryInput->h.Marine_MessageHistory]
+				#ifdef __ANDROID__
+				 ||xr_menu_button_msg_history_edge
+				#endif
+				)
 					MessageHistory_DisplayPrevious();
 					
 				if(DebouncedKeyboardInput[primaryInput->i.Marine_Say]
@@ -1123,7 +1128,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 					Recall_Disc();
 					
 				if(DebouncedKeyboardInput[primaryInput->k.Predator_MessageHistory]
-				 ||DebouncedKeyboardInput[secondaryInput->k.Predator_MessageHistory])
+				 ||DebouncedKeyboardInput[secondaryInput->k.Predator_MessageHistory]
+				#ifdef __ANDROID__
+				 ||xr_menu_button_msg_history_edge
+				#endif
+				)
 					MessageHistory_DisplayPrevious();
 					
 				if(DebouncedKeyboardInput[primaryInput->Predator_Say]
@@ -1160,7 +1169,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 					StartPlayerTaunt();
 	
 				if(DebouncedKeyboardInput[primaryInput->c.Alien_MessageHistory]
-				 ||DebouncedKeyboardInput[secondaryInput->c.Alien_MessageHistory])
+				 ||DebouncedKeyboardInput[secondaryInput->c.Alien_MessageHistory]
+				#ifdef __ANDROID__
+				 ||xr_menu_button_msg_history_edge
+				#endif
+				)
 					MessageHistory_DisplayPrevious();
 					
 				if(DebouncedKeyboardInput[primaryInput->d.Alien_Say]

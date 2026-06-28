@@ -358,6 +358,7 @@ int xr_y_button_gameplay_pressed             = 0; /* 1 while Y held in gameplay 
 int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge */
 int xr_y_button_gameplay_tap                 = 0; /* 1 on Y release if it was a short tap (Predator cycle vision mode) */
 int xr_y_button_gameplay_long_edge           = 0; /* 1 once when Y is held past the long-press threshold (Predator zoom) */
+int xr_menu_button_msg_history_edge          = 0; /* 1 once when left menu button is held past the long-press threshold (message history) */
 int xr_x_button_gameplay_pressed             = 0; /* 1 on X press edge in gameplay (taunt) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
 int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (Marine jetpack) */
@@ -2297,8 +2298,11 @@ int axes, balls, hats;
             }
         }
 
-        /* Left menu button → ESC in all modes (opens/closes pause menu in-game,
-         * acts as back in the 2D menus). */
+        /* Left menu button. In the 2D menus it's immediate ESC/back. In gameplay a
+         * short tap opens the pause menu (fired on release so a hold can be told apart),
+         * while holding it past 0.5s instead shows the message history (like F1 in the
+         * flat game) and suppresses the pause so a hold never also opens it. */
+        xr_menu_button_msg_history_edge = 0;
         if (xr_menu_button_action && pfn_xrGetActionStateBoolean) {
             XrActionStateGetInfo mget = { XR_TYPE_ACTION_STATE_GET_INFO };
             XrActionStateBoolean mstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
@@ -2307,9 +2311,42 @@ int axes, balls, hats;
             if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &mget, &mstate))
                     && mstate.isActive)
                 menu_pressed = mstate.currentState ? 1 : 0;
-            if (menu_pressed && !KeyboardInput[KEY_ESCAPE])
-                DebouncedKeyboardInput[KEY_ESCAPE] = 1;
-            KeyboardInput[KEY_ESCAPE] = menu_pressed;
+
+            static int   menu_prev = 0;
+            static float menu_hold_secs = 0.0f;
+            static int   menu_long_fired = 0;
+            const float  MENU_LONG_PRESS_SECS = 0.5f;
+
+            if (xr_2d_mode) {
+                /* Menus: unchanged immediate ESC/back. */
+                if (menu_pressed && !KeyboardInput[KEY_ESCAPE])
+                    DebouncedKeyboardInput[KEY_ESCAPE] = 1;
+                KeyboardInput[KEY_ESCAPE] = menu_pressed;
+                menu_hold_secs  = 0.0f;
+                menu_long_fired = 0;
+            } else {
+                /* Gameplay: tap = pause (on release), long hold = message history. */
+                KeyboardInput[KEY_ESCAPE] = 0; /* don't hold ESC; pulse Debounced on a tap */
+                if (menu_pressed && !menu_prev) {
+                    menu_hold_secs  = 0.0f;
+                    menu_long_fired = 0;
+                }
+                if (menu_pressed) {
+                    extern int RealFrameTime;
+                    menu_hold_secs += (float)RealFrameTime / 65536.0f;
+                    if (!menu_long_fired && menu_hold_secs >= MENU_LONG_PRESS_SECS) {
+                        xr_menu_button_msg_history_edge = 1; /* show previous message once */
+                        menu_long_fired = 1;
+                    }
+                } else if (menu_prev && !menu_long_fired) {
+                    /* Released as a short tap → open the pause menu. Pulse KeyboardInput
+                     * high as well as the debounced edge so the press registers whether
+                     * or not the debounced array is recomputed from edges after this. */
+                    KeyboardInput[KEY_ESCAPE] = 1;
+                    DebouncedKeyboardInput[KEY_ESCAPE] = 1;
+                }
+            }
+            menu_prev = menu_pressed;
         }
 
         /* In gameplay mode, set DebouncedGotAnyKey on the rising edge of any

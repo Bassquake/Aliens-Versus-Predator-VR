@@ -7,9 +7,9 @@ Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. Confimed to w
 
 This is early stage as lots of bugs and fixes are likely needed and I've only been focusing on the Marine level at the moment.
 
-![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-menu.jpg)
+![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-quest-menu.jpg)
 
-![Screenshot of Aliens Versus Predator: VR in-game playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/avpvr-quest-marine.jpg)
+![Screenshot of Aliens Versus Predator: VR in-game playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-quest-marine.jpg)
 
 Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/IxnrIYhSEMs).
 
@@ -32,18 +32,18 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/Ixnr
 6. Plug your headset in via usb.
 7. Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in [Developer](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) mode already):
 
-![Screenshot of apk install](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_install.png)
+![Screenshot of apk install](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/sidequest_install.png)
 
 6. After install completes, you should see this in the "Currently installed apps":
 
-![Screenshot of apk location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_installed.png)
+![Screenshot of apk location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/sidequest_installed.png)
 
 7. On the headset, run the Aliens Versus Predator:VR in Unknown Sources. This will crash out as the assets havent been added yet, this is to set the folders and their permissions in place. 
 8. Now still in SideQuest, go to "Manage files on the headset".
 9. Navigate to "sdcard/Android/data/com.bassquake.avpvr/files".
 10. Copy all the game assets into that files folder. The layout should be like so on your device:
 
-![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/main/captures/sidequest_files.png)
+![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/sidequest_files.png)
 
 ## CD Music
 You can skip this if you don't have the audio cd that comes with the game, it'll just play without background music. Or provide your own music! Would need 15 tracks.

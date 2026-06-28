@@ -162,6 +162,30 @@ void CalculateWhereGunIsPointing(TEMPLATE_WEAPON_DATA *twPtr, PLAYER_WEAPON_DATA
     RotateVector(&GunMuzzleDirectionInWS,&matrix);
 	Normalise(&GunMuzzleDirectionInWS);
 
+	#ifdef __ANDROID__
+	/* VR smartgun auto-aim: in flat play the smartgun swings its barrel onto the
+	 * locked target; in VR the player aims with the controller, so instead redirect
+	 * the fire ray straight at the locked target's chest whenever the smartgun has a
+	 * lock. Marine only - the predator's weapons aim via their own paths. The ray
+	 * origin (VDB_World, the head) matches the LOS origin used to fire. */
+	{
+		extern int VR_IsIn3DMode(void);
+		if (VR_IsIn3DMode() && (AvP.PlayerType==I_Marine) && twPtr->IsSmartTarget
+			&& SmartTarget_Object && CurrentlySmartTargetingObject)
+		{
+			VECTORCH targetPoint, dir;
+			GetTargetingPointOfObject(SmartTarget_Object, &targetPoint);
+			dir.vx = targetPoint.vx - Global_VDB_Ptr->VDB_World.vx;
+			dir.vy = targetPoint.vy - Global_VDB_Ptr->VDB_World.vy;
+			dir.vz = targetPoint.vz - Global_VDB_Ptr->VDB_World.vz;
+			if (dir.vx || dir.vy || dir.vz)
+			{
+				Normalise(&dir);
+				GunMuzzleDirectionInWS = dir;
+			}
+		}
+	}
+	#endif
 }
 
 void CalculatePlayersTarget(TEMPLATE_WEAPON_DATA *twPtr, PLAYER_WEAPON_DATA *weaponPtr)

@@ -369,6 +369,55 @@ void MaintainHUD(void)
 				   the 2D screen-space overlay from HandleMarineWeapon would double
 				   up on the weapon causing distortion, so skip it in VR. */
 				if (!VR_IsIn3DMode()) HandleMarineWeapon();
+				#ifdef __ANDROID__
+				else
+				{
+					/* HandleMarineWeapon is skipped in VR, but it also drove the
+					 * smartgun's auto-targeting (SmartTarget). Run it here: eye 0
+					 * advances the lock-on once per frame; then project the locked
+					 * target's centre-of-mass onto THIS eye so the smart-target box
+					 * tracks the enemy per-eye. Same projection fix as the predator
+					 * reticle - VDB_ProjX is eye-FBO sized while the HUD SDB centre is
+					 * 320, so the off-centre offset is rescaled by SDB_Width/eye_fbo_w. */
+					PLAYER_WEAPON_DATA *vrWeaponPtr = &(playerStatusPtr->WeaponSlot[playerStatusPtr->SelectedWeaponSlot]);
+					if (TemplateWeapon[vrWeaponPtr->WeaponIDNumber].IsSmartTarget)
+					{
+						extern void SmartTarget_GetCofM(DISPLAYBLOCK *target, VECTORCH *viewSpaceOutput);
+						extern int VR_GetEyeFBOWidth(void);
+						extern int VR_GetEyeFBOHeight(void);
+						if (vr_eye_index == 0)
+							SmartTarget(TemplateWeapon[vrWeaponPtr->WeaponIDNumber].SmartTargetSpeed, 0);
+						if (SmartTarget_Object && CurrentlySmartTargetingObject)
+						{
+							VECTORCH cofm;
+							SmartTarget_GetCofM(SmartTarget_Object, &cofm);
+							if (cofm.vz > 0)
+							{
+								/* The box is drawn through the HUD sprite path, which shrinks
+								 * by vr_hud_clip_scale (0.5) and shifts by the per-eye
+								 * convergence offset - so a raw screen position only reaches
+								 * half-way to the enemy. Map the target direction to a HUD
+								 * pixel exactly like the crosshair (GunMuzzleSightX/Y) does,
+								 * inverting that HUD mapping, so the box lands on the enemy. */
+								extern float vr_hud_clip_scale, vr_hud_offset_x, vr_hud_offset_y;
+								int ew = VR_GetEyeFBOWidth();
+								int eh = VR_GetEyeFBOHeight();
+								int cx = ScreenDescriptorBlock.SDB_CentreX;
+								int cy = ScreenDescriptorBlock.SDB_CentreY;
+								if (ew > 0 && eh > 0 && vr_hud_clip_scale != 0.0f)
+								{
+									float clipx =  (float)cofm.vx / (float)cofm.vz * (float)Global_VDB_Ptr->VDB_ProjX / (ew * 0.5f);
+									float clipy = -(float)cofm.vy / (float)cofm.vz * (float)Global_VDB_Ptr->VDB_ProjY / (eh * 0.5f);
+									int hud_x = cx + (int)((float)cx * (clipx - vr_hud_offset_x) / vr_hud_clip_scale);
+									int hud_y = cy - (int)((float)cy * (clipy - vr_hud_offset_y) / vr_hud_clip_scale);
+									SmartTargetSightX = hud_x << 16;
+									SmartTargetSightY = hud_y << 16;
+								}
+							}
+						}
+					}
+				}
+				#endif
 
 	  	 	 	if (CurrentVisionMode==VISION_MODE_NORMAL) DoMotionTracker();
 

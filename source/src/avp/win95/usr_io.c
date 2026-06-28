@@ -41,8 +41,11 @@ extern int xr_a_button_pressed;
 extern int xr_left_thumbstick_click_pressed;
 extern int xr_b_button_pressed;
 extern int xr_right_thumbstick_click_pressed;
+extern int xr_right_thumbstick_down_pressed;
 extern int xr_y_button_gameplay_pressed;
 extern int xr_y_button_gameplay_edge;
+extern int xr_y_button_gameplay_tap;
+extern int xr_y_button_gameplay_long_edge;
 extern int xr_x_button_gameplay_pressed;
 extern int xr_left_trigger_pressed;
 extern int xr_left_trigger_gameplay_pressed;
@@ -1051,12 +1054,14 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
 
-				/* Cycle Vision Mode (Forward Slash key) → Y button. Uses the press-edge
-				 * signal because ChangePredatorVisionMode has no internal debounce. */
+				/* Cycle Vision Mode (Forward Slash key) → a short tap of the Y button.
+				 * Uses the tap (release) signal so that holding Y to zoom does not also
+				 * cycle the vision mode. ChangePredatorVisionMode has no internal
+				 * debounce, but the tap signal is already a single one-frame pulse. */
 				if(DebouncedKeyboardInput[primaryInput->e.CycleVisionMode]
 				 ||DebouncedKeyboardInput[secondaryInput->e.CycleVisionMode]
 				#ifdef __ANDROID__
-				 ||xr_y_button_gameplay_edge
+				 ||xr_y_button_gameplay_tap
 				#endif
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_CycleVisionMode = 1;
@@ -1089,7 +1094,16 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				{
 					if (CameraZoomLevel>0) CameraZoomLevel--;
 				}
-				
+				#ifdef __ANDROID__
+				/* Hold Y for >0.5s → step the zoom in; once past max zoom it wraps
+				 * back to normal (no zoom). One step per hold. */
+				if (xr_y_button_gameplay_long_edge)
+				{
+					if (CameraZoomLevel<3) CameraZoomLevel++;
+					else CameraZoomLevel = 0;
+				}
+				#endif
+
 				MaintainZoomingLevel();
 				
 				if(KeyboardInput[primaryInput->j.PredatorTaunt]
@@ -1202,7 +1216,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_NextWeapon = 1;
 			
 			if(KeyboardInput[primaryInput->b.PreviousWeapon]
-			 ||KeyboardInput[secondaryInput->b.PreviousWeapon])
+			 ||KeyboardInput[secondaryInput->b.PreviousWeapon]
+			#ifdef __ANDROID__
+			 ||xr_right_thumbstick_down_pressed
+			#endif
+			)
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_PreviousWeapon = 1;
 
 			if(DebouncedKeyboardInput[primaryInput->c.FlashbackWeapon]

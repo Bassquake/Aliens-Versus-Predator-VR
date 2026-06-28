@@ -352,9 +352,12 @@ int xr_grip_right_squeeze_pressed = 0; /* 1 while right grip is squeezed */
 int xr_a_button_pressed                = 0; /* 1 while right A button is held */
 int xr_left_thumbstick_click_pressed   = 0; /* 1 while left stick is clicked */
 int xr_b_button_pressed                     = 0; /* 1 while right B button is held */
-int xr_right_thumbstick_click_pressed        = 0; /* 1 on right stick click press edge */
+int xr_right_thumbstick_click_pressed        = 0; /* 1 on right stick up edge (next weapon) */
+int xr_right_thumbstick_down_pressed         = 0; /* 1 on right stick down edge (previous weapon) */
 int xr_y_button_gameplay_pressed             = 0; /* 1 while Y held in gameplay (vision toggle) */
-int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge (Predator cycle vision mode) */
+int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge */
+int xr_y_button_gameplay_tap                 = 0; /* 1 on Y release if it was a short tap (Predator cycle vision mode) */
+int xr_y_button_gameplay_long_edge           = 0; /* 1 once when Y is held past the long-press threshold (Predator zoom) */
 int xr_x_button_gameplay_pressed             = 0; /* 1 on X press edge in gameplay (taunt) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
 int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (Marine jetpack) */
@@ -2027,6 +2030,7 @@ int axes, balls, hats;
         if (xr_right_stick_action) {
             static bool xr_snap_armed = true;
             static bool xr_next_weapon_armed = true;
+            static bool xr_prev_weapon_armed = true;
             const float SNAP_THRESHOLD  = 0.6f;
             const float SNAP_REARM_ZONE = 0.3f;
             const float SMOOTH_DEADZONE = (float)VRSmoothDeadzone * 0.05f; /* 0..10 -> 0.0..0.5 */
@@ -2086,14 +2090,23 @@ int axes, balls, hats;
                     vr_vignette_strength = SDL_max(target, vr_vignette_strength - step);
             }
 
-            /* Y axis: stick up → next weapon (gameplay only, edge-triggered). */
+            /* Y axis: stick up → next weapon, stick down → previous weapon
+             * (gameplay only, each edge-triggered with its own re-arm dead zone). */
             xr_right_thumbstick_click_pressed = 0;
+            xr_right_thumbstick_down_pressed  = 0;
             if (!xr_2d_mode) {
                 if (xr_next_weapon_armed && ry > SNAP_THRESHOLD) {
                     xr_right_thumbstick_click_pressed = 1;
                     xr_next_weapon_armed = false;
                 } else if (ry < SNAP_REARM_ZONE) {
                     xr_next_weapon_armed = true;
+                }
+
+                if (xr_prev_weapon_armed && ry < -SNAP_THRESHOLD) {
+                    xr_right_thumbstick_down_pressed = 1;
+                    xr_prev_weapon_armed = false;
+                } else if (ry > -SNAP_REARM_ZONE) {
+                    xr_prev_weapon_armed = true;
                 }
             }
         }
@@ -2187,12 +2200,19 @@ int axes, balls, hats;
         }
 
         /* Y button → vision toggle in gameplay (Marine Image Intensifier / Alien Alt
-         * Vision use the held signal; the Predator's Cycle Vision Mode has no internal
-         * debounce, so it uses the press-edge signal instead). */
-        xr_y_button_gameplay_pressed = 0;
-        xr_y_button_gameplay_edge    = 0;
+         * Vision use the held signal). The Predator distinguishes a short tap (Cycle
+         * Vision Mode) from a long hold (Zoom In): _tap fires on release if the press
+         * stayed under the threshold, _long_edge fires once the moment the hold passes
+         * it, and a long hold suppresses the tap so zooming never also cycles vision. */
+        xr_y_button_gameplay_pressed   = 0;
+        xr_y_button_gameplay_edge      = 0;
+        xr_y_button_gameplay_tap       = 0;
+        xr_y_button_gameplay_long_edge = 0;
         if (!xr_2d_mode && xr_y_button_action && pfn_xrGetActionStateBoolean) {
-            static int y_prev = 0;
+            static int   y_prev = 0;
+            static float y_hold_secs = 0.0f;
+            static int   y_long_fired = 0;
+            const float  Y_LONG_PRESS_SECS = 0.5f; /* hold past this → zoom, not vision cycle */
             XrActionStateGetInfo yget = { XR_TYPE_ACTION_STATE_GET_INFO };
             yget.action = xr_y_button_action;
             XrActionStateBoolean ystate = { XR_TYPE_ACTION_STATE_BOOLEAN };
@@ -2200,10 +2220,28 @@ int axes, balls, hats;
                     && ystate.isActive) {
                 int y_cur = ystate.currentState ? 1 : 0;
                 xr_y_button_gameplay_pressed = y_cur;
-                if (y_cur && !y_prev) xr_y_button_gameplay_edge = 1;
+                if (y_cur && !y_prev) {
+                    xr_y_button_gameplay_edge = 1;
+                    y_hold_secs  = 0.0f;
+                    y_long_fired = 0;
+                }
+                if (y_cur) {
+                    extern int RealFrameTime;
+                    y_hold_secs += (float)RealFrameTime / 65536.0f;
+                    if (!y_long_fired && y_hold_secs >= Y_LONG_PRESS_SECS) {
+                        xr_y_button_gameplay_long_edge = 1;
+                        y_long_fired = 1;
+                    }
+                } else if (!y_cur && y_prev) {
+                    /* Released: a short press that never became a long-press is a tap. */
+                    if (!y_long_fired)
+                        xr_y_button_gameplay_tap = 1;
+                }
                 y_prev = y_cur;
             } else {
                 y_prev = 0;
+                y_hold_secs = 0.0f;
+                y_long_fired = 0;
             }
         }
 

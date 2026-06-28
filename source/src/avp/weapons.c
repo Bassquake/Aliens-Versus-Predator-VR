@@ -729,7 +729,25 @@ void UpdateWeaponStateMachine(void)
     	/* Time out current weapon state */
     	{
         	int timeOutRate = twPtr->TimeOutRateForState[weaponPtr->CurrentState];
-            
+
+			#ifdef __ANDROID__
+			/* In VR, weapon changes feel sluggish. Speed up only the weapon-change
+			   phases (swap out/in, ready/unready) by draining their timeout faster,
+			   so firing, recoil and reload timings are left untouched. */
+			switch (weaponPtr->CurrentState)
+			{
+				case WEAPONSTATE_SWAPPING_IN:
+				case WEAPONSTATE_SWAPPING_OUT:
+				case WEAPONSTATE_READYING:
+				case WEAPONSTATE_UNREADYING:
+					if (timeOutRate != WEAPONSTATE_INSTANTTIMEOUT)
+						timeOutRate *= 3;   /* ~3x quicker weapon change */
+					break;
+				default:
+					break;
+			}
+			#endif
+
 			if (WEAPONSTATE_INSTANTTIMEOUT==timeOutRate)
             {
             	weaponPtr->StateTimeOutCounter=0;
@@ -738,7 +756,7 @@ void UpdateWeaponStateMachine(void)
            	{
             	weaponPtr->StateTimeOutCounter-=MUL_FIXED(timeOutRate,NormalFrameTime);
             }
-        
+
         }
         if(weaponPtr->StateTimeOutCounter<=0)
         {

@@ -1923,7 +1923,28 @@ void InitialiseEnergyBoltBehaviour(DAMAGE_PROFILE *damage, int factor)
 		VECTORCH targetDirection;
 		MATRIXCH orient;
 
-		GetGunDirection(&targetDirection,&position);
+		#ifdef __ANDROID__
+		/* In VR the gun direction comes from the weapon controller, so GetGunDirection
+		 * (which fires at the controller-aim raycast) ignores the smart-target lock.
+		 * If a target is locked, fire the bolt straight at it instead, so the shoulder
+		 * cannon hits the reticle rather than where the controller points. */
+		extern DISPLAYBLOCK *SmartTarget_Object;
+		extern void GetTargetingPointOfObject(DISPLAYBLOCK *objectPtr, VECTORCH *targetPtr);
+		if (SmartTarget_Object)
+		{
+			/* Aim at the target's chest (body centre), not ObWorld - that origin sits at
+			 * the feet, so the bolt struck low. GetTargetingPointOfObject returns the
+			 * world-space "chest" section, matching the reticle's lock point (CofM). */
+			VECTORCH targetPoint;
+			GetTargetingPointOfObject(SmartTarget_Object, &targetPoint);
+			targetDirection.vx = targetPoint.vx - position.vx;
+			targetDirection.vy = targetPoint.vy - position.vy;
+			targetDirection.vz = targetPoint.vz - position.vz;
+			Normalise(&targetDirection);
+		}
+		else
+		#endif
+			GetGunDirection(&targetDirection,&position);
 		MakeMatrixFromDirection(&targetDirection,&orient);
 
 		InitialiseEnergyBoltBehaviourKernel(&position,&orient,1,damage,factor);

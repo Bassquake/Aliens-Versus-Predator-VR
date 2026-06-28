@@ -114,7 +114,29 @@ static DISPLAYBLOCK* CreateGrapplingHook(void)
 		GrapplingHook.Orientation = Global_VDB_Ptr->VDB_Mat;
 		TransposeMatrixCH(&GrapplingHook.Orientation);
 		dynPtr->OrientMat = GrapplingHook.Orientation;
-		
+
+		#ifdef __ANDROID__
+		/* In VR, fire from and along the right (weapon) controller rather than the
+		 * head/view direction. Mirrors the flare/grenade path in pmove.c: the aim
+		 * direction is row 2 of the raw grip matrix, but the launch velocity is
+		 * taken from row 3, so apply the same barrel fix to move the aim into row 3. */
+		{
+			extern int vr_right_hand_valid;
+			extern MATRIXCH vr_right_hand_mat;
+			extern VECTORCH vr_right_hand_world;
+			if (vr_right_hand_valid)
+			{
+				MATRIXCH m = vr_right_hand_mat;
+				MATRIXCH mat = m;
+				mat.mat21 = -m.mat31; mat.mat22 = -m.mat32; mat.mat23 = -m.mat33;
+				mat.mat31 =  m.mat21; mat.mat32 =  m.mat22; mat.mat33 =  m.mat23;
+				GrapplingHook.Orientation = mat;
+				dynPtr->OrientMat = mat;
+				dynPtr->PrevPosition = dynPtr->Position = vr_right_hand_world;
+			}
+		}
+		#endif
+
 		dynPtr->LinVelocity.vx = dynPtr->OrientMat.mat31;
 		dynPtr->LinVelocity.vy = dynPtr->OrientMat.mat32;
 		dynPtr->LinVelocity.vz = dynPtr->OrientMat.mat33;

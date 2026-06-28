@@ -88,10 +88,10 @@ void HandleCheatModes(void)
 	#endif
 }
 
-void GiveAllWeaponsCheat(void)
+/* Give the supplied player every weapon (and ammo) allowed for their species.
+   Split out from GiveAllWeaponsCheat so it can be reused at level start. */
+void GiveAllWeaponsToPlayer(PLAYER_STATUS *playerStatusPtr)
 {
-	PLAYER_STATUS *playerStatusPtr= (PLAYER_STATUS *) (Player->ObStrategyBlock->SBdataptr);
-
 	if(AvP.PlayerType == I_Marine)
    	{
     	int slot = MAX_NO_OF_WEAPON_SLOTS;
@@ -171,4 +171,11 @@ void GiveAllWeaponsCheat(void)
         }
 	}
 	LoadAllWeapons(playerStatusPtr);
+}
+
+void GiveAllWeaponsCheat(void)
+{
+	PLAYER_STATUS *playerStatusPtr= (PLAYER_STATUS *) (Player->ObStrategyBlock->SBdataptr);
+
+	GiveAllWeaponsToPlayer(playerStatusPtr);
 }

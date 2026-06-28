@@ -149,6 +149,12 @@ int       vr_left_hand_valid = 0;
 
 void UpdateCamera(void);
 
+/* Expose the per-eye FBO dimensions so 3D-projected HUD geometry (the Predator
+ * lock-on triangles, rendered while the HUD virtual SDB has CentreX/Y = 320/340)
+ * can correct for VDB_ProjX/Y still being sized for the eye-FBO half-width. */
+int VR_GetEyeFBOWidth(void)  { return eye_fbo_w; }
+int VR_GetEyeFBOHeight(void) { return eye_fbo_h; }
+
 void VR_InitEyeFBOs(int w, int h)
 {
     eye_fbo_w = w;
@@ -1961,6 +1967,17 @@ void AvpShowViewsVR(void)
                                  * (float)Global_VDB_Ptr->VDB_ProjX / (eye_fbo_w * 0.5f);
                 float aim_clip_y = -(float)aim_vs.vy / aim_vs.vz
                                  * (float)Global_VDB_Ptr->VDB_ProjY / (eye_fbo_h * 0.5f);
+                /* The Predator zoom magnifies the world (and the targeting dots) about
+                 * screen centre via the view matrix's CameraZoomScale, but this aim
+                 * projection uses the unscaled VDB_ProjX/Y. Magnify the aim direction
+                 * by the same 1/CameraZoomScale here, BEFORE the per-eye convergence
+                 * (vr_hud_offset_x) is applied below, so the crosshair tracks the dots
+                 * under zoom without the convergence being amplified (which would push
+                 * the eyes apart). No-op at normal zoom (CameraZoomScale == 1). */
+                if (CameraZoomScale > 0.0f && CameraZoomScale != 1.0f) {
+                    aim_clip_x /= CameraZoomScale;
+                    aim_clip_y /= CameraZoomScale;
+                }
                 int cx = ScreenDescriptorBlock.SDB_CentreX;
                 int cy = ScreenDescriptorBlock.SDB_CentreY;
                 int hud_x = cx + (int)((float)cx * (aim_clip_x - vr_hud_offset_x) / vr_hud_clip_scale);

@@ -18,6 +18,12 @@ rounds fired etc etc etc*/
 #include "psnd.h"
 #include "weapons.h"
 #include "inventry.h"
+#include "cheat.h"
+
+/* TEMPORARY TEST AID: give the player every weapon (with ammo) at the start of
+   every single-player level so all weapons can be tried out. Set to 0 (or delete
+   this block and its use below) to restore normal per-level starting loadouts. */
+#define TEST_ALL_WEAPONS 0
 
 /* for win95 net game support */
 #include "pldnet.h"
@@ -611,7 +617,24 @@ void InitialisePlayersInventory(PLAYER_STATUS *playerStatusPtr)
     
 	/*check jetpack and grappling hook*/
     playerStatusPtr->JetpackEnabled = StartingEquipment.marine_jetpack;
-    playerStatusPtr->GrapplingHookEnabled = StartingEquipment.predator_grappling_hook;	
+    playerStatusPtr->GrapplingHookEnabled = StartingEquipment.predator_grappling_hook;
+
+#if TEST_ALL_WEAPONS
+	/* Temporary: hand over every weapon for this species so they can be tested in
+	   any level. Single-player only, to avoid affecting multiplayer loadouts.
+	   Also force-enable the movement gadgets (Marine jetpack / Predator grappling
+	   hook) so the Left Trigger can be tested on levels that don't normally grant
+	   them - otherwise the trigger is correctly a no-op there. */
+	if (AvP.Network == I_No_Network)
+	{
+		GiveAllWeaponsToPlayer(playerStatusPtr);
+
+		if (AvP.PlayerType == I_Marine)
+			playerStatusPtr->JetpackEnabled = 1;
+		if (AvP.PlayerType == I_Predator)
+			playerStatusPtr->GrapplingHookEnabled = 1;
+	}
+#endif
 
 	LoadAllWeapons(PlayerStatusPtr);
 }

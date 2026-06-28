@@ -1695,6 +1695,18 @@ static void DrawPredatorSights(void)
 
     if (TemplateWeapon[weaponPtr->WeaponIDNumber].IsSmartTarget)
     {
+		#ifdef __ANDROID__
+		/* In VR, HandlePredatorWeapon (which normally drives the smart-target lock-on)
+		 * is skipped to avoid double-rendering the weapon, so run the search here for
+		 * auto-targeting weapons or the lock-on never updates. Eye 0 only: SmartTarget
+		 * advances lock-on state, so running it once per eye would double-step it.
+		 * (The reticle position itself is projected per-eye from the locked target in
+		 * RenderPredatorTargetingSegment, so the screen-space SmartTargetSightX/Y this
+		 * produces isn't used for placement in VR.) projectile_speed 0 = no lead. */
+		if (VR_IsIn3DMode() && vr_eye_index == 0)
+			SmartTarget(0, 0);
+		#endif
+
 		/* ChrisF 19/2/99 Changed this to prevent 'instant' re-targetting. */
 		if ((SmartTarget_Object==NULL)||(SmartTarget_Object!=Old_SmartTarget_Object))
 		{
@@ -1706,15 +1718,14 @@ static void DrawPredatorSights(void)
 			}
 		}
 		else
-		{				 
+		{
 			int segmentScale=PredSight_LockOnTime;
 
-			 
 			if (segmentScale<=ONE_FIXED)
 			{
 				RenderPredatorTargetingSegment((PredSight_Angle+1365*2)&4095, segmentScale, PredSight_LockOnTime);
 			}
-			
+
 			segmentScale -= PREDATOR_LOCK_ON_TIME/5;
 			if (segmentScale<0) segmentScale = 0;
 			if (segmentScale<=ONE_FIXED)
@@ -1727,26 +1738,33 @@ static void DrawPredatorSights(void)
 			if (segmentScale>ONE_FIXED) segmentScale = ONE_FIXED;
 
 	  		RenderPredatorTargetingSegment(PredSight_Angle, segmentScale, PredSight_LockOnTime);
-			
-			if (PredSight_LockOnTime>0)
+
+			/* Advance the lock-on animation once per frame. MaintainHUD runs per eye in
+			 * VR, so gate the state advance to eye 0 or the lock-on plays at 2x speed. */
+		#ifdef __ANDROID__
+			if (!VR_IsIn3DMode() || vr_eye_index == 0)
+		#endif
 			{
-				PredSight_LockOnTime -= NormalFrameTime*PREDATOR_LOCK_ON_SPEED;
-			
-				if (PredSight_LockOnTime<0)
+				if (PredSight_LockOnTime>0)
 				{
-					PredSight_LockOnTime = 0;
-					/* Locked on - play a sound. */
-					if (weaponPtr->WeaponIDNumber==WEAPON_PRED_DISC) {
-						Sound_Play(SID_PREDATOR_DISK_TARGET_LOCKED,"h");
-					} else if (weaponPtr->WeaponIDNumber==WEAPON_PRED_SHOULDERCANNON) {
-						Sound_Play(SID_PREDATOR_PLASMACASTER_TARGET_FOUND,"h");
+					PredSight_LockOnTime -= NormalFrameTime*PREDATOR_LOCK_ON_SPEED;
+
+					if (PredSight_LockOnTime<0)
+					{
+						PredSight_LockOnTime = 0;
+						/* Locked on - play a sound. */
+						if (weaponPtr->WeaponIDNumber==WEAPON_PRED_DISC) {
+							Sound_Play(SID_PREDATOR_DISK_TARGET_LOCKED,"h");
+						} else if (weaponPtr->WeaponIDNumber==WEAPON_PRED_SHOULDERCANNON) {
+							Sound_Play(SID_PREDATOR_PLASMACASTER_TARGET_FOUND,"h");
+						}
 					}
 				}
-			}
-			else
-			{
-				PredSight_Angle += (NormalFrameTime>>6);
-				PredSight_Angle &= 4095;
+				else
+				{
+					PredSight_Angle += (NormalFrameTime>>6);
+					PredSight_Angle &= 4095;
+				}
 			}
 		}
 	}
@@ -1757,6 +1775,25 @@ static void DrawPredatorSights(void)
 		imageDesc.ImageNumber = HUDFontsImageNumber;
 		imageDesc.TopLeftX = (ScreenDescriptorBlock.SDB_Width-16)/2;
 		imageDesc.TopLeftY = (ScreenDescriptorBlock.SDB_Height-14)/2;
+		#ifdef __ANDROID__
+		/* In VR, attach the tri-crosshair to the weapon controller aim
+		 * (GunMuzzleSightX/Y), exactly like the Marine crosshair, instead of locking
+		 * it to screen centre. GunMuzzleSightX/Y is maintained for every Predator
+		 * weapon (melee resets it to screen centre, so melee still shows a centred
+		 * reticle). Zoom magnification is applied where GunMuzzleSightX/Y is computed
+		 * (avpview.c), so it already tracks the magnified world/dots here. The image
+		 * is 17x15, so offset by half to centre it on the aim. */
+		imageDesc.TopLeftX = (GunMuzzleSightX>>16) - 8;
+		imageDesc.TopLeftY = (GunMuzzleSightY>>16) - 7;
+		/* The right (second) eye's crosshair lands a few HUD pixels too far right
+		 * versus the left eye; nudge it back left so the two eyes converge. Tunable:
+		 * increase to move further left, decrease (or 0) if it overshoots. */
+		if (vr_eye_index != 0)
+		{
+			const int VR_CROSSHAIR_RIGHTEYE_NUDGE_X = 12;
+			imageDesc.TopLeftX -= VR_CROSSHAIR_RIGHTEYE_NUDGE_X;
+		}
+		#endif
 		imageDesc.TopLeftU = 1;
 		imageDesc.TopLeftV = 51;
 		imageDesc.Height = 15;

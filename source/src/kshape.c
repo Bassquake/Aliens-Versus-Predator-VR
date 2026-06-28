@@ -6171,22 +6171,88 @@ void RenderPredatorTargetingSegment(int theta, int scale, int drawInRed)
 	VECTOR2D offset[4];
  	POLYHEADER fakeHeader;
 	int centreX,centreY;
+	#ifdef __ANDROID__
+	VECTORCH vrTargetDir; int vrHaveTarget = 0; /* VR: target's view-space direction, applied after zoom */
+	#endif
 	int z = ONE_FIXED-scale;
 	z = MUL_FIXED(MUL_FIXED(z,z),2048);
 	{
 		extern int SmartTargetSightX, SmartTargetSightY;
 		extern SCREENDESCRIPTORBLOCK ScreenDescriptorBlock;
-		centreY = MUL_FIXED( (SmartTargetSightY-(ScreenDescriptorBlock.SDB_Height<<15)) /Global_VDB_Ptr->VDB_ProjY,z);
-		if (MIRROR_CHEATMODE)
+		int useScreenSight = 1;
+
+		#ifdef __ANDROID__
+		/* In VR, place the reticle by transforming the locked target's WORLD position
+		 * into THIS eye with the current VDB - the exact transform the renderer uses -
+		 * rather than the precomputed/eye-0 SmartTargetSightX/Y (which carries a 4:3
+		 * fudge and only lines up at screen centre).
+		 *
+		 * The reticle is kept at the shallow always-on-top depth z (so it never
+		 * z-fights or gets occluded by the enemy/world - that was making it vanish).
+		 * Its centre is offset along the target's view-space DIRECTION, scaled to z
+		 * below (after zoom), which projects to exactly the same eye pixel as the
+		 * enemy geometry (verified against the per-eye projection), so it tracks the
+		 * head correctly in both eyes without swimming. */
 		{
-			centreX = MUL_FIXED( ( - (SmartTargetSightX-(ScreenDescriptorBlock.SDB_Width<<15)))  /Global_VDB_Ptr->VDB_ProjX,z);
+			extern int VR_IsIn3DMode(void);
+			extern DISPLAYBLOCK *SmartTarget_Object;
+			if (VR_IsIn3DMode() && SmartTarget_Object)
+			{
+				VECTORCH tv;
+				tv.vx = SmartTarget_Object->ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
+				tv.vy = SmartTarget_Object->ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
+				tv.vz = SmartTarget_Object->ObWorld.vz - Global_VDB_Ptr->VDB_World.vz;
+				RotateVector(&tv, &Global_VDB_Ptr->VDB_Mat);
+				if (tv.vz > 0)
+				{
+					vrTargetDir = tv;
+					vrHaveTarget = 1;
+					useScreenSight = 0;
+				}
+			}
 		}
-		else
+		#endif
+
+		if (useScreenSight)
 		{
-			centreX = MUL_FIXED( (SmartTargetSightX-(ScreenDescriptorBlock.SDB_Width<<15))  /Global_VDB_Ptr->VDB_ProjX,z);
+			centreY = MUL_FIXED( (SmartTargetSightY-(ScreenDescriptorBlock.SDB_Height<<15)) /Global_VDB_Ptr->VDB_ProjY,z);
+			if (MIRROR_CHEATMODE)
+			{
+				centreX = MUL_FIXED( ( - (SmartTargetSightX-(ScreenDescriptorBlock.SDB_Width<<15)))  /Global_VDB_Ptr->VDB_ProjX,z);
+			}
+			else
+			{
+				centreX = MUL_FIXED( (SmartTargetSightX-(ScreenDescriptorBlock.SDB_Width<<15))  /Global_VDB_Ptr->VDB_ProjX,z);
+			}
 		}
 	}
 	z = (float)z*CameraZoomScale;
+
+	#ifdef __ANDROID__
+	/* Map the target's view-space direction onto the (zoom-scaled) reticle depth z so
+	 * the reticle centre projects to the same eye pixel as the enemy.
+	 *
+	 * The catch: this runs while the HUD virtual SDB has CentreX/Y = 320/340, but
+	 * VDB_ProjX/Y are still sized for the eye-FBO half-width (e.g. 669 for a ~1440px
+	 * eye). The output projection divides by SDB_CentreX, so a raw dir*z/dir.vz centre
+	 * overshoots by (eye_fbo_w/2)/320 — fine dead-centre, but growing toward the edges
+	 * and swinging as the head turns the target off-axis. Rescale the centre offset by
+	 * SDB_Width/eye_fbo_w (and height) to cancel that, WITHOUT touching the triangle
+	 * arm sizes (which the player wants kept). */
+	if (vrHaveTarget && vrTargetDir.vz > 0)
+	{
+		extern int VR_GetEyeFBOWidth(void);
+		extern int VR_GetEyeFBOHeight(void);
+		extern SCREENDESCRIPTORBLOCK ScreenDescriptorBlock;
+		int ew = VR_GetEyeFBOWidth();
+		int eh = VR_GetEyeFBOHeight();
+		centreX = (int)(((long long)vrTargetDir.vx * z) / vrTargetDir.vz);
+		centreY = (int)(((long long)vrTargetDir.vy * z) / vrTargetDir.vz);
+		if (ew > 0) centreX = (int)(((long long)centreX * ScreenDescriptorBlock.SDB_Width)  / ew);
+		if (eh > 0) centreY = (int)(((long long)centreY * ScreenDescriptorBlock.SDB_Height) / eh);
+		if (MIRROR_CHEATMODE) centreX = -centreX;
+	}
+	#endif
 
 	{
 		int a = 160;
@@ -6223,6 +6289,19 @@ void RenderPredatorTargetingSegment(int theta, int scale, int drawInRed)
 			offset[2].vx = -offset[2].vx;
 			offset[3].vx = -offset[3].vx;
 		}
+		#ifdef __ANDROID__
+		/* The reticle reads large in the headset (VDB_ProjX is eye-FBO sized while the
+		 * HUD SDB centre is 320), so shrink the lock-on triangle arms in VR. */
+		if (vrHaveTarget)
+		{
+			int k;
+			for (k = 0; k < 4; k++)
+			{
+				offset[k].vx = MUL_FIXED(offset[k].vx, 45875); /* 0.70 Scale 65536 is full  */
+				offset[k].vy = MUL_FIXED(offset[k].vy, 45875);
+			}
+		}
+		#endif
 		VerticesBuffer[0].X = offset[0].vx+centreX;
 		VerticesBuffer[0].Y = MUL_FIXED(offset[0].vy,87381)+centreY;
 		

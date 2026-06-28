@@ -1,5 +1,8 @@
 # Aliens Versus Predator: VR
 
+> [!TIP]
+> Check the new 0.2 update on releases page. List of fixes and features added on there.
+
 Fork of NakedAVP to use OpenXR for VR headets like the Meta Quest. Confimed to work with Quest 2 and Quest 3 running 2.4 OS.
 
 This is early stage as lots of bugs and fixes are likely needed and I've only been focusing on the Marine level at the moment.
@@ -77,7 +80,7 @@ I will probably add ability to customise all these.
 - ~~Add rumble effects to controllers.~~ Added.
 - ~~Add cd music.~~ Added.
 - ~~Maybe add anti-aliasing options but not sure if really needed.~~ Added MSAA options in Audio/Video Options screen.
-- Fix any visual issues that come up.
+- Add multiplayer functionality if possible.
 - Add option for left handed users.
 - Add ability to customise controller key mapping.
 - Customise some objects such as marines weapons as it has 2 hands attached to the main weapon which is a bit weird.

@@ -776,6 +776,14 @@ static void DoMotionTracker(void)
 	{
 		DYNAMICSBLOCK *playerDynPtr = Player->ObStrategyBlock->DynPtr;
 		int phi = playerDynPtr->OrientEuler.EulerY;
+		#ifdef __ANDROID__
+		/* In VR the body doesn't turn with the head, so the radar would never rotate
+		 * to match where the player is looking. Use the actual view yaw (head + snap
+		 * turn) instead of the body yaw. The view's world-forward is VDB_Mat column 3
+		 * (mat13,_,mat33); ArcTan(x,z) returns the yaw in the same convention as EulerY. */
+		if (VR_IsIn3DMode())
+			phi = ArcTan(Global_VDB_Ptr->VDB_Mat.mat13, Global_VDB_Ptr->VDB_Mat.mat33);
+		#endif
 		int cosPhi = MUL_FIXED(GetCos(phi),MOTIONTRACKER_SCALE);
 		int sinPhi = MUL_FIXED(GetSin(phi),MOTIONTRACKER_SCALE);
     	int i;

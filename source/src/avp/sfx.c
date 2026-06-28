@@ -17,6 +17,11 @@
 #define UseLocalAssert Yes
 #include "ourasert.h"
 
+#ifdef __ANDROID__
+extern int VR_IsIn3DMode(void);
+extern int vr_eye_index; /* 0 = left eye, 1 = right eye, during per-eye VR rendering */
+#endif
+
 static SFXBLOCK SfxBlockStorage[MAX_NO_OF_SFX_BLOCKS];
 static int NumFreeSfxBlocks;
 static SFXBLOCK *FreeSfxBlockList[MAX_NO_OF_SFX_BLOCKS];
@@ -123,6 +128,13 @@ void DrawSfxObject(DISPLAYBLOCK *dispPtr)
 				direction.vz = dispPtr->ObMat.mat33;
 				DrawMuzzleFlash(&dispPtr->ObWorld,&direction,MUZZLE_FLASH_AMORPHOUS);
 			}
+			/* Strobe toggle - flickers the flash every other DRAW. In VR the scene is
+			 * rendered once per eye, so toggling per-eye would draw the flash in the
+			 * left eye then skip the right. Only toggle on the right (last) eye so both
+			 * eyes show the same frame's strobe state. */
+			#ifdef __ANDROID__
+			if (!VR_IsIn3DMode() || vr_eye_index != 0)
+			#endif
 			sfxPtr->EffectDrawnLastFrame=!sfxPtr->EffectDrawnLastFrame;
 
 			break;
@@ -148,6 +160,13 @@ void DrawSfxObject(DISPLAYBLOCK *dispPtr)
 				direction.vz = dispPtr->ObMat.mat33;
 				DrawMuzzleFlash(&dispPtr->ObWorld,&direction,MUZZLE_FLASH_SKEETER);
 			}
+			/* Strobe toggle - flickers the flash every other DRAW. In VR the scene is
+			 * rendered once per eye, so toggling per-eye would draw the flash in the
+			 * left eye then skip the right. Only toggle on the right (last) eye so both
+			 * eyes show the same frame's strobe state. */
+			#ifdef __ANDROID__
+			if (!VR_IsIn3DMode() || vr_eye_index != 0)
+			#endif
 			sfxPtr->EffectDrawnLastFrame=!sfxPtr->EffectDrawnLastFrame;
 
 			break;

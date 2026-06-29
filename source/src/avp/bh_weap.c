@@ -2993,6 +2993,27 @@ void InitialiseDiscBehaviour(STRATEGYBLOCK *target,SECTION_DATA *disc_section) {
 	
 		dynPtr->PrevPosition = dynPtr->Position;
 		TransposeMatrixCH(&matrix);
+		#ifdef __ANDROID__
+		/* No smart-target lock: aim and launch the disc along the right (weapon)
+		 * controller instead of the head. With a lock the disc homes onto the target,
+		 * so the throw direction doesn't matter and we keep the head-based setup. Same
+		 * barrel fix as the grappling hook - move the controller forward (raw row 2)
+		 * into row 3 so the mat31/32/33 forward convention below works. */
+		{
+			extern int VR_IsIn3DMode(void);
+			extern int vr_right_hand_valid;
+			extern MATRIXCH vr_right_hand_mat;
+			extern VECTORCH vr_right_hand_world;
+			if (VR_IsIn3DMode() && target == NULL && vr_right_hand_valid)
+			{
+				MATRIXCH m = vr_right_hand_mat;
+				matrix = m;
+				matrix.mat21 = -m.mat31; matrix.mat22 = -m.mat32; matrix.mat23 = -m.mat33;
+				matrix.mat31 =  m.mat21; matrix.mat32 =  m.mat22; matrix.mat33 =  m.mat23;
+				dynPtr->PrevPosition = dynPtr->Position = vr_right_hand_world;
+			}
+		}
+		#endif
 		/* dynPtr->OrientMat = Player->ObMat; */
 		dynPtr->OrientMat = matrix;
 		dynPtr->PrevOrientMat = dynPtr->OrientMat;

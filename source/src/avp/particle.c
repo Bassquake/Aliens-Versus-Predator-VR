@@ -76,6 +76,7 @@ void MakeMolotovExplosionAt(VECTORCH *positionPtr,int seed);
 static void HandleVolumetricExplosion(VOLUMETRIC_EXPLOSION *expPtr);
 void DrawXenoborgMainLaserbeam(LASER_BEAM_DESC *laserPtr);
 void HandlePheromoneTrails(void);
+void RenderPheromoneTrailsOnly(void);
 void RenderTrailSegment(PHEROMONE_TRAIL *trailPtr);
 		
 PARTICLE_DESC ParticleDescription[MAX_NO_OF_PARTICLE_IDS] =
@@ -1751,6 +1752,9 @@ static void RenderParticlesOnly(void)
 				RenderExplosionSurface(&ExplosionStorage[exp_i]);
 		}
 	}
+
+	/* Pheromone/disc trails for this eye (decay/dealloc already ran on eye 0). */
+	RenderPheromoneTrailsOnly();
 
 	{
 		extern int NumOnScreenBlocks;
@@ -5213,11 +5217,25 @@ void HandlePheromoneTrails(void)
 		}
 		else
 		{
-			RenderTrailSegment(trailPtr);	
+			RenderTrailSegment(trailPtr);
 			trailPtr++;
 		}
 
-	}					 
+	}
+}
+
+/* VR: render the pheromone/disc trails for the second eye WITHOUT decaying or
+   deallocating them - that physics step already ran in HandlePheromoneTrails on
+   eye 0. Without this the trail (e.g. the Predator disc) only appears in one eye. */
+void RenderPheromoneTrailsOnly(void)
+{
+	int i = NumActiveTrails;
+	PHEROMONE_TRAIL *trailPtr = TrailStorage;
+	while (i--)
+	{
+		RenderTrailSegment(trailPtr);
+		trailPtr++;
+	}
 }
 #include "frustum.h"
 void RenderTrailSegment(PHEROMONE_TRAIL *trailPtr)

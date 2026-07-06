@@ -2299,13 +2299,12 @@ TEMPLATE_WEAPON_DATA	TemplateWeapon[MAX_NO_OF_WEAPON_TEMPLATES] =
 	{
 		/* PrimaryAmmoID; */
 		AMMO_PRED_PISTOL,
-		/* SecondaryAmmoID; */
-		AMMO_PRED_PISTOL,
-		   
+		/* SecondaryAmmoID; AMMO_NONE - no secondary (flechette sound asset missing) */
+		AMMO_NONE,
+
 		//FirePredPistol, /* FirePrimaryFunction */
 		PredPistolSecondaryFire, /* FirePrimaryFunction */
-		NULL, /* FireSecondaryFunction */
-		//PlayerFirePredPistolFlechettes, /* FireSecondaryFunction */
+		NULL, /* FireSecondaryFunction - disabled (flechette secondary removed) */
 		NULL,	/* WeaponInitFunction */
 
 	    /* TimeOutRateForState[MAX_NO_OF_WEAPON_STATES]; in 16.16 */
@@ -2332,7 +2331,7 @@ TEMPLATE_WEAPON_DATA	TemplateWeapon[MAX_NO_OF_WEAPON_TEMPLATES] =
 		{
 			PredPistol_Idle,  /* WEAPONSTATE_IDLE	*/
 			PredPistol_Firing,  /* WEAPONSTATE_FIRING_PRIMARY */
-			PredPistol_Idle,  /* WEAPONSTATE_RECOIL_PRIMARY */
+			PredPistol_Firing,  /* WEAPONSTATE_RECOIL_PRIMARY - play fire anim during recovery */
 			PredPistol_Idle,  /* WEAPONSTATE_RELOAD_PRIMARY */
 			PredPistol_Firing,  /* WEAPONSTATE_FIRING_SECONDARY	*/
 			PredPistol_Idle,  /* WEAPONSTATE_RECOIL_SECONDARY	*/

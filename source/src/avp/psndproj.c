@@ -213,14 +213,14 @@ void DoPlayerSounds(void)
 	{			
 		case(WEAPON_PRED_PISTOL):
 		{
-			if(weaponPtr->CurrentState == WEAPONSTATE_FIRING_PRIMARY)			
+			if(weaponPtr->CurrentState == WEAPONSTATE_FIRING_PRIMARY)
 			{
-		 		if(weaponHandle == SOUND_NOACTIVEINDEX) 
+		 		if(weaponHandle == SOUND_NOACTIVEINDEX)
 				{
-		 		  //Sound_Play(SID_PULSE_START,"hp",-PRED_PISTOL_PITCH_CHANGE);	  
-				  //Sound_Play(SID_PULSE_LOOP,"elhp",&weaponHandle,-PRED_PISTOL_PITCH_CHANGE);					
+		 		  //Sound_Play(SID_PULSE_START,"hp",-PRED_PISTOL_PITCH_CHANGE);
+				  //Sound_Play(SID_PULSE_LOOP,"elhp",&weaponHandle,-PRED_PISTOL_PITCH_CHANGE);
 			   	  //weaponPitchTimer=ONE_FIXED>>3;
-				  Sound_Play(SID_PRED_PISTOL,"h");					
+				  Sound_Play(SID_PRED_PISTOL,"h");
 					playerNoise=1;
 			  	}
 				else

@@ -1355,9 +1355,18 @@ void AvpShowViewsVR(void)
      * Dividing by ref_head_y (user's physical standing height in metres) gives a
      * units-per-metre scale that makes both the VR floor and game scale feel correct. */
     int   game_eye_to_floor = Player->ObWorld.vy - base_world.vy; /* game units, > 0 upright */
-    float vr_y_scale = (ref_head_y > 0.01f && game_eye_to_floor > 0)
-        ? ((float)game_eye_to_floor / ref_head_y)
-        : (float)GAME_UNITS_PER_METRE;
+    /* While the Alien climbs, the body tilts so the eye is no longer above the
+     * feet in Y: this measure collapses toward 0 (and would flip on a ceiling),
+     * which made vr_y_scale — and hence the camera position — lurch a second into
+     * the climb. Only refresh the scale while the body is roughly upright;
+     * otherwise hold the last good value so the scale stays stable on the wall. */
+    static float cached_vr_y_scale = (float)GAME_UNITS_PER_METRE;
+    int body_upright = 1;
+    if (Player && Player->ObStrategyBlock && Player->ObStrategyBlock->DynPtr)
+        body_upright = (Player->ObStrategyBlock->DynPtr->OrientMat.mat22 > 55000); /* ~0.84*ONE_FIXED => tilt < ~33 deg */
+    if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright)
+        cached_vr_y_scale = (float)game_eye_to_floor / ref_head_y;
+    float vr_y_scale = cached_vr_y_scale;
 
     /* Reset hand pose validity; updated below from controller tracking. */
     vr_right_hand_valid = 0;
@@ -1442,10 +1451,10 @@ void AvpShowViewsVR(void)
     /* Apply any change to the MSAA setting before rendering this frame's eyes. */
     VR_UpdateEyeFBOMSAA();
 
-    /* --- Wall/ceiling climb: tilt the VR view to match the body's gravity
-     * alignment, like the flat game (where the camera follows the player's
-     * OrientMat). When the Alien clings to a wall the view rolls so the wall
-     * becomes "down"; on the ceiling it ends up upside-down.
+    /* --- Wall/ceiling climb: tilt the VR view so it stays parallel to the
+     * surface the Alien is on. When clinging to a wall the wall becomes "down",
+     * so looking forward looks up/along the wall (instead of down at your feet);
+     * on a ceiling it ends up inverted.
      *
      * The body's local down axis is OrientMat row 2 (mat21..mat23), which the
      * physics homes smoothly toward the contact-surface normal. We build the
@@ -1453,10 +1462,14 @@ void AvpShowViewsVR(void)
      * apply it in world space (same right-multiply slot as the snap yaw). Only
      * the tilt is taken — heading stays with the HMD/snap — so the rotation
      * axis is always horizontal. When upright the rotation is identity and we
-     * skip it. */
+     * skip it. Locomotion uses the matching transform (VR_RotateMoveVelocity in
+     * pmove.c) so movement stays aligned with this view. */
     MATRIXCH vr_climb_tilt;
     int      vr_climb_tilt_active = 0;
-    if (Player && Player->ObStrategyBlock && Player->ObStrategyBlock->DynPtr) {
+    /* Alien only: the Marine and Predator never wall-crawl, so their view must be
+       left completely untouched (no tilt, and the normal snap composition). */
+    if (AvP.PlayerType == I_Alien
+        && Player && Player->ObStrategyBlock && Player->ObStrategyBlock->DynPtr) {
         MATRIXCH *om = &Player->ObStrategyBlock->DynPtr->OrientMat;
         float bx = (float)om->mat21 / 65536.0f;   /* body down axis, world space */
         float by = (float)om->mat22 / 65536.0f;
@@ -1483,8 +1496,11 @@ void AvpShowViewsVR(void)
                 su = 0.0f; cu = -1.0f;
             }
             float omc = 1.0f - cu;
-            /* Rodrigues rotation taking (0,1,0) onto the body down axis,
-             * stored standard row-major like snap_mat (axis Y component is 0). */
+            /* Rodrigues rotation taking (0,1,0) onto the body down axis. Applied
+             * as a world-space PRE-rotation of the scene (see the MatrixMultiply
+             * below), so "up the wall" appears as forward when you look level —
+             * matching the locomotion transform in pmove.c (forward -> up the
+             * wall). Row-major. */
             float R11 = cu + ax*ax*omc, R12 = -az*su,         R13 = ax*az*omc;
             float R21 = az*su,          R22 = cu,             R23 = -ax*su;
             float R31 = ax*az*omc,      R32 = ax*su,          R33 = cu + az*az*omc;
@@ -1529,10 +1545,17 @@ void AvpShowViewsVR(void)
         q.quatz =  (int)(xr_views[eye].pose.orientation.z * ONE_FIXED);
         QuatToMat(&q, &Global_VDB_Ptr->VDB_Mat);
 
-        /* Post-multiply by snap rotation in world space.
-         * MatrixMultiply(A,B,C) -> C = B*A, so this gives VDB_Mat * snap_mat.
-         * After PrepareVDBForShowView transposes VDB_Mat, rendering applies
-         * snap_mat in world space before camera, preserving head-tracking axes. */
+        /* Apply the snap/turn rotation (a yaw about the game-up axis).
+         * MatrixMultiply(A,B,C) -> C = B*A.
+         *   - Normal case (floor, and always for Marine/Predator): post-multiply,
+         *     VDB_Mat * snap_mat, which after the world->view transpose applies the
+         *     yaw in world space before the camera — a clean heading turn that does
+         *     not tilt when the head is pitched. This is the original behaviour and
+         *     must be preserved for everyone who isn't a climbing Alien.
+         *   - Climbing Alien only: pre-multiply, snap_mat * VDB_Mat, so that once
+         *     the world-space climb tilt is applied below the final view is
+         *     R * snap * HMD and the snap becomes a heading yaw about the wall's
+         *     up-normal (rather than spinning/rolling the tilted view). */
         if (xr_snap_yaw != 0) {
             int snap_s = GetSin(xr_snap_yaw);
             int snap_c = GetCos(xr_snap_yaw);
@@ -1541,15 +1564,21 @@ void AvpShowViewsVR(void)
             snap_mat.mat21 = 0;       snap_mat.mat22 = ONE_FIXED; snap_mat.mat23 = 0;
             snap_mat.mat31 =  snap_s; snap_mat.mat32 = 0;         snap_mat.mat33 =  snap_c;
             MATRIXCH snapped;
-            MatrixMultiply(&snap_mat, &Global_VDB_Ptr->VDB_Mat, &snapped);
+            if (vr_climb_tilt_active)
+                MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &snap_mat, &snapped); /* snap_mat * VDB_Mat */
+            else
+                MatrixMultiply(&snap_mat, &Global_VDB_Ptr->VDB_Mat, &snapped); /* VDB_Mat * snap_mat */
             Global_VDB_Ptr->VDB_Mat = snapped;
         }
 
-        /* Apply the wall/ceiling climb tilt in world space (same slot as snap):
-         * VDB_Mat = VDB_Mat * vr_climb_tilt. */
+        /* Apply the wall/ceiling climb tilt as a world-space PRE-rotation of the
+         * scene: VDB_Mat = vr_climb_tilt * VDB_Mat (MatrixMultiply(A,B,C) gives
+         * C = B*A). This rotates the world so the wall's "up" becomes the view's
+         * forward when looking level, instead of a camera-local post-rotation
+         * (VDB_Mat * tilt) which came out inverted / backwards. */
         if (vr_climb_tilt_active) {
             MATRIXCH tilted;
-            MatrixMultiply(&vr_climb_tilt, &Global_VDB_Ptr->VDB_Mat, &tilted);
+            MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vr_climb_tilt, &tilted);
             Global_VDB_Ptr->VDB_Mat = tilted;
         }
 
@@ -1605,6 +1634,11 @@ void AvpShowViewsVR(void)
         Global_VDB_Ptr->VDB_ClipDown  = eye_fbo_h;
         Global_VDB_Ptr->VDB_CentreX   = eye_fbo_w / 2;
         Global_VDB_Ptr->VDB_CentreY   = eye_fbo_h / 2;
+        /* The rendered FOV MUST match the headset's real optical FOV, otherwise
+         * head rotation makes the world swim/distort (the angular mapping between
+         * head motion and the scene becomes wrong). This is why the Alien's
+         * original wide-angle view can't be reproduced in stereoscopic VR — it
+         * only works on flatscreen, where the non-VR path already widens it. */
         float tan_hx = (SDL_tanf(SDL_fabsf(xr_views[eye].fov.angleLeft))
                        + SDL_tanf(SDL_fabsf(xr_views[eye].fov.angleRight))) * 0.5f;
         float tan_hy = (SDL_tanf(SDL_fabsf(xr_views[eye].fov.angleUp))
@@ -1661,8 +1695,17 @@ void AvpShowViewsVR(void)
                 extern int RealFrameTime;
                 static int sec_haptic_ms_remaining = 0;
                 static int prev_squeeze = 0;
-                if (xr_grip_right_squeeze_pressed) {
-                    PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+                /* Only respond to the grip if the current weapon actually HAS a
+                   secondary; otherwise it just rumbles misleadingly (e.g. the
+                   predator speargun has no secondary). A secondary counts if it
+                   fires via a function or has its own ammo, or drives the
+                   FIRING_SECONDARY state (e.g. the wristblade wind-up uses ammo). */
+                PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+                TEMPLATE_WEAPON_DATA *gtw =
+                    &TemplateWeapon[ps->WeaponSlot[ps->SelectedWeaponSlot].WeaponIDNumber];
+                int has_secondary = (gtw->FireSecondaryFunction != NULL)
+                                 || (gtw->SecondaryAmmoID != AMMO_NONE);
+                if (xr_grip_right_squeeze_pressed && has_secondary) {
                     ps->Mvt_InputRequests.Flags.Rqst_FireSecondaryWeapon = 1;
                     sec_haptic_ms_remaining -= RealFrameTime;
                     if (!prev_squeeze || sec_haptic_ms_remaining <= 0) {
@@ -1891,6 +1934,14 @@ void AvpShowViewsVR(void)
                       || wpn->WeaponIDNumber == WEAPON_TWO_PISTOLS)
                         && wpn->CurrentState == WEAPONSTATE_FIRING_SECONDARY);
                 if (tw->MuzzleFlashShapeName && !tw->PrimaryIsMeleeWeapon && firing) {
+                    /* Draw the muzzle flash with depth test OFF so it isn't
+                       occluded by the weapon barrel geometry (its particles spread
+                       around the muzzle, some behind the barrel tip). It's drawn
+                       after the light halos, so disabling the test also keeps it
+                       on top of them instead of appearing hidden behind them.
+                       Flush inside the disabled-test scope so it actually draws
+                       here rather than at the later shared flush. */
+                    glDisable(GL_DEPTH_TEST);
                     PositionPlayersWeaponMuzzleFlash();
                     if (AvP.PlayerType == I_Marine) {
                         VECTORCH dir = { PlayersWeaponMuzzleFlash.ObMat.mat31,
@@ -1906,6 +1957,8 @@ void AvpShowViewsVR(void)
                     } else {
                         RenderThisDisplayblock(&PlayersWeaponMuzzleFlash);
                     }
+                    FlushRenderBuffer();
+                    glEnable(GL_DEPTH_TEST);
                 }
             }
         }

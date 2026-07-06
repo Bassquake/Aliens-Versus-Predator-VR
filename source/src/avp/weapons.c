@@ -279,6 +279,46 @@ void ChangeHUDToAlternateShapeSet(char *riffname,char *setname);
 
 static void StateDependentMovement(PLAYER_STATUS *playerStatusPtr, PLAYER_WEAPON_DATA *weaponPtr);
 
+/* Random idle "cocking"/fidget animations look wrong on a controller-held weapon
+   in VR, so they are suppressed while in VR 3D mode. Flat-screen (and the VR 2D
+   menu view) keep them. Gates the fidget triggers in the weapon idle handlers. */
+#ifdef __ANDROID__
+static int IdleFidgetAllowed(void) { return !VR_IsIn3DMode(); }
+#else
+static int IdleFidgetAllowed(void) { return 1; }
+#endif
+
+#ifdef __ANDROID__
+/* Position PlayersWeapon at the VR controller transform (the same pull-back +
+   barrel-fix the renderer uses in avpview.c) so muzzle-derived fire - flechettes,
+   flamethrower, etc. - originates at the visible nozzle instead of the stale
+   game-logic pose. Call right before ProveHModel in a player fire function.
+   No-op outside VR 3D mode. */
+static void VR_PositionPlayerWeaponAtController(void)
+{
+	extern int vr_right_hand_valid;
+	extern MATRIXCH vr_right_hand_mat;
+	extern VECTORCH vr_right_hand_world;
+	const int VR_WEAPON_PULLBACK = 300;   /* must match avpview.c */
+	MATRIXCH m;
+
+	if (!VR_IsIn3DMode() || !vr_right_hand_valid) return;
+
+	PlayersWeapon.ObWorld.vx = vr_right_hand_world.vx - ((vr_right_hand_mat.mat21 * VR_WEAPON_PULLBACK) >> 16);
+	PlayersWeapon.ObWorld.vy = vr_right_hand_world.vy - ((vr_right_hand_mat.mat22 * VR_WEAPON_PULLBACK) >> 16);
+	PlayersWeapon.ObWorld.vz = vr_right_hand_world.vz - ((vr_right_hand_mat.mat23 * VR_WEAPON_PULLBACK) >> 16);
+	PlayersWeapon.ObMat = vr_right_hand_mat;
+	/* Barrel fix (Rx+90), identical to the render path. */
+	m = PlayersWeapon.ObMat;
+	PlayersWeapon.ObMat.mat21 = -m.mat31;
+	PlayersWeapon.ObMat.mat22 = -m.mat32;
+	PlayersWeapon.ObMat.mat23 = -m.mat33;
+	PlayersWeapon.ObMat.mat31 =  m.mat21;
+	PlayersWeapon.ObMat.mat32 =  m.mat22;
+	PlayersWeapon.ObMat.mat33 =  m.mat23;
+}
+#endif
+
 int FireAutomaticWeapon(PLAYER_WEAPON_DATA *weaponPtr);
 int FireNonAutomaticWeapon(PLAYER_WEAPON_DATA *weaponPtr);
 int FireNonAutomaticSecondaryAmmo(PLAYER_WEAPON_DATA *weaponPtr);
@@ -733,7 +773,7 @@ void UpdateWeaponStateMachine(void)
 			#ifdef __ANDROID__
 			/* In VR, weapon changes feel sluggish. Speed up only the weapon-change
 			   phases (swap out/in, ready/unready) by draining their timeout faster,
-			   so firing, recoil and reload timings are left untouched. */
+			   so firing and reload timings are left untouched. */
 			switch (weaponPtr->CurrentState)
 			{
 				case WEAPONSTATE_SWAPPING_IN:
@@ -742,6 +782,15 @@ void UpdateWeaponStateMachine(void)
 				case WEAPONSTATE_UNREADYING:
 					if (timeOutRate != WEAPONSTATE_INSTANTTIMEOUT)
 						timeOutRate *= 3;   /* ~3x quicker weapon change */
+					break;
+				case WEAPONSTATE_RECOIL_PRIMARY:
+					/* Wristblade only: the primary swing normally recovers instantly
+					   (INSTANTTIMEOUT), so holding fire spams swings far too fast.
+					   Give it a short recovery so swings are paced without slowing
+					   the swing animation itself (which stays snappy/responsive).
+					   ONE_FIXED*4 drains the ONE_FIXED counter in ~0.25s. */
+					if (weaponPtr->WeaponIDNumber == WEAPON_PRED_WRISTBLADE)
+						timeOutRate = ONE_FIXED*4;
 					break;
 				default:
 					break;
@@ -5821,7 +5870,7 @@ void GrenadeLauncherFidget(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Stationary,ONE_FIXED,1);
 				WeaponFidgetPlaying=0;
 			}
-		} else if ((FastRandom()&255)==0) {
+		} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 			/* Start animation. */
 			if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_MarineHUD,(int)MHSS_Fidget)) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Fidget,ONE_FIXED,0);
@@ -5879,7 +5928,7 @@ void PulseRifleFidget(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Stationary,ONE_FIXED,1);
 				WeaponFidgetPlaying=0;
 			}
-		} else if ((FastRandom()&255)==0) {
+		} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 			/* Start animation. */
 			if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_MarineHUD,(int)MHSS_Fidget)) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Fidget,ONE_FIXED,0);
@@ -5929,7 +5978,7 @@ void WristBlade_Idle(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				if (PlayersWeaponHModelController.sequence_timer==(ONE_FIXED-1)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),twPtr->InitialSequenceType,(int)PHSS_Stand,ONE_FIXED,1);
 				}
-			} else if ((FastRandom()&255)==0) {
+			} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 				/* Start animation. */
 				if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Fidget)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_PredatorHUD,(int)PHSS_Fidget,-1,0);
@@ -6092,42 +6141,95 @@ void Cudgel_Strike(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 
 }
 
+/* Predator wristblade swing speed in VR.
+   IMPORTANT: the swing is a single tween (the blend into the attack pose), so
+   its DURATION and its START are the same thing. A bigger SLOWDOWN makes the
+   swing weightier but also makes it take longer to complete (which reads as
+   "slow to start"); a smaller one is snappy/responsive but can look too fast.
+   There is no value that is both slow and instant - they trade off. This is the
+   one knob to tune for that balance. (Swing repeat rate is limited separately by
+   the RECOIL_PRIMARY cooldown in UpdateWeaponStateMachine, and the secondary is
+   paced by PRED_WRISTBLADE_WINDUP_TIME below.)
+   ONE_FIXED = original snappy speed; larger = slower/weightier. */
+/* Now that the swing plays at its own authored duration (see GoGoGadget, which
+   uses InitHModelSequence directly to avoid the tween-handoff bug that made the
+   sequence inherit the fast tween rate), ONE_FIXED = the animation's real speed
+   (~0.5s). Bump above ONE_FIXED for a weightier/slower swing. */
+#ifdef __ANDROID__
+#define PRED_WRISTBLADE_SLOWDOWN ((ONE_FIXED*5)/4)   /* 1.25x - a little weight, tune here */
+#else
+#define PRED_WRISTBLADE_SLOWDOWN (ONE_FIXED)         /* native speed on flat-screen */
+#endif
+
+/* The secondary is a charge attack: its PullBack "wind-up" animation is what
+   builds the strike level (its keyframes bump the charge as it plays). Making
+   the wind-up take a deliberate fixed time paces the whole secondary - a quick
+   tap barely charges, holding builds up - instead of it firing almost instantly.
+   Absolute duration (>0) in fixed-point seconds; -1 = original native duration. */
+#ifdef __ANDROID__
+#define PRED_WRISTBLADE_WINDUP_TIME (ONE_FIXED/2)    /* ~0.5s to fully wind up in VR - tune here */
+#else
+#define PRED_WRISTBLADE_WINDUP_TIME (-1)             /* native duration on flat-screen */
+#endif
+
+static int PredWristbladeTweenTime(void) {
+	return MUL_FIXED((ONE_FIXED>>4), PRED_WRISTBLADE_SLOWDOWN);
+}
+static int PredWristbladeAnimTime(int subsequence) {
+	SEQUENCE *seq = GetSequencePointer(HMSQT_PredatorHUD, subsequence,
+		PlayersWeaponHModelController.Root_Section);
+	int t = (seq && seq->Time > 0) ? seq->Time : ONE_FIXED;
+	return MUL_FIXED(t, PRED_WRISTBLADE_SLOWDOWN);
+}
+
+/* Play a wristblade attack sub-sequence at its own (scaled) duration.
+   We use InitHModelSequence directly instead of InitHModelTweening because the
+   tween->sequence handoff has a bug: the after-tween sequence keeps the tween's
+   timer_increment and so plays at the tween's rate, ignoring the sequence's own
+   duration. Playing it directly makes the swing run at PredWristbladeAnimTime. */
+static void PlayWristbladeAttack(int subseq) {
+	InitHModelSequence(&PlayersWeaponHModelController, HMSQT_PredatorHUD, subseq,
+		PredWristbladeAnimTime(subseq));
+	PlayersWeaponHModelController.Looped = 0;   /* one-shot, so HModelAnimation_IsFinished triggers */
+}
+
 void GoGoGadgetWristbladePrimaryAttackAnimation(void) {
+
 
 	/* Attack_Jab is the default. */
 
 	if ((FastRandom()&65535)<21645) {
 		if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Attack_Primary)) {
-			InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,(int)PHSS_Attack_Primary,-1,0);
+			PlayWristbladeAttack((int)PHSS_Attack_Primary);
 			if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 				StaffAttack=6;
 			} else {
 				StaffAttack=7;
-			}	
+			}
 			return;
 		}
 	}
 
 	if ((FastRandom()&65535)<32767) {
 		if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Attack_Secondary)) {
-			InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,(int)PHSS_Attack_Secondary,-1,0);
+			PlayWristbladeAttack((int)PHSS_Attack_Secondary);
 			if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 				StaffAttack=8;
 			} else {
 				StaffAttack=9;
-			}	
+			}
 			return;
 		}
 	}
 
 	/* Still here? Use default. */
-	
-	InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,(int)PHSS_Attack_Jab,-1,0);
+
+	PlayWristbladeAttack((int)PHSS_Attack_Jab);
 	if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 		StaffAttack=0;
 	} else {
 		StaffAttack=1;
-	}	
+	}
 
 }
 
@@ -6217,14 +6319,14 @@ void WristBlade_Strike_Secondary(void *playerStatus, PLAYER_WEAPON_DATA *weaponP
 	if (weaponPtr->StateTimeOutCounter == WEAPONSTATE_INITIALTIMEOUTCOUNT) {
 
 		if ((FastRandom()&65536)<32767) {
-			InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,(int)PHSS_Attack_Primary,-1,0);
+			InitHModelTweening(&PlayersWeaponHModelController,PredWristbladeTweenTime(),HMSQT_PredatorHUD,(int)PHSS_Attack_Primary,PredWristbladeAnimTime((int)PHSS_Attack_Primary),0);
 			if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 				StaffAttack=2;
 			} else {
 				StaffAttack=3;
-			}	
+			}
 		} else {
-			InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,(int)PHSS_Attack_Secondary,-1,0);
+			InitHModelTweening(&PlayersWeaponHModelController,PredWristbladeTweenTime(),HMSQT_PredatorHUD,(int)PHSS_Attack_Secondary,PredWristbladeAnimTime((int)PHSS_Attack_Secondary),0);
 			if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 				StaffAttack=4;
 			} else {
@@ -6351,7 +6453,7 @@ void PredPistol_Idle(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				if (PlayersWeaponHModelController.sequence_timer==(ONE_FIXED-1)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),twPtr->InitialSequenceType,(int)PHSS_Stand,ONE_FIXED,1);
 				}
-			} else if ((FastRandom()&255)==0) {
+			} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 				/* Start animation. */
 				if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Fidget)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_PredatorHUD,(int)PHSS_Fidget,-1,0);
@@ -6367,8 +6469,20 @@ void PredPistol_Idle(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 
 void PredPistol_Firing(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 
+	/* Called on entry to FIRING_PRIMARY (fires instantly) and, more importantly,
+	   on entry to RECOIL_PRIMARY - the ~0.5s recovery where the fire animation
+	   actually gets time to play. (RECOIL used to run PredPistol_Idle, which
+	   forced the pose back to Stand and stomped the fire animation after one
+	   frame, so nothing was ever seen.)
+
+	   Play the fire animation as a direct sequence rather than a tween: the
+	   tween->sequence handoff bug makes tweened sequences play at the tween's
+	   rate instead of their own duration. */
 	if (weaponPtr->StateTimeOutCounter == WEAPONSTATE_INITIALTIMEOUTCOUNT) {
-		InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),HMSQT_PredatorHUD,(int)PHSS_Attack_Primary,ONE_FIXED,1);
+		if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Attack_Primary)) {
+			InitHModelSequence(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Attack_Primary,-1);
+			PlayersWeaponHModelController.Looped=0;
+		}
 	}
 
 }
@@ -6379,7 +6493,13 @@ int PlayerFireFlameThrower(PLAYER_WEAPON_DATA *weaponPtr) {
 
 	TEMPLATE_WEAPON_DATA *twPtr=&TemplateWeapon[weaponPtr->WeaponIDNumber];
    	int oldAmmoCount;
-    
+
+#ifdef __ANDROID__
+	/* In VR, fire from the controller-rendered nozzle, not the stale game-logic
+	   pose, so the flame lines up with the visible muzzle as you move. */
+	VR_PositionPlayerWeaponAtController();
+#endif
+
 	ProveHModel(&PlayersWeaponHModelController,&PlayersWeapon);
     {
     	oldAmmoCount=weaponPtr->PrimaryRoundsRemaining>>16;
@@ -7280,8 +7400,11 @@ void AlienStrikeTime(int time) {
 void WristBlade_WindUp(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 
 	if (weaponPtr->StateTimeOutCounter == WEAPONSTATE_INITIALTIMEOUTCOUNT) {
-		InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,
-			(int)PHSS_PullBack,-1,0);
+		/* Direct sequence (not a tween) so the wind-up plays at its own duration -
+		   see PlayWristbladeAttack for the tween-handoff bug this avoids. */
+		InitHModelSequence(&PlayersWeaponHModelController,HMSQT_PredatorHUD,
+			(int)PHSS_PullBack,PRED_WRISTBLADE_WINDUP_TIME);
+		PlayersWeaponHModelController.Looped=0;
 
 		/* Setup base damage. */
 		Player_Weapon_Damage=TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty];
@@ -7295,9 +7418,10 @@ void WristBlade_WindUp(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 	} else if ((PlayersWeaponHModelController.Tweening==Controller_NoTweening)
 		&&(PlayersWeaponHModelController.sequence_timer==(ONE_FIXED-1))) {
 
-		/* Finished poise move. */
-		InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,
-			(int)PHSS_Hold,-1,1);
+		/* Finished poise move: hold the wound-up pose (looped). */
+		InitHModelSequence(&PlayersWeaponHModelController,HMSQT_PredatorHUD,
+			(int)PHSS_Hold,-1);
+		PlayersWeaponHModelController.Looped=1;
 
 		Alien_Tail_Clock=-1;
 
@@ -7326,8 +7450,13 @@ void WristBlade_WindUp(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 		if (Alien_Tail_Clock<-(ONE_FIXED<<2)) {
 			/* Time out? */
 			if (PlayersWeaponHModelController.Sub_Sequence!=PHSS_PullBack) {
-				InitHModelTweening_Backwards(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,
-					(int)PHSS_PullBack,-1,0);
+				/* Un-wind: play PullBack in reverse at its own duration (direct
+				   sequence + Reversed, avoiding the tween-handoff speed bug). */
+				InitHModelSequence(&PlayersWeaponHModelController,HMSQT_PredatorHUD,
+					(int)PHSS_PullBack,PRED_WRISTBLADE_WINDUP_TIME);
+				PlayersWeaponHModelController.Looped=0;
+				PlayersWeaponHModelController.Reversed=1;
+				PlayersWeaponHModelController.sequence_timer=(ONE_FIXED-1);
 			} else {
 				/* In the timeout... */
 				if (HModelAnimation_IsFinished(&PlayersWeaponHModelController)) {
@@ -7367,8 +7496,7 @@ void ThrowSecondaryStrongStrike(void) {
 		case 0:
 			GLOBALASSERT(HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,
 				 (int)PHSS_Attack_Secondary_Strong_One));
-			InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,
-				(int)PHSS_Attack_Secondary_Strong_One,-1,0);
+			PlayWristbladeAttack((int)PHSS_Attack_Secondary_Strong_One);
 
 			if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 				StaffAttack=2;
@@ -7379,8 +7507,7 @@ void ThrowSecondaryStrongStrike(void) {
 		case 1:
 			GLOBALASSERT(HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,
 				 (int)PHSS_Attack_Secondary_Strong_Two));
-			InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,
-				(int)PHSS_Attack_Secondary_Strong_Two,-1,0);
+			PlayWristbladeAttack((int)PHSS_Attack_Secondary_Strong_Two);
 
 			if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 				StaffAttack=2;
@@ -7416,8 +7543,7 @@ void ThrowSecondaryWeakStrike(void) {
 		case 0:
 			GLOBALASSERT(HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,
 				 (int)PHSS_Attack_Secondary_Weak_One));
-			InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,
-				(int)PHSS_Attack_Secondary_Weak_One,-1,0);
+			PlayWristbladeAttack((int)PHSS_Attack_Secondary_Weak_One);
 
 			if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 				StaffAttack=4;
@@ -7428,8 +7554,7 @@ void ThrowSecondaryWeakStrike(void) {
 		case 1:
 			GLOBALASSERT(HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,
 				 (int)PHSS_Attack_Secondary_Weak_Two));
-			InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>4),HMSQT_PredatorHUD,
-				(int)PHSS_Attack_Secondary_Weak_Two,-1,0);
+			PlayWristbladeAttack((int)PHSS_Attack_Secondary_Weak_Two);
 
 			if (PlayerStatusPtr->ShapeState!=PMph_Standing) {
 				StaffAttack=4;
@@ -8330,7 +8455,7 @@ void PlasmaCaster_Idle(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				if (PlayersWeaponHModelController.sequence_timer==(ONE_FIXED-1)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),twPtr->InitialSequenceType,(int)PHSS_Stand,ONE_FIXED,1);
 				}
-			} else if ((FastRandom()&255)==0) {
+			} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 				/* Start animation. */
 				if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Fidget)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_PredatorHUD,(int)PHSS_Fidget,-1,0);
@@ -8931,7 +9056,7 @@ void WristConsole_Idle(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				if (PlayersWeaponHModelController.sequence_timer==(ONE_FIXED-1)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),twPtr->InitialSequenceType,(int)PHSS_Stand,ONE_FIXED,1);
 				}
-			} else if ((FastRandom()&255)==0) {
+			} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 				/* Start animation. */
 				if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Fidget)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_PredatorHUD,(int)PHSS_Fidget,-1,0);
@@ -9053,7 +9178,7 @@ void SADAR_Fidget(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),HMSQT_MarineHUD,(int)MHSS_Stationary,ONE_FIXED,1);
 				WeaponFidgetPlaying=0;
 			}
-		} else if ((FastRandom()&255)==0) {
+		} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 			/* Start animation. */
 			if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_MarineHUD,(int)MHSS_Fidget)) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Fidget,ONE_FIXED,0);
@@ -9172,7 +9297,7 @@ void GenericMarineWeapon_Idle(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr)
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),twPtr->InitialSequenceType,(int)twPtr->InitialSubSequence,ONE_FIXED,1);
 				WeaponFidgetPlaying=0;
 			}
-		} else if ((FastRandom()&255)==0) {
+		} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 			/* Start animation. */
 			if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_MarineHUD,(int)MHSS_Fidget)) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Fidget,ONE_FIXED,0);
@@ -9303,7 +9428,7 @@ void GenericPredatorWeapon_Idle(void *playerStatus, PLAYER_WEAPON_DATA *weaponPt
 				if (PlayersWeaponHModelController.sequence_timer==(ONE_FIXED-1)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),twPtr->InitialSequenceType,(int)PHSS_Stand,ONE_FIXED,1);
 				}
-			} else if ((FastRandom()&255)==0) {
+			} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 				/* Start animation. */
 				if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Fidget)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_PredatorHUD,(int)PHSS_Fidget,-1,0);
@@ -9493,7 +9618,7 @@ void PredatorDisc_Recoil(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				if (PlayersWeaponHModelController.sequence_timer==(ONE_FIXED-1)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),twPtr->InitialSequenceType,(int)PHSS_Stand,ONE_FIXED,1);
 				}
-			} else if ((FastRandom()&255)==0) {
+			} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 				/* Start animation. */
 				if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Fidget)) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_PredatorHUD,(int)PHSS_Fidget,-1,0);
@@ -9909,7 +10034,7 @@ void Staff_Idle(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 					InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>3),HMSQT_PredatorHUD,(int)PHSS_Stand,ONE_FIXED,1);
 					WeaponFidgetPlaying=0;
 				}
-			} else if ((FastRandom()&255)==0) {
+			} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 				/* Start animation. */
 				#if 1
 				if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_PredatorHUD,(int)PHSS_Fidget)) {
@@ -11023,7 +11148,13 @@ int PlayerFirePredPistolFlechettes(PLAYER_WEAPON_DATA *weaponPtr) {
 	LOCALASSERT(playerStatusPtr);
 	
 	/* Another cheap copy of the flamethrower function. */
-    
+
+#ifdef __ANDROID__
+	/* In VR, fire from the controller-rendered nozzle rather than the stale
+	   game-logic pose, so the flechettes line up with the visible muzzle. */
+	VR_PositionPlayerWeaponAtController();
+#endif
+
 	ProveHModel(&PlayersWeaponHModelController,&PlayersWeapon);
 
 	if (playerStatusPtr->FieldCharge>0) {
@@ -11037,14 +11168,21 @@ int PlayerFirePredPistolFlechettes(PLAYER_WEAPON_DATA *weaponPtr) {
 	}
 
 	if (PWMFSDP) {
-		VECTORCH null_vec={0,0,0};
-	
-		textprint("Hierarchical Flechettes Fire!\n");
-	
-		firingpos=&PWMFSDP->World_Offset;
-		
-		FirePredPistolFlechettes(firingpos,&null_vec,&PlayersWeapon.ObMat,0,&Flamethrower_Timer,TRUE);
-	
+		/* Spawn straight from the muzzle bone (no near-weapon "crunch"): the crunch
+		   pulls the origin 1/4 of the way to the camera, putting it far behind the
+		   nozzle, so the stream pivots/skews far back when you turn. Using the real
+		   bone keeps the pivot at the nozzle. */
+		VECTORCH muzzle=PWMFSDP->World_Offset;
+
+		/* Weapon-local spawn offset (rotated by the weapon matrix in
+		   FirePredPistolFlechettes): +X = right, +Z = forward. Nudge to line the
+		   stream up with the visible nozzle. Tune / flip signs to taste. */
+		#define PRED_FLECHETTE_MUZZLE_RIGHT 0
+		#define PRED_FLECHETTE_MUZZLE_FWD   0
+		VECTORCH spawn_offset={PRED_FLECHETTE_MUZZLE_RIGHT,0,PRED_FLECHETTE_MUZZLE_FWD};
+
+		FirePredPistolFlechettes(&muzzle,&spawn_offset,&PlayersWeapon.ObMat,0,&Flamethrower_Timer,TRUE);
+
 	} else {
 		firingpos=&CentreOfMuzzleOffset;
 		FirePredPistolFlechettes(&PlayersWeapon.ObWorld,firingpos,&PlayersWeapon.ObMat,1,&Flamethrower_Timer,TRUE);
@@ -11420,7 +11558,7 @@ void MarinePistol_Fidget(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Stationary,ONE_FIXED,1);
 				WeaponFidgetPlaying=0;
 			}
-		} else if ((FastRandom()&255)==0) {
+		} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 			/* Start animation. */
 			if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_MarineHUD,(int)MHSS_Fidget)) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Fidget,(ONE_FIXED<<1),0);
@@ -11871,7 +12009,7 @@ void MarineTwoPistols_Fidget(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) 
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Stationary,ONE_FIXED,1);
 				WeaponFidgetPlaying=0;
 			}
-		} else if ((FastRandom()&255)==0) {
+		} else if (IdleFidgetAllowed() && (FastRandom()&255)==0) {
 			/* Start animation. */
 			if (HModelSequence_Exists(&PlayersWeaponHModelController,HMSQT_MarineHUD,(int)MHSS_Fidget)) {
 				InitHModelTweening(&PlayersWeaponHModelController,(ONE_FIXED>>2),HMSQT_MarineHUD,(int)MHSS_Fidget,(ONE_FIXED<<1),0);

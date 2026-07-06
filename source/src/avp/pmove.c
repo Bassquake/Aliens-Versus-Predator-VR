@@ -42,6 +42,7 @@
 #include "player.h"
 #include "avp_userprofile.h"
 #ifdef __ANDROID__
+#include <math.h>
 #include "opengl.h"
 #endif
 
@@ -104,10 +105,18 @@ extern int TauntSoundPlayed;
 
 extern unsigned char GotAnyKey;
 
-static char FlyModeOn = 0;			
+static char FlyModeOn = 0;
 #if FLY_MODE_CHEAT_ON
 static char FlyModeDebounced = 0;
 #endif
+
+/* Alien wall-climbing state. The Alien no longer sticks to walls just by
+   walking into them; instead the player presses jump while facing a wall to
+   grab it and start climbing (and presses jump again to let go). */
+static int AlienWallClimbing = 0;   /* currently stuck to a wall/ceiling */
+static int AlienClimbLeftFloor = 0; /* gravity has reoriented off the flat floor */
+static int AlienPrevJump = 0;       /* previous frame's jump request, for edge detection */
+static int AlienClimbGraceTime = 0; /* time left to reach a grabbed-at-distance wall before the climb cancels */
 
 #if 0
 static char BonusAbilityDebounced = 0;
@@ -291,6 +300,135 @@ void PlayerBehaviour(STRATEGYBLOCK* sbPtr)
 	void AuxLocationTest(void);
 #endif
 
+/* How far ahead (world units, 1 metre == 1000) the climb grab reaches when the
+   Alien isn't quite touching the wall yet. Keeps the grab from feeling fiddly. */
+#define ALIEN_CLIMB_REACH 1000
+
+/* A surface counts as a climbable wall when its normal is steeper than ~45
+   degrees, i.e. |normal.vy| < cos(45deg)*ONE_FIXED. */
+#define ALIEN_CLIMB_WALL_VY 46341
+
+/* Returns 1 if the Alien is up against (or within reach of) a wall or other
+   steep surface, so a jump press should start a climb rather than an ordinary
+   hop. */
+static int AlienFacingClimbableWall(DYNAMICSBLOCK *dynPtr, VECTORCH *viewDir)
+{
+	COLLISIONREPORT *reportPtr = dynPtr->CollisionReportPtr;
+
+	/* Any wall we've actually walked into: if we're touching it, pressing jump
+	   climbs it. No need to be looking straight at it (in VR the head can be
+	   turned away while the body is against the wall). */
+	while (reportPtr)
+	{
+		/* A wall's surface normal is roughly horizontal (small vy) whereas a
+		   floor's points straight up. */
+		int ny = reportPtr->ObstacleNormal.vy;
+		if (ny < 0) ny = -ny;
+
+		if (ny < ALIEN_CLIMB_WALL_VY)
+		{
+			return 1;
+		}
+		reportPtr = reportPtr->NextCollisionReportPtr;
+	}
+
+	/* Otherwise be a bit forgiving: cast a short ray along the view direction
+	   and grab a wall that's within reach even if we're not touching it yet. */
+	{
+		VECTORCH probeDir = *viewDir;
+		VECTORCH probePos = dynPtr->Position;
+
+		FindPolygonInLineOfSight(&probeDir, &probePos, 0, Player);
+
+		if (LOS_ObjectHitPtr && LOS_Lambda <= ALIEN_CLIMB_REACH)
+		{
+			int ny = LOS_ObjectNormal.vy;
+			if (ny < 0) ny = -ny;
+			if (ny < ALIEN_CLIMB_WALL_VY) return 1;
+		}
+	}
+
+	return 0;
+}
+
+#ifdef __ANDROID__
+/* Rotate the player's body-space LinVelocity into world space for VR locomotion.
+   Outside VR 3D mode this is just the plain OrientMat rotation.
+
+   In VR the body OrientMat's heading does NOT follow the physical head (turning
+   is done by snapping the view, not the body), so it can't drive "forward". On
+   the floor we instead use the HMD's horizontal heading. On a wall/ceiling we
+   take that same head-relative velocity and rotate it onto the contact surface,
+   so pushing forward while facing a wall carries you up it and turning steers
+   along it — instead of the stale body forward that made movement feel reversed.
+
+   This uses the same surface tilt the VR view applies while climbing (see
+   vr_climb_tilt in avpview.c), so movement stays aligned with the view: the
+   camera sits parallel to the wall and "forward" runs up it. */
+static void VR_RotateMoveVelocity(DYNAMICSBLOCK *dynPtr)
+{
+	if (!VR_IsIn3DMode())
+	{
+		RotateVector(&dynPtr->LinVelocity, &dynPtr->OrientMat);
+		return;
+	}
+
+	/* 1. HMD horizontal heading: body forward -> where the player is looking. */
+	MATRIXCH hm;
+	hm.mat11 = xr_hmd_move_cos; hm.mat12 = 0;         hm.mat13 = -xr_hmd_move_sin;
+	hm.mat21 = 0;               hm.mat22 = ONE_FIXED; hm.mat23 = 0;
+	hm.mat31 = xr_hmd_move_sin; hm.mat32 = 0;         hm.mat33 = xr_hmd_move_cos;
+	RotateVector(&dynPtr->LinVelocity, &hm);
+
+	/* 2. Wall/ceiling: rotate the heading-relative velocity onto the surface. R
+	   is the shortest-arc rotation taking world-down (0,1,0) onto the body's down
+	   axis (OrientMat row 2), which the physics homes onto the contact surface.
+	   So the flat-ground "forward" is bent up/along the wall. On the floor the
+	   body is upright, so R is identity (handled below when the horizontal
+	   magnitude s is ~0) and this is a no-op. The body down axis is ~(0,1,0) on
+	   the floor, ~horizontal on a wall, ~(0,-1,0) on a ceiling. */
+	{
+		float bx = dynPtr->OrientMat.mat21 / 65536.0f;   /* body down axis, world space */
+		float by = dynPtr->OrientMat.mat22 / 65536.0f;
+		float bz = dynPtr->OrientMat.mat23 / 65536.0f;
+		float blen = sqrtf(bx*bx + by*by + bz*bz);
+		if (blen > 0.0001f) { bx /= blen; by /= blen; bz /= blen; }
+
+		float s = sqrtf(bx*bx + bz*bz);  /* sin(tilt) = horizontal magnitude */
+		float c = by;                    /* cos(tilt) */
+
+		/* Reused on a flat ceiling (down exactly antipodal, axis undefined) to
+		   keep the roll continuous through the wall->ceiling climb. */
+		static float last_ax = 1.0f, last_az = 0.0f;
+		float ax, az, su, cu;
+
+		if (s > 0.0001f) {
+			ax = bz / s;  az = -bx / s;  /* unit horizontal rotation axis */
+			last_ax = ax; last_az = az;
+			su = s; cu = c;
+		} else if (c < 0.0f) {
+			ax = last_ax; az = last_az;  /* flat ceiling: 180 degree roll */
+			su = 0.0f; cu = -1.0f;
+		} else {
+			return;                      /* upright: nothing to do */
+		}
+
+		float omc = 1.0f - cu;
+		/* Rodrigues R mapping (0,1,0) -> body down axis (row-major). */
+		float R11 = cu + ax*ax*omc, R12 = -az*su,   R13 = ax*az*omc;
+		float R21 = az*su,          R22 = cu,        R23 = -ax*su;
+		float R31 = ax*az*omc,      R32 = ax*su,     R33 = cu + az*az*omc;
+
+		/* RotateVector computes M^T * v, so load R transposed to apply R * v. */
+		MATRIXCH rt;
+		rt.mat11 = (int)(R11*65536.0f); rt.mat12 = (int)(R21*65536.0f); rt.mat13 = (int)(R31*65536.0f);
+		rt.mat21 = (int)(R12*65536.0f); rt.mat22 = (int)(R22*65536.0f); rt.mat23 = (int)(R32*65536.0f);
+		rt.mat31 = (int)(R13*65536.0f); rt.mat32 = (int)(R23*65536.0f); rt.mat33 = (int)(R33*65536.0f);
+		RotateVector(&dynPtr->LinVelocity, &rt);
+	}
+}
+#endif
+
 void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 {
 	DYNAMICSBLOCK *dynPtr = sbPtr->DynPtr;
@@ -309,7 +447,18 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 	Call the (platform dependant) game input reading fn.
 	------------------------------------------------------*/ 
 	ReadPlayerGameInput(sbPtr);
- 
+
+	/* Rising edge of the jump request, so one press grabs (or releases) a wall
+	   rather than repeating every frame the key is held. Tracked every frame
+	   regardless of contact state so a held jump can't re-trigger on landing. */
+	int alienJumpEdge = 0;
+	if (AvP.PlayerType == I_Alien)
+	{
+		int jumpNow = playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump;
+		alienJumpEdge = jumpNow && !AlienPrevJump;
+		AlienPrevJump = jumpNow;
+	}
+
 	/* KJL 11:07:42 10/09/98 - Bonus Abilities */
 	switch (AvP.PlayerType)
 	{
@@ -373,30 +522,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 	------------------------------------------------------*/
 
 #ifdef __ANDROID__
-/* In VR 3D mode, rotate LinVelocity using the HMD's horizontal heading instead
-   of OrientMat (which never updates when stick-turning is disabled).
-   EXCEPTION: when the Alien is wall/ceiling-crawling its gravity reorients away
-   from straight-down and OrientMat aligns to that surface — so move along the
-   surface via OrientMat, otherwise "forward" stays world-horizontal and the
-   Alien can never climb up a wall. GravityDirection.vy ~= ONE_FIXED on the floor,
-   ~0 on a wall, negative on a ceiling. */
-#define ROTATE_VELOCITY_WORLD(dynPtr) \
-	do { \
-		if (VR_IsIn3DMode()) { \
-			if ((dynPtr)->GravityDirection.vy < 49152) { \
-				/* on a wall/ceiling — climb along the surface */ \
-				RotateVector(&(dynPtr)->LinVelocity, &(dynPtr)->OrientMat); \
-			} else { \
-				MATRIXCH _hm; \
-				_hm.mat11 = xr_hmd_move_cos; _hm.mat12 = 0; _hm.mat13 = -xr_hmd_move_sin; \
-				_hm.mat21 = 0; _hm.mat22 = ONE_FIXED; _hm.mat23 = 0; \
-				_hm.mat31 = xr_hmd_move_sin; _hm.mat32 = 0; _hm.mat33 = xr_hmd_move_cos; \
-				RotateVector(&(dynPtr)->LinVelocity, &_hm); \
-			} \
-		} else { \
-			RotateVector(&(dynPtr)->LinVelocity, &(dynPtr)->OrientMat); \
-		} \
-	} while(0)
+#define ROTATE_VELOCITY_WORLD(dynPtr) VR_RotateMoveVelocity(dynPtr)
 #else
 #define ROTATE_VELOCITY_WORLD(dynPtr) RotateVector(&(dynPtr)->LinVelocity, &(dynPtr)->OrientMat)
 #endif
@@ -787,7 +913,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 						
 				if (notTooSteep)
 				{
-					/* alien can jump in the direction it's looking */									
+					/* alien can jump in the direction it's looking */
 					if (AvP.PlayerType == I_Alien)
 					{
 						VECTORCH viewDir;
@@ -795,20 +921,50 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 						viewDir.vx = Global_VDB_Ptr->VDB_Mat.mat13;
 						viewDir.vy = Global_VDB_Ptr->VDB_Mat.mat23;
 						viewDir.vz = Global_VDB_Ptr->VDB_Mat.mat33;
-						if ((playerStatusPtr->ShapeState == PMph_Crouching) && (DotProduct(&viewDir,&dynPtr->GravityDirection)<-32768))
+
+						if (AlienWallClimbing)
 						{
-							dynPtr->LinImpulse.vx += MUL_FIXED(viewDir.vx,jumpSpeed*3);
-							dynPtr->LinImpulse.vy += MUL_FIXED(viewDir.vy,jumpSpeed*3);
-							dynPtr->LinImpulse.vz += MUL_FIXED(viewDir.vz,jumpSpeed*3);
+							/* Already stuck to a wall/ceiling: a fresh jump press
+							   lets go and pushes off the surface. */
+							if (alienJumpEdge)
+							{
+								AlienWallClimbing = 0;
+								AlienClimbLeftFloor = 0;
+								dynPtr->LinImpulse.vx -= MUL_FIXED(dynPtr->GravityDirection.vx,jumpSpeed);
+								dynPtr->LinImpulse.vy -= MUL_FIXED(dynPtr->GravityDirection.vy,jumpSpeed);
+								dynPtr->LinImpulse.vz -= MUL_FIXED(dynPtr->GravityDirection.vz,jumpSpeed);
+								dynPtr->TimeNotInContactWithFloor = -1;
+							}
 						}
-						else
+						else if (alienJumpEdge && AlienFacingClimbableWall(dynPtr,&viewDir))
 						{
-							dynPtr->LinImpulse.vx -= MUL_FIXED(dynPtr->GravityDirection.vx,jumpSpeed);
-							dynPtr->LinImpulse.vy -= MUL_FIXED(dynPtr->GravityDirection.vy,jumpSpeed);
-							dynPtr->LinImpulse.vz -= MUL_FIXED(dynPtr->GravityDirection.vz,jumpSpeed);
-						  	dynPtr->LinVelocity.vz += jumpSpeed;	
+							/* On the floor, facing a wall: grab it and start
+							   climbing rather than hopping. Surface-stick gravity
+							   is switched on further down while AlienWallClimbing.
+							   If the wall was grabbed from a short distance away,
+							   AlienClimbGraceTime gives us a moment to actually
+							   reach it before the climb is cancelled. */
+							AlienWallClimbing = 1;
+							AlienClimbLeftFloor = 0;
+							AlienClimbGraceTime = ONE_FIXED; /* ~1 second */
 						}
-						dynPtr->TimeNotInContactWithFloor = -1;
+						else if (alienJumpEdge)
+						{
+							if ((playerStatusPtr->ShapeState == PMph_Crouching) && (DotProduct(&viewDir,&dynPtr->GravityDirection)<-32768))
+							{
+								dynPtr->LinImpulse.vx += MUL_FIXED(viewDir.vx,jumpSpeed*3);
+								dynPtr->LinImpulse.vy += MUL_FIXED(viewDir.vy,jumpSpeed*3);
+								dynPtr->LinImpulse.vz += MUL_FIXED(viewDir.vz,jumpSpeed*3);
+							}
+							else
+							{
+								dynPtr->LinImpulse.vx -= MUL_FIXED(dynPtr->GravityDirection.vx,jumpSpeed);
+								dynPtr->LinImpulse.vy -= MUL_FIXED(dynPtr->GravityDirection.vy,jumpSpeed);
+								dynPtr->LinImpulse.vz -= MUL_FIXED(dynPtr->GravityDirection.vz,jumpSpeed);
+							  	dynPtr->LinVelocity.vz += jumpSpeed;
+							}
+							dynPtr->TimeNotInContactWithFloor = -1;
+						}
 					}
 					else
 					{
@@ -937,13 +1093,44 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 	/* Alien's wall-crawling abilities */
 	if (AvP.PlayerType == I_Alien)
 	{
-		/* Always keep surface-stick gravity on so the Alien climbs walls and
-		   ceilings just by walking into them (no crouch required). On the floor
-		   the collision normal points straight up, so this behaves like normal
-		   gravity; against a wall/ceiling ApplyGravity reorients GravityDirection
-		   to the contact surface; in open air it reverts to down after
-		   TimeNotInContactWithFloor. */
-		dynPtr->UseStandardGravity=0;
+		/* Surface-stick gravity (which lets the Alien crawl up walls and across
+		   ceilings) is only enabled while climbing. The player starts a climb by
+		   pressing jump while facing a wall (see the jump handling above); the
+		   Alien no longer sticks to walls just by walking into them. */
+		if (AlienWallClimbing)
+		{
+			if (dynPtr->GravityDirection.vy <= 60000)
+			{
+				/* Gravity has reoriented onto a wall/ceiling: we're properly
+				   climbing now, not still standing on the floor. */
+				AlienClimbLeftFloor = 1;
+			}
+			else if (AlienClimbLeftFloor && dynPtr->IsInContactWithFloor)
+			{
+				/* Back on a flat floor after a climb: stop climbing so the next
+				   wall has to be grabbed with another jump. */
+				AlienWallClimbing = 0;
+				AlienClimbLeftFloor = 0;
+			}
+			else
+			{
+				/* Still on the flat floor and haven't reached a wall yet (e.g.
+				   grabbed one from a distance, then turned away). Cancel the
+				   climb if we run out of time, so we don't stay in climb mode. */
+				AlienClimbGraceTime -= NormalFrameTime;
+				if (AlienClimbGraceTime <= 0)
+				{
+					AlienWallClimbing = 0;
+					AlienClimbLeftFloor = 0;
+				}
+			}
+		}
+
+		/* On the floor the surface normal points straight up, so this behaves
+		   like normal gravity; against a wall/ceiling ApplyGravity reorients
+		   GravityDirection to the contact surface; in open air it reverts to
+		   down after TimeNotInContactWithFloor. */
+		dynPtr->UseStandardGravity = AlienWallClimbing ? 0 : 1;
 	}
 
 

@@ -146,19 +146,58 @@ VECTORCH vr_left_hand_world = {0, 0, 0};
 MATRIXCH  vr_left_hand_mat  = {ONE_FIXED,0,0, 0,ONE_FIXED,0, 0,0,ONE_FIXED};
 int       vr_left_hand_valid = 0;
 
+/* Per-weapon VR alignment offsets, indexed by WeaponIDNumber. Each row is
+ * { forward, right, up, pitch_deg } — same meaning as the VR_WEAPON_OFFSET_*
+ * defaults in opengl.h. Leave a weapon at VR_WPN_DEFAULT to use those shared
+ * defaults, or edit its row to tune that one gun. Marine/Predator guns use this
+ * (the Alien claw rig has its own VR_CLAW_* offsets). */
+#define VR_WPN_DEFAULT \
+    { VR_WEAPON_OFFSET_FORWARD, VR_WEAPON_OFFSET_RIGHT, VR_WEAPON_OFFSET_UP, VR_WEAPON_PITCH_DEG }
+
+static const VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
+    /* --- Marine --- */
+    [WEAPON_PULSERIFLE]       = {-300, 100, 100, 0},
+    [WEAPON_AUTOSHOTGUN]      = VR_WPN_DEFAULT,
+    [WEAPON_SMARTGUN]         = {-250, -100, 0, 0},
+    [WEAPON_FLAMETHROWER]     = {-200, -150, 100, 0},
+    [WEAPON_PLASMAGUN]        = VR_WPN_DEFAULT,
+    [WEAPON_SADAR]            = {-250, 0, 200, 0},
+    [WEAPON_GRENADELAUNCHER]  = {-200, -25, 100, 0},
+    [WEAPON_MINIGUN]          = {-50, -75, -150, 0},
+    [WEAPON_SONICCANNON]      = VR_WPN_DEFAULT,
+    [WEAPON_BEAMCANNON]       = VR_WPN_DEFAULT,
+    [WEAPON_MYSTERYGUN]       = VR_WPN_DEFAULT,
+    [WEAPON_MARINE_PISTOL]    = {-400, -75, 0, 0},
+    [WEAPON_TWO_PISTOLS]      = {-400, -50, 0, 0},
+    [WEAPON_FRISBEE_LAUNCHER] = {-300, 0, 200, 0},
+    /* --- Predator --- */
+    [WEAPON_PRED_WRISTBLADE]     = {-520, -300, 0, 0},
+    [WEAPON_PRED_PISTOL]         = {-450, -200, 0, 0},
+    [WEAPON_PRED_RIFLE]          = {-350, -225, 0, 0},
+    [WEAPON_PRED_SHOULDERCANNON] = {-450, -100, -25, 0},
+    [WEAPON_PRED_DISC]           = {-520, -300, 0, 0},
+    [WEAPON_PRED_MEDICOMP]       = {-450, -100, -25, 0},
+    [WEAPON_PRED_STAFF]          = VR_WPN_DEFAULT,
+    /* --- Misc / non-gun (unused by this path, kept at default for safety) --- */
+    [WEAPON_CUDGEL]           = VR_WPN_DEFAULT,
+};
+
 /* Controller-attached weapon transform, shared by the renderer and the shot
  * spawn path so the visible muzzle and the fire origin can't drift apart.
- * Applies the VR_WEAPON_* alignment offsets (see opengl.h) in the grip's local
- * frame, then the barrel alignment (rotate about local X so the model's +Y
- * barrel points forward). Base rotation is Rx(+90); VR_WEAPON_PITCH_DEG adds
- * extra tilt. */
-void VR_ComputeWeaponAnchor(VECTORCH *out_world, MATRIXCH *out_mat)
+ * Applies weapon `weaponID`'s alignment offsets (see vr_weapon_offset[] above)
+ * in the grip's local frame, then the barrel alignment (rotate about local X so
+ * the model's +Y barrel points forward). Base rotation is Rx(+90); the weapon's
+ * pitch_deg adds extra tilt. */
+void VR_ComputeWeaponAnchor(int weaponID, VECTORCH *out_world, MATRIXCH *out_mat)
 {
     MATRIXCH m = vr_right_hand_mat;
+    VR_WEAPON_OFFSET o = (weaponID >= 0 && weaponID < MAX_NO_OF_WEAPON_TEMPLATES)
+        ? vr_weapon_offset[weaponID]
+        : (VR_WEAPON_OFFSET)VR_WPN_DEFAULT;
 
     /* Local-frame offset (grip axes): X=right (row1), Y=aim (row2), Z=up (row3).
      * RotateVector(v, M) = M^T * v maps a controller-local vector into world. */
-    VECTORCH wofs = { VR_WEAPON_OFFSET_RIGHT, VR_WEAPON_OFFSET_FORWARD, VR_WEAPON_OFFSET_UP };
+    VECTORCH wofs = { o.right, o.forward, o.up };
     RotateVector(&wofs, &m);
     out_world->vx = vr_right_hand_world.vx + wofs.vx;
     out_world->vy = vr_right_hand_world.vy + wofs.vy;
@@ -166,13 +205,12 @@ void VR_ComputeWeaponAnchor(VECTORCH *out_world, MATRIXCH *out_mat)
 
     /* X (row1) is unchanged by the pitch about local X. */
     out_mat->mat11 = m.mat11; out_mat->mat12 = m.mat12; out_mat->mat13 = m.mat13;
-#if VR_WEAPON_PITCH_DEG == 0
-    /* Exact integer Rx(+90): new Y = -old Z, new Z = old Y. */
-    out_mat->mat21 = -m.mat31; out_mat->mat22 = -m.mat32; out_mat->mat23 = -m.mat33;
-    out_mat->mat31 =  m.mat21; out_mat->mat32 =  m.mat22; out_mat->mat33 =  m.mat23;
-#else
-    {
-        float a  = (90.0f + (float)(VR_WEAPON_PITCH_DEG)) * (SDL_PI_F / 180.0f);
+    if (o.pitch_deg == 0) {
+        /* Exact integer Rx(+90): new Y = -old Z, new Z = old Y. */
+        out_mat->mat21 = -m.mat31; out_mat->mat22 = -m.mat32; out_mat->mat23 = -m.mat33;
+        out_mat->mat31 =  m.mat21; out_mat->mat32 =  m.mat22; out_mat->mat33 =  m.mat23;
+    } else {
+        float a  = (90.0f + (float)o.pitch_deg) * (SDL_PI_F / 180.0f);
         float ca = SDL_cosf(a), sa = SDL_sinf(a);
         /* Rx(a) on the rows: Y' = ca*Y - sa*Z ; Z' = sa*Y + ca*Z. */
         out_mat->mat21 = (int)(ca * m.mat21 - sa * m.mat31);
@@ -182,7 +220,6 @@ void VR_ComputeWeaponAnchor(VECTORCH *out_world, MATRIXCH *out_mat)
         out_mat->mat32 = (int)(sa * m.mat22 + ca * m.mat32);
         out_mat->mat33 = (int)(sa * m.mat23 + ca * m.mat33);
     }
-#endif
 }
 #endif
 
@@ -1921,7 +1958,7 @@ void AvpShowViewsVR(void)
                      * weapons.c so the visible muzzle and fire origin stay aligned.
                      * Tune the offsets in opengl.h. */
                     VECTORCH anchor;
-                    VR_ComputeWeaponAnchor(&anchor, &PlayersWeapon.ObMat);
+                    VR_ComputeWeaponAnchor(wpn->WeaponIDNumber, &anchor, &PlayersWeapon.ObMat);
                     PlayersWeapon.ObWorld = anchor;
                     /* View-space position for HModel path: world-to-view of
                      * (anchor - eye_world).  RotateVector(v, VDB_Mat) = VDB_Mat^T * v

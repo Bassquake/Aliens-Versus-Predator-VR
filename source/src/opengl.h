@@ -78,16 +78,25 @@ extern int       vr_left_hand_valid;
  * Signs/axes depend on the runtime grip pose — if a nudge goes the "wrong"
  * way, flip its sign. Both the visible weapon (avpview.c) and the shot spawn
  * point (weapons.c) read these via VR_ComputeWeaponAnchor(), so they stay in
- * sync. Marine / Predator guns only (the Alien claw rig is placed separately).*/
+ * sync. Marine / Predator guns only (the Alien claw rig is placed separately).
+ *
+ * These four values are the shared DEFAULT. Each weapon sits slightly
+ * differently in the hand, so per-weapon overrides live in the
+ * vr_weapon_offset[] table in avpview.c — edit a weapon's row there to tune
+ * just that gun; anything left at VR_WPN_DEFAULT uses the values below. */
 #define VR_WEAPON_OFFSET_FORWARD  (-300)   /* was VR_WEAPON_PULLBACK = 300 */
 #define VR_WEAPON_OFFSET_RIGHT    0
 #define VR_WEAPON_OFFSET_UP       0
 #define VR_WEAPON_PITCH_DEG       0
 
-/* Fill *out_world / *out_mat with the controller-attached weapon transform
- * (right-controller pose + the offsets above + barrel alignment).
- * Caller must have checked vr_right_hand_valid. */
-void VR_ComputeWeaponAnchor(VECTORCH *out_world, MATRIXCH *out_mat);
+/* One weapon's alignment offsets (game units; pitch in degrees). Same meaning
+ * as the VR_WEAPON_OFFSET_* defaults above. */
+typedef struct { int forward, right, up, pitch_deg; } VR_WEAPON_OFFSET;
+
+/* Fill *out_world / *out_mat with the controller-attached weapon transform for
+ * weapon `weaponID` (right-controller pose + that weapon's offsets + barrel
+ * alignment). Caller must have checked vr_right_hand_valid. */
+void VR_ComputeWeaponAnchor(int weaponID, VECTORCH *out_world, MATRIXCH *out_mat);
 
 /* --- Alien claw rig alignment tuning ------------------------------------
  * Same idea as the weapon offsets above, but a SEPARATE set: the claw rig is

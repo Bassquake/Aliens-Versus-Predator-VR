@@ -295,10 +295,10 @@ static int IdleFidgetAllowed(void) { return 1; }
    game-logic pose. Uses the shared VR_ComputeWeaponAnchor() so it can never
    drift from the rendered weapon. Call right before ProveHModel in a player
    fire function. No-op outside VR 3D mode. */
-static void VR_PositionPlayerWeaponAtController(void)
+static void VR_PositionPlayerWeaponAtController(int weaponID)
 {
 	if (!VR_IsIn3DMode() || !vr_right_hand_valid) return;
-	VR_ComputeWeaponAnchor(&PlayersWeapon.ObWorld, &PlayersWeapon.ObMat);
+	VR_ComputeWeaponAnchor(weaponID, &PlayersWeapon.ObWorld, &PlayersWeapon.ObMat);
 }
 #endif
 
@@ -6480,7 +6480,7 @@ int PlayerFireFlameThrower(PLAYER_WEAPON_DATA *weaponPtr) {
 #ifdef __ANDROID__
 	/* In VR, fire from the controller-rendered nozzle, not the stale game-logic
 	   pose, so the flame lines up with the visible muzzle as you move. */
-	VR_PositionPlayerWeaponAtController();
+	VR_PositionPlayerWeaponAtController(weaponPtr->WeaponIDNumber);
 #endif
 
 	ProveHModel(&PlayersWeaponHModelController,&PlayersWeapon);
@@ -11135,7 +11135,7 @@ int PlayerFirePredPistolFlechettes(PLAYER_WEAPON_DATA *weaponPtr) {
 #ifdef __ANDROID__
 	/* In VR, fire from the controller-rendered nozzle rather than the stale
 	   game-logic pose, so the flechettes line up with the visible muzzle. */
-	VR_PositionPlayerWeaponAtController();
+	VR_PositionPlayerWeaponAtController(weaponPtr->WeaponIDNumber);
 #endif
 
 	ProveHModel(&PlayersWeaponHModelController,&PlayersWeapon);

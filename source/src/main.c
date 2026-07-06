@@ -4321,7 +4321,43 @@ int main(int argc, char *argv[])
                         UpdateGame();
 
 #ifdef __ANDROID__
-                        if (xr_enabled && xr_session_running) {
+                        /* Death "Level not completed" screen: once the death sequence
+                         * has settled (see deathFadeLevel gate below), present the stats
+                         * on the world-anchored 2D quad — like the menus — instead of the
+                         * head-locked HUD, so they stay fixed in front of where you were
+                         * looking and you can look around them. Render the flat frame +
+                         * "Level not completed" stats to the 640x480 surface, which the
+                         * common 2D flip (further down) reads back and submits as the
+                         * quad. render_frame() owns xrWaitFrame/Begin in 2D mode, so we
+                         * must NOT call VR_WaitAndBeginFrame()/InGameFlipBuffers() here.
+                         * The quad pose is snapshotted on the first 2D frame (see
+                         * render_frame), i.e. facing where you were looking when the
+                         * death-cam finished. */
+                        extern int deathFadeLevel;   /* ONE_FIXED at death, ramps to 0 as the death-cam settles */
+                        PLAYER_STATUS *vrDeathPS = (Player && Player->ObStrategyBlock)
+                            ? (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr : NULL;
+                        /* Only switch to the world-anchored stats panel once the death
+                           sequence has finished (deathFadeLevel == 0). While it is still
+                           playing, fall through to the normal 3D render so the
+                           head-locked death-cam drop plays exactly as it always did —
+                           playing it flat on the quad is too jarring. */
+                        int vrDeathScreen = (xr_enabled && xr_session_running)
+                                         && (AvP.Network == I_No_Network)
+                                         && vrDeathPS && !vrDeathPS->IsAlive
+                                         && deathFadeLevel == 0;
+                        if (vrDeathScreen) {
+                            /* Render the flat frame (death-cam view) into the 640x480
+                               surface. This sets up the full per-frame render state
+                               (Global_VDB_Ptr, pipeline, etc.) that MaintainHUD /
+                               DoStatisticsScreen rely on — skipping it left those
+                               pointers null and crashed. AvpShowViews() calls
+                               ThisFramesRenderingHasBegun() internally, so the 2D
+                               viewport is set up too. MaintainHUD() below then draws
+                               the fade + stats, and the common 2D flip submits the
+                               world-anchored quad. */
+                            xr_2d_mode = true;
+                            AvpShowViews();
+                        } else if (xr_enabled && xr_session_running) {
                             VR_WaitAndBeginFrame();
                             AvpShowViewsVR();
                             InGameFlipBuffers();
@@ -4332,7 +4368,7 @@ int main(int argc, char *argv[])
 #ifdef __ANDROID__
                         }
 #endif
-                        
+
 #ifdef __ANDROID__
                         if (!VR_IsIn3DMode())
 #endif

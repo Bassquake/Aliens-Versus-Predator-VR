@@ -61,6 +61,45 @@ extern int       vr_right_hand_valid;
 extern VECTORCH vr_left_hand_world;
 extern MATRIXCH  vr_left_hand_mat;
 extern int       vr_left_hand_valid;
+
+/* --- VR weapon / hand alignment tuning ----------------------------------
+ * Nudge the weapon (and its held-hand geometry) relative to the physical
+ * right controller. The three offsets are applied in the controller's LOCAL
+ * frame, so they move/rotate with your hand. Units are game units
+ * (GAME_UNITS_PER_METRE = 2200, so ~2.2 units = 1 mm; 300 units ~= 13 cm).
+ *
+ *   FORWARD  along the aim/barrel axis. NEGATIVE pulls the weapon back over
+ *            the hand (this is the old "pullback"; -300 = the previous 13 cm).
+ *   RIGHT    +right / -left across the grip.
+ *   UP       +up / -down along the grip.
+ *   PITCH_DEG  extra barrel tilt in degrees on top of the fixed +90 barrel
+ *              alignment: +tips the muzzle down, -tips it up.
+ *
+ * Signs/axes depend on the runtime grip pose — if a nudge goes the "wrong"
+ * way, flip its sign. Both the visible weapon (avpview.c) and the shot spawn
+ * point (weapons.c) read these via VR_ComputeWeaponAnchor(), so they stay in
+ * sync. Marine / Predator guns only (the Alien claw rig is placed separately).*/
+#define VR_WEAPON_OFFSET_FORWARD  (-300)   /* was VR_WEAPON_PULLBACK = 300 */
+#define VR_WEAPON_OFFSET_RIGHT    0
+#define VR_WEAPON_OFFSET_UP       0
+#define VR_WEAPON_PITCH_DEG       0
+
+/* Fill *out_world / *out_mat with the controller-attached weapon transform
+ * (right-controller pose + the offsets above + barrel alignment).
+ * Caller must have checked vr_right_hand_valid. */
+void VR_ComputeWeaponAnchor(VECTORCH *out_world, MATRIXCH *out_mat);
+
+/* --- Alien claw rig alignment tuning ------------------------------------
+ * Same idea as the weapon offsets above, but a SEPARATE set: the claw rig is
+ * placed from the eye/"Camera Root" offset (not a gun grip) and its model
+ * orientation follows the controller directly with no barrel fix, so it needs
+ * its own values. Offsets are in the controller local frame; PITCH_DEG tilts
+ * the claws about the local X axis (+claws down / -claws up). Units and sign
+ * conventions match the weapon offsets. Alien only. */
+#define VR_CLAW_OFFSET_FORWARD  -900
+#define VR_CLAW_OFFSET_RIGHT    -200
+#define VR_CLAW_OFFSET_UP       0
+#define VR_CLAW_PITCH_DEG       45
 #endif
 
 #endif

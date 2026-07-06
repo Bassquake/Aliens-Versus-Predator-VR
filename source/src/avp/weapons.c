@@ -289,33 +289,16 @@ static int IdleFidgetAllowed(void) { return 1; }
 #endif
 
 #ifdef __ANDROID__
-/* Position PlayersWeapon at the VR controller transform (the same pull-back +
-   barrel-fix the renderer uses in avpview.c) so muzzle-derived fire - flechettes,
+/* Position PlayersWeapon at the VR controller transform (identical offsets +
+   barrel-fix the renderer uses) so muzzle-derived fire - flechettes,
    flamethrower, etc. - originates at the visible nozzle instead of the stale
-   game-logic pose. Call right before ProveHModel in a player fire function.
-   No-op outside VR 3D mode. */
+   game-logic pose. Uses the shared VR_ComputeWeaponAnchor() so it can never
+   drift from the rendered weapon. Call right before ProveHModel in a player
+   fire function. No-op outside VR 3D mode. */
 static void VR_PositionPlayerWeaponAtController(void)
 {
-	extern int vr_right_hand_valid;
-	extern MATRIXCH vr_right_hand_mat;
-	extern VECTORCH vr_right_hand_world;
-	const int VR_WEAPON_PULLBACK = 300;   /* must match avpview.c */
-	MATRIXCH m;
-
 	if (!VR_IsIn3DMode() || !vr_right_hand_valid) return;
-
-	PlayersWeapon.ObWorld.vx = vr_right_hand_world.vx - ((vr_right_hand_mat.mat21 * VR_WEAPON_PULLBACK) >> 16);
-	PlayersWeapon.ObWorld.vy = vr_right_hand_world.vy - ((vr_right_hand_mat.mat22 * VR_WEAPON_PULLBACK) >> 16);
-	PlayersWeapon.ObWorld.vz = vr_right_hand_world.vz - ((vr_right_hand_mat.mat23 * VR_WEAPON_PULLBACK) >> 16);
-	PlayersWeapon.ObMat = vr_right_hand_mat;
-	/* Barrel fix (Rx+90), identical to the render path. */
-	m = PlayersWeapon.ObMat;
-	PlayersWeapon.ObMat.mat21 = -m.mat31;
-	PlayersWeapon.ObMat.mat22 = -m.mat32;
-	PlayersWeapon.ObMat.mat23 = -m.mat33;
-	PlayersWeapon.ObMat.mat31 =  m.mat21;
-	PlayersWeapon.ObMat.mat32 =  m.mat22;
-	PlayersWeapon.ObMat.mat33 =  m.mat23;
+	VR_ComputeWeaponAnchor(&PlayersWeapon.ObWorld, &PlayersWeapon.ObMat);
 }
 #endif
 

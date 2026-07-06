@@ -145,6 +145,45 @@ int       vr_right_hand_valid = 0;
 VECTORCH vr_left_hand_world = {0, 0, 0};
 MATRIXCH  vr_left_hand_mat  = {ONE_FIXED,0,0, 0,ONE_FIXED,0, 0,0,ONE_FIXED};
 int       vr_left_hand_valid = 0;
+
+/* Controller-attached weapon transform, shared by the renderer and the shot
+ * spawn path so the visible muzzle and the fire origin can't drift apart.
+ * Applies the VR_WEAPON_* alignment offsets (see opengl.h) in the grip's local
+ * frame, then the barrel alignment (rotate about local X so the model's +Y
+ * barrel points forward). Base rotation is Rx(+90); VR_WEAPON_PITCH_DEG adds
+ * extra tilt. */
+void VR_ComputeWeaponAnchor(VECTORCH *out_world, MATRIXCH *out_mat)
+{
+    MATRIXCH m = vr_right_hand_mat;
+
+    /* Local-frame offset (grip axes): X=right (row1), Y=aim (row2), Z=up (row3).
+     * RotateVector(v, M) = M^T * v maps a controller-local vector into world. */
+    VECTORCH wofs = { VR_WEAPON_OFFSET_RIGHT, VR_WEAPON_OFFSET_FORWARD, VR_WEAPON_OFFSET_UP };
+    RotateVector(&wofs, &m);
+    out_world->vx = vr_right_hand_world.vx + wofs.vx;
+    out_world->vy = vr_right_hand_world.vy + wofs.vy;
+    out_world->vz = vr_right_hand_world.vz + wofs.vz;
+
+    /* X (row1) is unchanged by the pitch about local X. */
+    out_mat->mat11 = m.mat11; out_mat->mat12 = m.mat12; out_mat->mat13 = m.mat13;
+#if VR_WEAPON_PITCH_DEG == 0
+    /* Exact integer Rx(+90): new Y = -old Z, new Z = old Y. */
+    out_mat->mat21 = -m.mat31; out_mat->mat22 = -m.mat32; out_mat->mat23 = -m.mat33;
+    out_mat->mat31 =  m.mat21; out_mat->mat32 =  m.mat22; out_mat->mat33 =  m.mat23;
+#else
+    {
+        float a  = (90.0f + (float)(VR_WEAPON_PITCH_DEG)) * (SDL_PI_F / 180.0f);
+        float ca = SDL_cosf(a), sa = SDL_sinf(a);
+        /* Rx(a) on the rows: Y' = ca*Y - sa*Z ; Z' = sa*Y + ca*Z. */
+        out_mat->mat21 = (int)(ca * m.mat21 - sa * m.mat31);
+        out_mat->mat22 = (int)(ca * m.mat22 - sa * m.mat32);
+        out_mat->mat23 = (int)(ca * m.mat23 - sa * m.mat33);
+        out_mat->mat31 = (int)(sa * m.mat21 + ca * m.mat31);
+        out_mat->mat32 = (int)(sa * m.mat22 + ca * m.mat32);
+        out_mat->mat33 = (int)(sa * m.mat23 + ca * m.mat33);
+    }
+#endif
+}
 #endif
 
 void UpdateCamera(void);
@@ -1768,6 +1807,19 @@ void AvpShowViewsVR(void)
         FlushRenderBuffer();
         glDepthMask(GL_TRUE);
 
+        /* First-person weapon depth isolation: flush the world/particle pass and
+         * CLEAR the depth buffer before drawing the held weapon. The weapon and
+         * its muzzle flash are then depth-tested only against each other, never
+         * against the world or — crucially — the light-flare / muzzle-corona
+         * sprites, which are drawn "in front" at near z (see D3D_Particle_Output:
+         * IsDrawnInFront => z ≈ -1). When one of those flares writes depth it
+         * punches a circular hole through the weapon and flash on firing / near
+         * lights; clearing here removes that stray near-z depth entirely.
+         * Like a classic FPS viewmodel pass, the weapon is also never clipped by
+         * world geometry. The colour of the world/halos is already in the buffer,
+         * so the weapon still paints over them as before. */
+        SecondFlushD3DZBuffer();
+
         /* In VR, HandleMarineWeapon/HandlePredatorWeapon are skipped by MaintainHUD
          * (which itself is skipped in VR) to avoid doubling up the screen-space 2D
          * overlay. Render the weapon here instead, once per eye, positioned at the
@@ -1815,8 +1867,13 @@ void AvpShowViewsVR(void)
 
                     if (vr_right_hand_valid) {
                         /* Controller-attached: rig root = hand + off rotated into the
-                         * controller frame; orientation follows the controller. */
+                         * controller frame; orientation follows the controller. The
+                         * VR_CLAW_* offsets nudge the claws in the controller local
+                         * frame (X=right, Y=forward, Z=up); tune them in opengl.h. */
                         VECTORCH rootw = off;
+                        rootw.vx += VR_CLAW_OFFSET_RIGHT;
+                        rootw.vy += VR_CLAW_OFFSET_FORWARD;
+                        rootw.vz += VR_CLAW_OFFSET_UP;
                         RotateVector(&rootw, &vr_right_hand_mat);
                         rootw.vx += vr_right_hand_world.vx;
                         rootw.vy += vr_right_hand_world.vy;
@@ -1829,6 +1886,21 @@ void AvpShowViewsVR(void)
                         RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
                         PlayersWeapon.ObView = ov;
                         PlayersWeapon.ObMat  = vr_right_hand_mat;
+#if VR_CLAW_PITCH_DEG != 0
+                        /* Optional claw tilt about the controller's local X axis.
+                         * Rows are axes: Y' = ca*Y - sa*Z ; Z' = sa*Y + ca*Z. */
+                        {
+                            MATRIXCH m = PlayersWeapon.ObMat;
+                            float a  = (float)(VR_CLAW_PITCH_DEG) * (SDL_PI_F / 180.0f);
+                            float ca = SDL_cosf(a), sa = SDL_sinf(a);
+                            PlayersWeapon.ObMat.mat21 = (int)(ca * m.mat21 - sa * m.mat31);
+                            PlayersWeapon.ObMat.mat22 = (int)(ca * m.mat22 - sa * m.mat32);
+                            PlayersWeapon.ObMat.mat23 = (int)(ca * m.mat23 - sa * m.mat33);
+                            PlayersWeapon.ObMat.mat31 = (int)(sa * m.mat21 + ca * m.mat31);
+                            PlayersWeapon.ObMat.mat32 = (int)(sa * m.mat22 + ca * m.mat32);
+                            PlayersWeapon.ObMat.mat33 = (int)(sa * m.mat23 + ca * m.mat33);
+                        }
+#endif
                     } else {
                         /* Head-locked fallback when the controller pose is unavailable,
                          * so the claws never vanish. Mirrors PositionPlayersWeapon()'s
@@ -1843,15 +1915,13 @@ void AvpShowViewsVR(void)
                         PlayersWeapon.ObWorld.vz = Global_VDB_Ptr->VDB_World.vz + wo.vz;
                     }
                 } else if (vr_right_hand_valid) {
-                    /* Pull the weapon anchor back along the aim direction so the model
-                     * sits over the physical controller rather than ahead of it.
-                     * mat21/22/23 of vr_right_hand_mat is the barrel/aim direction in world space.
-                     * 300 game units ≈ 13 cm (GAME_UNITS_PER_METRE = 2200). Increase to pull further back. */
-                    const int VR_WEAPON_PULLBACK = 300;
+                    /* Controller-attached weapon: position + orientation from the
+                     * right controller, with the VR_WEAPON_* alignment offsets and
+                     * barrel fix applied. Shared with the shot-spawn path in
+                     * weapons.c so the visible muzzle and fire origin stay aligned.
+                     * Tune the offsets in opengl.h. */
                     VECTORCH anchor;
-                    anchor.vx = vr_right_hand_world.vx - ((vr_right_hand_mat.mat21 * VR_WEAPON_PULLBACK) >> 16);
-                    anchor.vy = vr_right_hand_world.vy - ((vr_right_hand_mat.mat22 * VR_WEAPON_PULLBACK) >> 16);
-                    anchor.vz = vr_right_hand_world.vz - ((vr_right_hand_mat.mat23 * VR_WEAPON_PULLBACK) >> 16);
+                    VR_ComputeWeaponAnchor(&anchor, &PlayersWeapon.ObMat);
                     PlayersWeapon.ObWorld = anchor;
                     /* View-space position for HModel path: world-to-view of
                      * (anchor - eye_world).  RotateVector(v, VDB_Mat) = VDB_Mat^T * v
@@ -1862,19 +1932,6 @@ void AvpShowViewsVR(void)
                     diff.vz = anchor.vz - Global_VDB_Ptr->VDB_World.vz;
                     RotateVector(&diff, &Global_VDB_Ptr->VDB_Mat);
                     PlayersWeapon.ObView = diff;
-                    /* Orientation: reuse GRIP_TO_GAME result (snap-compensated). */
-                    PlayersWeapon.ObMat = vr_right_hand_mat;
-                    /* Barrel fix: weapon model barrel along local +Y; Rx(+90°)
-                     * left-multiplied pitches it forward to align with view -Z. */
-                    {
-                        MATRIXCH m = PlayersWeapon.ObMat;
-                        PlayersWeapon.ObMat.mat21 = -m.mat31;
-                        PlayersWeapon.ObMat.mat22 = -m.mat32;
-                        PlayersWeapon.ObMat.mat23 = -m.mat33;
-                        PlayersWeapon.ObMat.mat31 =  m.mat21;
-                        PlayersWeapon.ObMat.mat32 =  m.mat22;
-                        PlayersWeapon.ObMat.mat33 =  m.mat23;
-                    }
                     /* Recoil shake: StateDependentMovement computes PositionOffset
                      * in camera view space each game tick.  Rotate it to world space
                      * and add it on top of the controller anchor so the weapon
@@ -1934,14 +1991,18 @@ void AvpShowViewsVR(void)
                       || wpn->WeaponIDNumber == WEAPON_TWO_PISTOLS)
                         && wpn->CurrentState == WEAPONSTATE_FIRING_SECONDARY);
                 if (tw->MuzzleFlashShapeName && !tw->PrimaryIsMeleeWeapon && firing) {
-                    /* Draw the muzzle flash with depth test OFF so it isn't
-                       occluded by the weapon barrel geometry (its particles spread
-                       around the muzzle, some behind the barrel tip). It's drawn
-                       after the light halos, so disabling the test also keeps it
-                       on top of them instead of appearing hidden behind them.
-                       Flush inside the disabled-test scope so it actually draws
-                       here rather than at the later shared flush. */
-                    glDisable(GL_DEPTH_TEST);
+                    /* Commit the weapon (colour + depth) on its own flush first so
+                       its depth is in the buffer before the flash is drawn. The
+                       weapon+flash otherwise share one batch, and we need the
+                       weapon's depth present (and the flash's depth-write off) —
+                       which can't be separated within a single flush. */
+                    FlushRenderBuffer();
+
+                    /* Muzzle flash: keep depth TEST on so the weapon barrel
+                       occludes the parts of the flash behind it, but depth WRITE
+                       off (it's an additive glow and mustn't block the HUD or later
+                       transparent effects). Queued after the light halos and
+                       flushed here, so it still layers on top of them. */
                     PositionPlayersWeaponMuzzleFlash();
                     if (AvP.PlayerType == I_Marine) {
                         VECTORCH dir = { PlayersWeaponMuzzleFlash.ObMat.mat31,
@@ -1957,8 +2018,9 @@ void AvpShowViewsVR(void)
                     } else {
                         RenderThisDisplayblock(&PlayersWeaponMuzzleFlash);
                     }
+                    glDepthMask(GL_FALSE);
                     FlushRenderBuffer();
-                    glEnable(GL_DEPTH_TEST);
+                    glDepthMask(GL_TRUE);
                 }
             }
         }

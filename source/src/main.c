@@ -2803,8 +2803,16 @@ int InitSDL()
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SDL initialising...");
     
     atexit(SDL_Quit);
-    
+
     SDL_AddEventWatch(SDLEventFilter, NULL);
+
+#ifdef __ANDROID__
+    /* Force the system on-screen keyboard whenever text input is active (menu
+       name / multiplayer fields). The default "auto" only shows it when SDL
+       thinks no physical keyboard is attached, which misfires on Quest, so the
+       keyboard never appeared. Must be set before any SDL_StartTextInput(). */
+    SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "1");
+#endif
 
 #if 0
     
@@ -2960,10 +2968,16 @@ int InitSDL()
         return -1;
     }
 
-    /* Point ScreenBuffer at the SDL surface so menu backdrop code works on Android */
+    /* Point ScreenBuffer at the SDL surface so menu backdrop code works on Android.
+       Also set BackBufferPitch to the real surface pitch: it's defined in stubs.c
+       but never assigned in this build (the DirectDraw path that set it is not
+       compiled), so it defaults to 0, which collapses any direct ScreenBuffer
+       fill to the top row. menus.c uses surface->pitch directly and is unaffected. */
     {
         extern unsigned char *ScreenBuffer;
-        ScreenBuffer = (unsigned char *)surface->pixels;
+        extern long BackBufferPitch;
+        ScreenBuffer   = (unsigned char *)surface->pixels;
+        BackBufferPitch = surface->pitch;
     }
 
     return 0;
@@ -3643,7 +3657,7 @@ static void handle_keypress(int key, int unicode, int press)
                     CapsLockOn ^= 1;
                     break;
                 case KEY_CR:
-                    SDL_StartTextInput(NULL);
+                    SDL_StartTextInput(window);
                     RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_CHAR('\r');
                     break;
                 case KEY_BACKSPACE:
@@ -3677,7 +3691,7 @@ static void handle_keypress(int key, int unicode, int press)
                     RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_KEYDOWN(VK_TAB);
                     break;
                 default:
-                    SDL_StartTextInput(NULL);
+                    SDL_StartTextInput(window);
                     break;
             }
     }
@@ -3690,6 +3704,22 @@ static void handle_keypress(int key, int unicode, int press)
     if (press)
         GotAnyKey = 1;
     KeyboardInput[key] = press;
+}
+
+/* Show/hide the system on-screen keyboard for menu text entry. Idempotent —
+   only calls into SDL when the active state actually changes. On Quest this
+   brings up the Meta system keyboard so a name / multiplayer IP / etc. can be
+   typed; the resulting SDL_EVENT_TEXT_INPUT events feed KeyboardEntryQueue_Add.
+   Driven each frame from the menu code (ActUponUsersInput). */
+void Platform_SetTextInputActive(int active)
+{
+    static int current = -1;
+    if (active == current) return;
+    current = active;
+    if (active)
+        SDL_StartTextInput(window);
+    else
+        SDL_StopTextInput(window);
 }
 
 void CheckForWindowsMessages()
@@ -3731,7 +3761,7 @@ void CheckForWindowsMessages()
                 }
                 break;
             case SDL_EVENT_TEXT_INPUT: {
-                SDL_StartTextInput(NULL);
+                SDL_StartTextInput(window);
                 int unicode = event.text.text[0]; //TODO convert to utf-32
                 if (unicode && !(unicode & 0xFF80)) {
                     RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_CHAR(unicode);
@@ -3740,7 +3770,7 @@ void CheckForWindowsMessages()
             }
                 break;
             case SDL_EVENT_KEY_DOWN:
-                SDL_StartTextInput(NULL);
+                SDL_StartTextInput(window);
                 if (event.key.key == SDLK_PRINTSCREEN) {
                     if (HavePrintScn == 0)
                         GotPrintScn = 1;
@@ -3750,7 +3780,7 @@ void CheckForWindowsMessages()
                 }
                 break;
             case SDL_EVENT_KEY_UP:
-                SDL_StartTextInput(NULL);
+                SDL_StartTextInput(window);
                 if (event.key.key == SDLK_PRINTSCREEN) {
                     GotPrintScn = 0;
                     HavePrintScn = 0;
@@ -3780,7 +3810,7 @@ void CheckForWindowsMessages()
             case SDL_EVENT_QUIT:
                 AvP.MainLoopRunning = 0; /* TODO */
                 exit(0); //TODO
-                SDL_StopTextInput(NULL);
+                SDL_StopTextInput(window);
                 break;
 #ifdef __ANDROID__
             case SDL_EVENT_GAMEPAD_ADDED:

@@ -138,6 +138,15 @@ void ShowMenuFrameRate(void);
 static void KeyboardEntryQueue_Clear(void);
 static void KeyboardEntryQueue_StartProcessing(void);
 
+/* Show/hide the system on-screen keyboard for menu text entry (defined in main.c). */
+extern void Platform_SetTextInputActive(int active);
+
+#ifdef __ANDROID__
+/* VR controller-driven on-screen keyboard (defined further down). */
+static void OnScreenKeyboard_HandleInput(void);
+static void OnScreenKeyboard_Render(void);
+#endif
+
 static void PasteFromClipboard(char* Text,int MaxTextLength);
 /* KJL 11:23:03 23/06/98 - Requirements
 
@@ -834,6 +843,11 @@ extern void AvP_UpdateMenus(void)
 			break;
 		}
 	}
+#ifdef __ANDROID__
+	/* Draw the VR on-screen keyboard over the menu while a field is being edited. */
+	if (AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber)
+		OnScreenKeyboard_Render();
+#endif
 	ActUponUsersInput();
 
 }
@@ -911,7 +925,7 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 		case AVPMENU_USERPROFILEENTERNAME:
 		{
 			AvPMenus.UserEnteringText = 1;
-            SDL_StartTextInput(NULL);
+            Platform_SetTextInputActive(1);
 			KeyboardEntryQueue_Clear();
 			AvPMenus.MenuElements->c.TextPtr = UserProfilePtr->Name;
 			UserProfilePtr->Name[0] = 0;
@@ -921,7 +935,7 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 		case AVPMENU_MULTIPLAYER_SAVECONFIG:
 		{
 			AvPMenus.UserEnteringText = 1;
-            SDL_StartTextInput(NULL);
+            Platform_SetTextInputActive(1);
 			KeyboardEntryQueue_Clear();
 			AvPMenus.WidthLeftForText = 0; //will be calculated properly when menus are drawn
 			break;
@@ -2096,6 +2110,167 @@ static void GenerateRandomName(char* dest, size_t maxLength)
 	dest[maxLength - 1] = '\0';
 }
 
+#ifdef __ANDROID__
+/* ================= VR on-screen keyboard ==================================
+ * In VR there is no physical keyboard, so menu text / number fields (profile
+ * name, multiplayer IP + details) are typed with the controller: the thumbstick
+ * moves the highlight and A presses the highlighted key. Pressed characters are
+ * fed into KeyboardEntryQueue_Add() — the same pipe a real keyboard used — and
+ * DEL / DONE synthesise the backspace / confirm keys the field handler already
+ * understands, so the existing text-entry logic is left untouched. B still
+ * cancels. Rendered onto the 640x480 menu surface (shown on the VR quad).
+ * ========================================================================== */
+#define OSK_NUM_CHAR_ROWS 4
+static const char *OSK_LowerRows[OSK_NUM_CHAR_ROWS] = {
+	"1234567890",
+	"qwertyuiop",
+	"asdfghjkl.",
+	"zxcvbnm-_@",
+};
+static const char *OSK_UpperRows[OSK_NUM_CHAR_ROWS] = {
+	"1234567890",
+	"QWERTYUIOP",
+	"ASDFGHJKL:",
+	"ZXCVBNM+/#",
+};
+enum { OSK_SPECIAL_SHIFT, OSK_SPECIAL_SPACE, OSK_SPECIAL_DEL, OSK_SPECIAL_DONE, OSK_SPECIAL_COUNT };
+static const char *OSK_SpecialLabels[OSK_SPECIAL_COUNT] = { "SHIFT", "SPACE", "DEL", "DONE" };
+
+static int OSK_Row = 1;   /* start on 'q' */
+static int OSK_Col = 0;
+static int OSK_Shift = 0;
+
+static int OSK_RowLength(int row)
+{
+	if (row < OSK_NUM_CHAR_ROWS)
+		return (int)strlen(OSK_LowerRows[row]);
+	return OSK_SPECIAL_COUNT;
+}
+
+/* Pre-process controller input for the on-screen keyboard while a text / number
+   field is active. Consumes the nav + A presses so the field handler does not
+   treat them as its own input. */
+static void OnScreenKeyboard_HandleInput(void)
+{
+	int len;
+
+	if (DebouncedKeyboardInput[KEY_UP]    && OSK_Row > 0)                 OSK_Row--;
+	if (DebouncedKeyboardInput[KEY_DOWN]  && OSK_Row < OSK_NUM_CHAR_ROWS) OSK_Row++;
+	if (DebouncedKeyboardInput[KEY_LEFT]  && OSK_Col > 0)                 OSK_Col--;
+	if (DebouncedKeyboardInput[KEY_RIGHT])                                OSK_Col++;
+
+	len = OSK_RowLength(OSK_Row);
+	if (OSK_Col >= len) OSK_Col = len - 1;
+	if (OSK_Col < 0)    OSK_Col = 0;
+
+	/* Consume the navigation so the field handler ignores it — it uses KEY_LEFT
+	   as backspace, which would otherwise fire whenever the highlight moves. */
+	DebouncedKeyboardInput[KEY_UP]    = 0;
+	DebouncedKeyboardInput[KEY_DOWN]  = 0;
+	DebouncedKeyboardInput[KEY_LEFT]  = 0;
+	DebouncedKeyboardInput[KEY_RIGHT] = 0;
+
+	if (DebouncedKeyboardInput[KEY_CR])
+	{
+		DebouncedKeyboardInput[KEY_CR] = 0;   /* consume A: it presses a key, not confirm */
+
+		if (OSK_Row < OSK_NUM_CHAR_ROWS)
+		{
+			const char *row = OSK_Shift ? OSK_UpperRows[OSK_Row] : OSK_LowerRows[OSK_Row];
+			KeyboardEntryQueue_Add(row[OSK_Col]);
+		}
+		else switch (OSK_Col)
+		{
+			case OSK_SPECIAL_SHIFT: OSK_Shift ^= 1; break;
+			case OSK_SPECIAL_SPACE: KeyboardEntryQueue_Add(' '); break;
+			case OSK_SPECIAL_DEL:   DebouncedKeyboardInput[KEY_BACKSPACE] = 1; break; /* field handler deletes */
+			case OSK_SPECIAL_DONE:  DebouncedKeyboardInput[KEY_CR] = 1; break;        /* field handler confirms */
+		}
+	}
+}
+
+/* Darken a rectangle of the software menu surface (RGB565), keeping 'keep'/256
+   of each channel (smaller = darker; 0 = black, 256 = unchanged) — a see-through
+   dark panel. The frontend menu renders in software straight into ScreenBuffer
+   (= surface->pixels, later uploaded to the VR quad), so this is applied here
+   directly (a GL blend wouldn't composite with it). Kept in this C TU to avoid
+   any C/C++ linkage issues. */
+static void OSK_DarkenRect(int x1, int y1, int x2, int y2, int keep)
+{
+	extern unsigned char *ScreenBuffer;
+	extern long BackBufferPitch;
+	int x, y;
+
+	if (x1 < 0) x1 = 0;
+	if (y1 < 0) y1 = 0;
+	if (x2 > ScreenDescriptorBlock.SDB_Width  - 1) x2 = ScreenDescriptorBlock.SDB_Width  - 1;
+	if (y2 > ScreenDescriptorBlock.SDB_Height - 1) y2 = ScreenDescriptorBlock.SDB_Height - 1;
+
+	for (y = y1; y <= y2; y++)
+	{
+		unsigned short *destPtr = (unsigned short *)(ScreenBuffer + x1*2 + y*BackBufferPitch);
+		for (x = x1; x <= x2; x++)
+		{
+			unsigned short p = *destPtr;
+			unsigned int r = ((((unsigned int)(p & 0xF800)) * keep) >> 8) & 0xF800;
+			unsigned int g = ((((unsigned int)(p & 0x07E0)) * keep) >> 8) & 0x07E0;
+			unsigned int b = ((((unsigned int)(p & 0x001F)) * keep) >> 8) & 0x001F;
+			*destPtr++ = (unsigned short)(r | g | b);
+		}
+	}
+}
+
+static void OnScreenKeyboard_Render(void)
+{
+	/* Uses the menu's own AAFont (RenderSmallMenuText_Coloured), NOT the HUD font
+	   (RenderStringCentred) — the HUD font texture is not loaded in the frontend
+	   menus, so drawing with it dereferences a null texture and crashes. */
+	const int cx     = ScreenDescriptorBlock.SDB_Width / 2;
+	const int startY = 300;
+	const int rowH   = 28;
+	const int keyW   = 34;
+	char buf[2] = { 0, 0 };
+	int r, col;
+
+	/* Semi-transparent dark panel behind the keys so the menu background doesn't
+	   clutter them. keep=64 => ~25% brightness (75% darkened). Lower to darken
+	   further (0 = solid black), raise toward 256 for more see-through. */
+	OSK_DarkenRect(cx - 285, startY - 18, cx + 285,
+		startY + (OSK_NUM_CHAR_ROWS + 1) * rowH + 26, 64);
+
+	for (r = 0; r < OSK_NUM_CHAR_ROWS; r++)
+	{
+		const char *row = OSK_Shift ? OSK_UpperRows[r] : OSK_LowerRows[r];
+		int len = (int)strlen(row);
+		int rowStartX = cx - (len * keyW) / 2 + keyW / 2;
+		int y = startY + r * rowH;
+		for (col = 0; col < len; col++)
+		{
+			int sel = (OSK_Row == r && OSK_Col == col);
+			buf[0] = row[col];
+			RenderSmallMenuText_Coloured(buf, rowStartX + col * keyW, y, ONE_FIXED,
+				AVPMENUFORMAT_CENTREJUSTIFIED, sel ? 0 : ONE_FIXED, ONE_FIXED, sel ? 0 : ONE_FIXED);
+		}
+	}
+	{
+		int y = startY + OSK_NUM_CHAR_ROWS * rowH;
+		int spacing = ScreenDescriptorBlock.SDB_Width / (OSK_SPECIAL_COUNT + 1);
+		for (col = 0; col < OSK_SPECIAL_COUNT; col++)
+		{
+			int sel = (OSK_Row == OSK_NUM_CHAR_ROWS && OSK_Col == col);
+			int rr = ONE_FIXED, gg = ONE_FIXED, bb = ONE_FIXED;
+			if (sel)                                          { rr = 0; bb = 0; }   /* green */
+			else if (col == OSK_SPECIAL_SHIFT && OSK_Shift)   { bb = 0; }           /* yellow */
+			RenderSmallMenuText_Coloured((char *)OSK_SpecialLabels[col], spacing * (col + 1), y,
+				ONE_FIXED, AVPMENUFORMAT_CENTREJUSTIFIED, rr, gg, bb);
+		}
+	}
+	RenderSmallMenuText_Coloured((char *)"Stick: move    A: key    B: cancel", cx,
+		startY + (OSK_NUM_CHAR_ROWS + 1) * rowH + 4, ONE_FIXED,
+		AVPMENUFORMAT_CENTREJUSTIFIED, ONE_FIXED, ONE_FIXED, ONE_FIXED);
+}
+#endif /* __ANDROID__ */
+
 static void ActUponUsersInput(void)
 {
 	static int BackspaceTimer=0;
@@ -2108,7 +2283,21 @@ static void ActUponUsersInput(void)
 	{
 		BackspaceTimer=0;
 	}
-	
+
+#ifdef __ANDROID__
+	/* Quest/Android: raise the system on-screen keyboard while a menu text or
+	   number field is being edited (name entry, multiplayer IP/details, etc.),
+	   and dismiss it otherwise. There is no physical keyboard on the headset, so
+	   without this there is no way to trigger it. Idempotent, so it only acts on
+	   transitions; typed characters arrive as SDL_EVENT_TEXT_INPUT and feed
+	   KeyboardEntryQueue_Add() (see main.c). */
+	Platform_SetTextInputActive(AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber);
+	/* Controller-driven on-screen keyboard: turns stick/A into characters and
+	   backspace/confirm before the field handler below runs. */
+	if (AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber)
+		OnScreenKeyboard_HandleInput();
+#endif
+
 	if (AvPMenus.UserEnteringText)
 	{
 		AVPMENU_ELEMENT *elementPtr = &AvPMenus.MenuElements[AvPMenus.CurrentlySelectedElement];
@@ -2557,7 +2746,7 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 		case AVPMENU_ELEMENT_TEXTFIELD:
 		{
 			AvPMenus.UserEnteringText = 1;
-            SDL_StartTextInput(NULL);
+            Platform_SetTextInputActive(1);
 			KeyboardEntryQueue_Clear();
 			AvPMenus.PositionInTextField = strlen(elementPtr->c.TextPtr);
 			elementPtr->c.TextPtr[AvPMenus.PositionInTextField] = 0;
@@ -2567,7 +2756,7 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 		case AVPMENU_ELEMENT_TEXTFIELD_SMALLWRAPPED:
 		{
 			AvPMenus.UserEnteringText = 1;
-            SDL_StartTextInput(NULL);
+            Platform_SetTextInputActive(1);
 			KeyboardEntryQueue_Clear();
 			AvPMenus.PositionInTextField = strlen(elementPtr->c.TextPtr);
 			AvPMenus.WidthLeftForText = 0; //will be calculated properly when menus are drawn
@@ -5589,7 +5778,6 @@ static int KeyboardEntryQueue_ProcessingIndex;
 
 void KeyboardEntryQueue_Add(char c)
 {
-    SDL_StartTextInput(NULL);
 	if (c<32) return;
 
 	if (NumberOfItemsInKeyboardEntryQueue<MAX_ITEMS_IN_KEYBOARDENTRYQUEUE)
@@ -5601,7 +5789,6 @@ void KeyboardEntryQueue_Add(char c)
 static void KeyboardEntryQueue_Clear(void)
 {
 	int i;
-    SDL_StartTextInput(NULL);
 	for (i=0; i<MAX_ITEMS_IN_KEYBOARDENTRYQUEUE; i++)
 	{
 		KeyboardEntryQueue[i] = 0;
@@ -5616,7 +5803,6 @@ static void KeyboardEntryQueue_StartProcessing(void)
 
 static char KeyboardEntryQueue_ProcessCharacter(void)
 {
-    SDL_StartTextInput(NULL);
 	if (KeyboardEntryQueue_ProcessingIndex >= NumberOfItemsInKeyboardEntryQueue)
 	{
 		return 0;

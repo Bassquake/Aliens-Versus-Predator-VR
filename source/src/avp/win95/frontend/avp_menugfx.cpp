@@ -526,7 +526,7 @@ extern void RenderHighlightRectangle(int x1,int y1,int x2,int y2, int r, int g, 
 {
 	int x,y;
 	short c;
-	
+
 	c = ((DisplayPixelFormat.dwRBitMask*r)/256)&(DisplayPixelFormat.dwRBitMask);
 	c |= ((DisplayPixelFormat.dwGBitMask*g)/256)&(DisplayPixelFormat.dwGBitMask);
 	c |= ((DisplayPixelFormat.dwBBitMask*b)/256)&(DisplayPixelFormat.dwBBitMask);

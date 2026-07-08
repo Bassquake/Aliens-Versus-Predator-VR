@@ -991,13 +991,19 @@ void FlushRenderBuffer(void)
 
 void FlushD3DZBuffer()
 {
+	/* glClear(GL_DEPTH_BUFFER_BIT) is gated by the depth-write mask. A preceding
+	   translucent/particle pass can leave the mask disabled, which silently turns
+	   the clear into a no-op — the weapon/HUD then stay depth-tested against the
+	   world and only show where world faces are nearer. Force the mask on. */
+	pglDepthMask(GL_TRUE);
 	pglClear(GL_DEPTH_BUFFER_BIT);
 }
 
 void SecondFlushD3DZBuffer()
 {
 	FlushTriangleBuffers(0);
-	
+
+	pglDepthMask(GL_TRUE);   /* ensure the clear isn't masked off (see FlushD3DZBuffer) */
 	pglClear(GL_DEPTH_BUFFER_BIT);
 }
 

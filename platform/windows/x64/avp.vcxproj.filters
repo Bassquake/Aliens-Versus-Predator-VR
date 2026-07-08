@@ -1,0 +1,676 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\files.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\winapi.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\stubs.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\version.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\mathline.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\net.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\frustum.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\kshape.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\map.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\maths.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\md5.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\mem3dc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\mem3dcpp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\module.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\morph.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\object.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\shpanim.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\sphere.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\tables.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\vdb.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\ai_sight.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\avpview.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_agun.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_ais.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_alien.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_binsw.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_cable.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_corpse.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_deathvol.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_debri.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_dummy.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_fan.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_far.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_fhug.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_gener.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_ldoor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_lift.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_light.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_lnksw.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_ltfx.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_marin.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_mission.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_near.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_pargen.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_plachier.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_plift.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_pred.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_queen.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_rubberduck.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_selfdest.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_snds.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_spcl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_swdor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_track.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_types.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_videoscreen.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_waypt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_weap.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bh_xeno.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\bonusabilities.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\cconvars.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\cdtrackselection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\cheatmodes.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\comp_map.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\comp_shp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\consolelog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\davehook.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\deaths.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\decal.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\detaillevels.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\dynamics.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\dynblock.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\equipmnt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\extents.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\game.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\game_statistics.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\gamecmds.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\gamevars.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\hmodel.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\hud.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\inventry.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\language.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\lighting.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\load_shp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\los.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\mempool.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\messagehistory.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\missions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\movement.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\paintball.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\particle.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\pfarlocs.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\pheromon.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\player.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\pmove.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\psnd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\psndproj.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\pvisible.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\savegame.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\scream.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\secstats.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\sfx.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\stratdef.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\targeting.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\track.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\triggers.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\weapons.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes\cube.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\consbind.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\consbtch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\coordstr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\daemon.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\indexfnt.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\r2base.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\r2pos666.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\reflist.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\refobj.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\rentrntq.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\scstring.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\strtab.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\strutil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\trig666.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support\wrapstr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\avpchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\cheat.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\chtcodes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\d3d_hud.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\ddplat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\endianio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\ffread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\ffstdio.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gammacontrol.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\hierplace.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\iofocus.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\jsndsup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\kzsort.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\langplat.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\modcmds.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\npcsetup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\objsetup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\pathchnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\platsup.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\pldghost.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\pldnet.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\progress_bar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\projload.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\scrshot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\strachnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\system.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\usr_io.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\vision.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend\avp_envinfo.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend\avp_intro.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend\avp_menudata.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend\avp_menus.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend\avp_mp_config.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend\avp_userprofile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\ahudgadg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\conscmnd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\conssym.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\consvar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\gadget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\hudgadg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\rootgadg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\t_ingadg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\teletype.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\textexp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\textin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets\trepgadg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\animchnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\animobs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\awtexld.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\awbmpld.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\awiffld.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\awpnmld.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\bmpnames.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\chnkload.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\chnktexi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\chnktype.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\chunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\chunkpal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\db.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\debuglog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\dummyobjectchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\enumchnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\enumsch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\envchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\fail.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\fragchnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\gsprchnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\hierchnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\huffman.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\iff.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\iff_ilbm.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\ilbm_ext.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\io.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\list_tem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\ltchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\media.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\mishchnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\obchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\oechunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\our_mem.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\plat_shp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\plspecfn.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\shpchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\sndchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\sprchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\string.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\texio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\toolchnk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\txioctrl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\wpchunk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\win95\zsp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\opengl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\oglfunc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\fmv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\openal.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\cdplayer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\menus.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\main.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="K:\Coding\Aliens-Versus-Predator-VR\source\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{A5D8517C-4C72-3334-BDB8-CFCEFE919AB8}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

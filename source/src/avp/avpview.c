@@ -1317,6 +1317,12 @@ extern void AlienBiteAttackHasHappened(void)
 	AlienTeethOffset = 0;
 }
 
+#ifndef __ANDROID__
+/* Desktop is mono — MaintainHUD still reads this, so define the single-view
+   index. (On VR it's defined below and toggled per eye.) */
+int vr_eye_index = 0;
+#endif
+
 #ifdef __ANDROID__
 
 int vr_eye_index = 0; /* 0 = first/left eye, 1 = second/right; read by MaintainHUD */

@@ -8,7 +8,12 @@ IF(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     SET_PROPERTY(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 ENDIF(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 
-PROJECT(avpvr)
+if (ANDROID)
+    PROJECT(avpvr)
+endif()
+if (WIN32)
+    PROJECT(avp)
+endif()
 
 # required dependencies
 if (ANDROID)
@@ -420,7 +425,7 @@ INCLUDE_DIRECTORIES(${include})
 INCLUDE_DIRECTORIES(src/include)
 
 if (WIN32)
-    ADD_EXECUTABLE(avpvr ${source})
+    ADD_EXECUTABLE(avp ${source})
 endif ()
 
 if (ANDROID)
@@ -442,22 +447,54 @@ ENDIF(OPENGL_TYPE STREQUAL "OPENGLES2")
 
 INCLUDE_DIRECTORIES(${OPENAL_INCLUDE_DIR})
 
-TARGET_LINK_LIBRARIES(avpvr ${SDL3_LIBRARY})
+if (ANDROID)
+    TARGET_LINK_LIBRARIES(avpvr ${SDL3_LIBRARY})
+endif ()
+if (WIN32)
+    TARGET_LINK_LIBRARIES(avp ${SDL3_LIBRARY})
+endif ()
 
-IF(OPENGL_TYPE STREQUAL "OPENGL")
-  TARGET_LINK_LIBRARIES(avpvr ${OPENGL_gl_LIBRARY})
-ENDIF(OPENGL_TYPE STREQUAL "OPENGL")
+if (ANDROID)
+    IF(OPENGL_TYPE STREQUAL "OPENGL")
+      TARGET_LINK_LIBRARIES(avpvr ${OPENGL_gl_LIBRARY})
+    ENDIF(OPENGL_TYPE STREQUAL "OPENGL")
+endif ()
+
+if (WIN32)
+    IF(OPENGL_TYPE STREQUAL "OPENGL")
+      TARGET_LINK_LIBRARIES(avp ${OPENGL_gl_LIBRARY})
+    ENDIF(OPENGL_TYPE STREQUAL "OPENGL")
+endif ()
 
 IF(OPENGL_TYPE STREQUAL "OPENGLES2")
   TARGET_LINK_LIBRARIES(avpvr ${OPENGLES_gl_LIBRARY})
   TARGET_LINK_LIBRARIES(avpvr ${EGL_LIBRARIES})
 ENDIF(OPENGL_TYPE STREQUAL "OPENGLES2")
 
-TARGET_LINK_LIBRARIES(avpvr ${OPENAL_LIBRARY})
+if (ANDROID)
+    TARGET_LINK_LIBRARIES(avpvr ${OPENAL_LIBRARY})
+endif ()
+
+if (WIN32)
+    TARGET_LINK_LIBRARIES(avp ${OPENAL_LIBRARY})
+endif ()
 
 #WINDOWS LIBRARIES
 if (WIN32)
-    target_link_libraries(avpvr shlwapi.lib winmm.lib)
+    target_link_libraries(avp shlwapi.lib winmm.lib ws2_32.lib)
+
+    # FFmpeg: fmv.c's desktop FMV path (PlayBinkedFMV / PlayMenuMusic /
+    # InitialiseTriggeredFMVs) links against these import libs. Wired in here so a
+    # CMake regenerate no longer wipes the manual VS "Additional Library
+    # Directories" (the matching -62/-60/etc. runtime DLLs must sit next to
+    # avp.exe; headers come from extern/FFmpeg/include, already on the include path).
+    target_link_libraries(avp
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/avcodec.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/avformat.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/avutil.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/swscale.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/swresample.lib"
+    )
 endif ()
 
 #ANDROID LINK LIBRARIES
@@ -482,27 +519,27 @@ endif ()
 #COPY FILES TO RELEVANT BUILD FOLDERS
 # We only define an install target if we're doing a release build.
 if (APPLE)
-    install (TARGETS avp BUNDLE DESTINATION .)
+    install (TARGETS avpvr BUNDLE DESTINATION .)
 
 	set(MACOS_ASSETS "${MACOS_ASSETS_ICON}")
-	target_sources(avp PUBLIC ${MACOS_ASSETS})
+	target_sources(avpvr PUBLIC ${MACOS_ASSETS})
 
 	# I use this custom command to copy the data folder under the Resources directy
 	# I can't make it work using MACOSX_PACKAGE_LOCATION source property
-	add_custom_command(TARGET avp POST_BUILD
+	add_custom_command(TARGET avpvr POST_BUILD
   						COMMAND ${CMAKE_COMMAND} -E copy_directory
 						"${CMAKE_SOURCE_DIR}/data"
 						"$<TARGET_FILE_DIR:avp>/../Resources") 
 
 	# Remove files from what has been copied
-	add_custom_command(TARGET avp POST_BUILD
+	add_custom_command(TARGET avpvr POST_BUILD
 						COMMAND ${CMAKE_COMMAND} -E rm
 					  "$<TARGET_FILE_DIR:avp>/../Resources/CMakeLists.txt"
 					  "$<TARGET_FILE_DIR:avp>/../Resources/avp.ini")
 
 	find_program(DYLIBBUNDLER_EXE dylibbundler REQUIRED)
 
-	add_custom_command(TARGET avp POST_BUILD
+	add_custom_command(TARGET avpvr POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E make_directory
 				"$<TARGET_BUNDLE_DIR:avp>/Contents/Frameworks"
 		COMMAND ${DYLIBBUNDLER_EXE}
@@ -515,7 +552,7 @@ if (APPLE)
 		
 	# Override certain properties to make the avp
 	# executable into an application bundle for OS X.
-	set_target_properties (avp PROPERTIES
+	set_target_properties (avpvr PROPERTIES
 		OUTPUT_NAME "avp"
 	#	MACOSX_BUNDLE true
 		MACOSX_BUNDLE_BUNDLE_NAME "avp"
@@ -542,6 +579,11 @@ elseif (WIN32)
     # mirroring the avp.app bundle layout on macOS.
     set_target_properties(avp PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../../../build/windows/${AVP_ARCH}"
+        # Launch the VS debugger (F5 / "Local Windows Debugger") with the CWD set
+        # to the exe's own folder, so it finds the assets copied next to it —
+        # matching how it behaves when run from Explorer. Without this the
+        # debugger uses the project dir and the game can't locate its data.
+        VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../../../build/windows/${AVP_ARCH}"
     )
 
     # Runtime DLLs live in the target sysroot bin, not the host compiler bin.

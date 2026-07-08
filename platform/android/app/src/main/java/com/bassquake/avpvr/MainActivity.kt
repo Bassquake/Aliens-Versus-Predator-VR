@@ -1,10 +1,36 @@
 package com.bassquake.avpvr
 
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.wifi.WifiManager
+import android.os.Bundle
 import org.libsdl.app.SDLActivity
 
 class MainActivity : SDLActivity() {
+
+    // Held so the Wi-Fi stack delivers incoming broadcast/multicast UDP, which
+    // Android otherwise drops. Needed for LAN multiplayer host discovery.
+    private var multicastLock: WifiManager.MulticastLock? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        try {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            multicastLock = wifi.createMulticastLock("avpvr-discovery").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("AvP", "multicast lock unavailable: ${e.message}")
+        }
+    }
+
+    override fun onDestroy() {
+        try { multicastLock?.release() } catch (e: Exception) { }
+        multicastLock = null
+        super.onDestroy()
+    }
 
     override fun getLibraries(): Array<String> {
         return arrayOf(

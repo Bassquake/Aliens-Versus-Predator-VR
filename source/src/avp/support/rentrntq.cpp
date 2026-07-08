@@ -83,7 +83,11 @@ void RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_CHAR
 	char Ch
 )
 {
-	SDL_StartTextInput(NULL);
+	/* NB: do NOT toggle SDL text input here. This is a re-entrant queue-add
+	   called from the input path; text-input lifecycle is owned by main.c
+	   (Platform_SetTextInputActive / the event handlers). The old
+	   SDL_StartTextInput(NULL) here passed a NULL window and fired on the first
+	   alnum keypress. */
 	if ( NumQMessages < MAX_Q_MESSAGES )
 	{
 		OurQ[ NumQMessages ] . QEntryCat = QEntryCat_WM_CHAR;

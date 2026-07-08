@@ -2469,7 +2469,7 @@ static void ActUponUsersInput(void)
 	}
 	else
 	{	
-		if (DebouncedKeyboardInput[KEY_ESCAPE] && (AvPMenus.CurrentMenu != AVPMENU_MAIN && AvPMenus.CurrentMenu != AVPMENU_INGAME))
+		if (DebouncedKeyboardInput[KEY_ESCAPE] && (AvPMenus.CurrentMenu != AVPMENU_MAIN && AvPMenus.CurrentMenu != AVPMENU_INGAME && AvPMenus.CurrentMenu != AVPMENU_INNETGAME))
 		{
 			//if (AvPMenus.CurrentMenu == AVPMENU_MULTIPLAYERJOINGAME2)
 			switch(AvPMenus.CurrentMenu)

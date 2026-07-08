@@ -3,6 +3,14 @@
  * smacker.c - functions to handle FMV playback
  *
  */
+
+// FFmpeg headers
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavformat/avio.h>
+#include <libswscale/swscale.h>
+#include <SDL3/SDL.h>
+
 #include "3dc.h"
 #include "module.h"
 #include "inline.h"
@@ -26,11 +34,16 @@ extern void OGL_RegenerateMipmaps(void);
 /* system.h defines 'debug' as a macro (→ 0/1); undef it so avcodec.h's
    AVCodecContext::debug member isn't mangled by the preprocessor. */
 #undef debug
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavformat/avio.h>
-#include <libswscale/swscale.h>
-#include <SDL3/SDL.h>
+	#include <libavcodec/avcodec.h>
+	#include <libavformat/avformat.h>
+	#include <libavformat/avio.h>
+	#include <libswscale/swscale.h>
+	#include <SDL3/SDL.h>
+#endif
+
+#ifndef __ANDROID__
+/* Desktop FMV is stubbed; the debug log macro is Android-only, so no-op it. */
+#define FMV_LOG(...) ((void)0)
 #endif
 
 int VolumeOfNearestVideoScreen;
@@ -701,6 +714,7 @@ void PlayBinkedFMV(char *filenamePtr)
 	extern SDL_Surface *surface;
 	extern void FlipBuffers(void);
 	extern void ReadJoysticks(void);
+	extern void CheckForWindowsMessages(void);
 
 	if (!filenamePtr || !filenamePtr[0]) return;
 	for (k = 0; filenamePtr[k] && k < (int)sizeof(lpath) - 1; k++)
@@ -839,6 +853,7 @@ void PlayBinkedFMV(char *filenamePtr)
 				}
 				av_frame_unref(vframe);
 				FlipBuffers();
+				CheckForWindowsMessages();   /* poll SDL events so a keypress sets GotAnyKey and skips the video */
 				ReadJoysticks();
 				if (GotAnyKey) break;
 			}

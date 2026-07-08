@@ -25,12 +25,14 @@ int VideoModeNotAvailable=0;
 /* bink.c — PlayBinkedFMV: Android implements in fmv.c; stub for other platforms.
    StartMenuBackgroundBink/PlayMenuBackgroundBink/EndMenuBackgroundBink live in fmv.c
    for all platforms (no-op bodies on non-Android). */
+/* Needed?
 #ifndef __ANDROID__
 void PlayBinkedFMV(char *filenamePtr)
 {
 	(void)filenamePtr;
 }
-#endif /* !__ANDROID__ */
+#endif
+*/
 
 /* alt_tab.cpp */
 void ATIncludeSurface(void * pSurface, void * hBackup)

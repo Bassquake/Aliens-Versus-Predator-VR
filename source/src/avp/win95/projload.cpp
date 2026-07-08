@@ -3128,7 +3128,7 @@ void LoadModuleData()
  	GLOBALASSERT(env_rif);
 
 /* TODO: dir separator */
- 	HANDLE file = AVPCreateFile ("avp_rifs/module.bbb", GENERIC_WRITE, 0, 0, CREATE_ALWAYS,
+ 	HANDLE file = CreateFile ("avp_rifs/module.bbb", GENERIC_WRITE, 0, 0, CREATE_ALWAYS,
  					FILE_FLAG_RANDOM_ACCESS, 0);
 	unsigned long byteswritten;
 #ifdef _WIN32
@@ -3142,25 +3142,25 @@ void LoadModuleData()
 #endif
 
 /* TODO: dir separator */
- 	file = AVPCreateFile ("avp_rifs/module.aaa", GENERIC_READ, 0, 0, OPEN_EXISTING,
+ 	file = CreateFile ("avp_rifs/module.aaa", GENERIC_READ, 0, 0, OPEN_EXISTING,
  					FILE_FLAG_RANDOM_ACCESS, 0);
 
 	if(file==INVALID_HANDLE_VALUE) return;
 
 	if(!env_rif->fc)
 	{
-        AVPCloseHandle(file);
+        CloseHandle(file);
 		NewOnScreenMessage("MODULE UPDATING REQUIRES -KEEPRIF OPTION.");
 		return;
 	}
 
-	int file_size=AVPGetFileSize(file,0);
+	int file_size=GetFileSize(file,0);
 	GLOBALASSERT((file_size % 4)==0);
 	int pos=0;
 	unsigned long bytesread;
 	{
 		char name[60];
-        AVPReadFile(file,name,60,&bytesread,0);
+        ReadFile(file,name,60,&bytesread,0);
 		
 		int i=0;
 		char* name1=&name[0];
@@ -3185,8 +3185,8 @@ void LoadModuleData()
 
 		if(_stricmp(name1,name2))
 		{
-            AVPCloseHandle(file);
-            AVPDeleteFile("avp_rifs\\module.aaa");
+            CloseHandle(file);
+            DeleteFile("avp_rifs\\module.aaa");
 			return;
 		}
 
@@ -3197,7 +3197,7 @@ void LoadModuleData()
 	while(pos<file_size)
 	{
 		int obj_index;
-        AVPReadFile(file,&obj_index,4,&bytesread,0);
+        ReadFile(file,&obj_index,4,&bytesread,0);
 		pos+=4;
 
 		Object_Chunk* obj=env_rif->fc->get_object_by_index(obj_index);
@@ -3206,7 +3206,7 @@ void LoadModuleData()
 		MODULE* this_mod=&MainScene.sm_module[obj->program_object_index+2];
 
 		int numlinks;
-        AVPReadFile(file,&numlinks,4,&bytesread,0);
+        ReadFile(file,&numlinks,4,&bytesread,0);
 		pos+=4;
 
 		if(!numlinks) continue;
@@ -3223,8 +3223,8 @@ void LoadModuleData()
 		{
 			int linked_index;
 			int branch_no;
-            AVPReadFile(file,&linked_index,4,&bytesread,0);
-            AVPReadFile(file,&branch_no,4,&bytesread,0);
+            ReadFile(file,&linked_index,4,&bytesread,0);
+            ReadFile(file,&branch_no,4,&bytesread,0);
 			pos+=8;
 			
 			Object_Chunk* linked_module=env_rif->fc->get_object_by_index(linked_index);
@@ -3284,8 +3284,8 @@ void LoadModuleData()
 		*((int *)this_mod->m_vmptr[vmod_no].vmod_name) = vmac_no;
 	}
 	
-    AVPCloseHandle(file);
-    AVPDeleteFile("avp_rifs\\module.aaa");
+    CloseHandle(file);
+    DeleteFile("avp_rifs\\module.aaa");
 }
 #endif
 

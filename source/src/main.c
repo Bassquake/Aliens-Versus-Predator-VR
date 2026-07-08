@@ -3253,12 +3253,15 @@ static int SetOGLVideoMode(int Width, int Height)
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
 #else
-        SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 5);
-        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 5);
-        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 5);
-        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+        /* 24-bit depth: 16-bit over AvP's large world coordinates z-fights badly
+           (faces of objects flicker/drop out depending on view angle). The VR
+           swapchain uses higher-precision depth, which is why VR looks correct. */
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-        
+
         /* No MSAA on desktop — desktop anti-aliasing/upscaling is intended to be
            handled by a post-process upscaler (FSR/DLSS/XeSS) instead. The MSAA
            menu option applies to the Quest/VR path only. */
@@ -3290,6 +3293,12 @@ static int SetOGLVideoMode(int Width, int Height)
         SDL_Log("GL_VENDOR:   %s", glGetString(GL_VENDOR));
         SDL_Log("GL_RENDERER: %s", glGetString(GL_RENDERER));
         SDL_Log("GL_VERSION:  %s", glGetString(GL_VERSION));
+        {
+            int gotDepth = 0, gotDouble = 0;
+            SDL_GL_GetAttribute(SDL_GL_DEPTH_SIZE, &gotDepth);
+            SDL_GL_GetAttribute(SDL_GL_DOUBLEBUFFER, &gotDouble);
+            SDL_Log("GL context depth buffer: %d bits, double-buffered: %d", gotDepth, gotDouble);
+        }
         
         const char *renderer = (const char *)glGetString(GL_RENDERER);
         if (strstr(renderer, "SwiftShader") || strstr(renderer, "software")) {
@@ -4453,7 +4462,11 @@ int main(int argc, char *argv[])
                                 ThisFramesRenderingHasBegun();
                             } else {
                                 AvpShowViews();
-                                InGameFlipBuffers();
+                                /* No present here — the frame is presented after
+                                   MaintainHUD() below so the HUD + weapon are included.
+                                   Presenting here would swap them away (they'd be drawn to
+                                   the next back buffer and overdrawn by the next world
+                                   render before it's ever shown). */
                             }
 #ifdef __ANDROID__
                         }
@@ -4516,14 +4529,13 @@ int main(int argc, char *argv[])
 #endif
                     //InGameFlipBuffers();
 #ifndef __ANDROID__
-                    /* Present the in-game menu frame. The gameplay branch above skips its
-                       own present while the menu is up, and the menu-only branch never
-                       presents, so this is the single present for any frame the pause menu
-                       is showing — in both single-player and network games. Exactly one
-                       InGameFlipBuffers() per frame either way, so the background settles to
-                       black under the fade instead of strobing. */
-                    if (menusActive)
-                        InGameFlipBuffers();
+                    /* Single desktop present for the whole frame, AFTER AvpShowViews,
+                       MaintainHUD and AvP_InGameMenus, so the world, HUD, weapon and any
+                       pause menu are all included in the presented frame. The gameplay
+                       branch above deliberately does not present, which is what makes the
+                       HUD/weapon visible and keeps the pause-menu background from strobing
+                       (exactly one swap per frame). */
+                    InGameFlipBuffers();
 #endif
 
                     FrameCounterHandler();

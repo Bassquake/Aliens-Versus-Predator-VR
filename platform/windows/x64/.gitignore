@@ -2,3 +2,7 @@
 *
 # Except this file
 !.gitignore
+!*.vcxproj
+!*.sln
+!*.vcxproj.filters
+!*.vcxproj.user

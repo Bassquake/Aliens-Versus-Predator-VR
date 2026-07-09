@@ -4363,7 +4363,16 @@ extern void TranslationSetup(void)
 	extern int vr_is_rendering;
 	float vr_y_scale = vr_is_rendering ? (1.0f / 65536.0f) : (4.0f / (65536.0f * 3.0f));
 #else
-	float vr_y_scale = 4.0f / (65536.0f * 3.0f);
+	/* Aspect correction = render width/height. A hardcoded 4:3 stretched the 3D view
+	   horizontally on wider (16:9) windows; use the actual viewport aspect so the
+	   image isn't distorted. Widescreen then widens the horizontal FOV (Hor+). */
+	float desktop_aspect = 4.0f / 3.0f;
+	{
+		int _w = Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft;
+		int _h = Global_VDB_Ptr->VDB_ClipDown  - Global_VDB_Ptr->VDB_ClipUp;
+		if (_w > 0 && _h > 0) desktop_aspect = (float)_w / (float)_h;
+	}
+	float vr_y_scale = desktop_aspect / 65536.0f;
 #endif
 	ViewMatrix[0+1*4] = (float)(Global_VDB_Ptr->VDB_Mat.mat12) * vr_y_scale * p;
 	ViewMatrix[1+1*4] = (float)(Global_VDB_Ptr->VDB_Mat.mat22) * vr_y_scale * p;
@@ -4383,7 +4392,7 @@ extern void TranslationSetup(void)
 	#ifdef __ANDROID__
 		ViewMatrix[3+1*4] = ((float)-v.vy) * (vr_is_rendering ? 1.0f : (4.0f/3.0f)) * p;
 	#else
-		ViewMatrix[3 + 1 * 4] = ((float)-v.vy) * 4.0f / 3.0f * p;
+		ViewMatrix[3 + 1 * 4] = ((float)-v.vy) * desktop_aspect * p;
 	#endif
 	ViewMatrix[3+2*4] = ((float)-v.vz)*CameraZoomScale;
 

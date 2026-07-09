@@ -734,9 +734,17 @@ static void DoMotionTracker(void)
       	ValueOfHUDDigit[MARINE_HUD_MOTIONTRACKER_THOUSANDS]=value%10;
 	}
    
+	/* The Quest renders the HUD (and so runs this tracker update) once per eye, so
+	   its sweep + scan cadence advances twice a frame; desktop runs it once. Double
+	   the tracker's time step on desktop so its sweep speed matches the Quest. */
+	int mtFrameTime = NormalFrameTime;
+#ifndef __ANDROID__
+	mtFrameTime *= 2;
+#endif
+
 	if (MTDelayBetweenScans)
 	{
-		MTDelayBetweenScans-=NormalFrameTime;
+		MTDelayBetweenScans-=mtFrameTime;
 		if (MTDelayBetweenScans<0) 
 		{
 			MTDelayBetweenScans=0;
@@ -759,11 +767,11 @@ static void DoMotionTracker(void)
 		}
 		else if (MTScanLineSize>32768) 
 		{
-			MTScanLineSize+= MUL_FIXED(MOTIONTRACKER_SPEED*2,NormalFrameTime);
+			MTScanLineSize+= MUL_FIXED(MOTIONTRACKER_SPEED*2,mtFrameTime);
 		}
 		else
 		{
-			MTScanLineSize+= MUL_FIXED(MOTIONTRACKER_SPEED,NormalFrameTime);
+			MTScanLineSize+= MUL_FIXED(MOTIONTRACKER_SPEED,mtFrameTime);
 		}	
 		
 		if (MTScanLineSize>65536)

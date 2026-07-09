@@ -775,7 +775,7 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 
 
 	assert(gamedir != NULL);
-	
+
 	/* last chance sanity check */
 	if (!check_game_directory(gamedir)) {
 		fprintf(stderr, "Unable to find the AvP gamedata.\n");
@@ -784,6 +784,22 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 		fprintf(stderr, "are all game files lowercase?\n");
 		exit(EXIT_FAILURE);
 	}
+
+#ifdef _WIN32
+	/* Put the .avp profile/save folder next to the exe (gamedir), not in the
+	   current directory. homedir falls back to "." on Windows (no $HOME), and the
+	   CWD under the VS debugger is the configured working directory — one level
+	   above the exe's config subfolder — which put .avp a folder up. */
+	{
+		char *newlocal = (char *)malloc(strlen(gamedir) + 8);
+		if (newlocal) {
+			strcpy(newlocal, gamedir);
+			strcat(newlocal, "/.avp");
+			free(localdir);
+			localdir = newlocal;
+		}
+	}
+#endif
 
 	SetGameDirectories(localdir, gamedir);
 	

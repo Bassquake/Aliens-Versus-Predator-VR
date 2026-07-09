@@ -489,11 +489,11 @@ if (WIN32)
     # Directories" (the matching -62/-60/etc. runtime DLLs must sit next to
     # avp.exe; headers come from extern/FFmpeg/include, already on the include path).
     target_link_libraries(avp
-        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/avcodec.lib"
-        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/avformat.lib"
-        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/avutil.lib"
-        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/swscale.lib"
-        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/swresample.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,x64,x86>/avcodec.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,x64,x86>/avformat.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,x64,x86>/avutil.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,x64,x86>/swscale.lib"
+        "${CMAKE_SOURCE_DIR}/extern/FFmpeg/lib/$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,x64,x86>/swresample.lib"
     )
 endif ()
 

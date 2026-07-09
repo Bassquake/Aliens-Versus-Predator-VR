@@ -342,52 +342,52 @@ typedef struct netmessage_gamedescription
 	//scoring system stuff
 	unsigned char characterKillValues[3];
 	unsigned char baseKillValue;
-	unsigned int useDynamicScoring:1;
-	unsigned int useCharacterKillValues:1;
+	unsigned char useDynamicScoring;
+	unsigned char useCharacterKillValues;
 	
 	unsigned char aiKillValues[3];
 
-	unsigned int sendDecals :1;
+	unsigned char sendDecals;
 	//weapons allowed
-	unsigned int allowSmartgun:1;
-	unsigned int allowFlamer:1;
-	unsigned int allowSadar:1;
-	unsigned int allowGrenadeLauncher:1;
-	unsigned int allowMinigun:1;
-	unsigned int allowDisc:1;
-	unsigned int allowPistol:1;
-	unsigned int allowPlasmaCaster:1;
-	unsigned int allowSpeargun:1;
-	unsigned int allowMedicomp:1;
-	unsigned int allowSmartDisc:1;
-	unsigned int allowPistols:1;
+	unsigned char allowSmartgun;
+	unsigned char allowFlamer;
+	unsigned char allowSadar;
+	unsigned char allowGrenadeLauncher;
+	unsigned char allowMinigun;
+	unsigned char allowDisc;
+	unsigned char allowPistol;
+	unsigned char allowPlasmaCaster;
+	unsigned char allowSpeargun;
+	unsigned char allowMedicomp;
+	unsigned char allowSmartDisc;
+	unsigned char allowPistols;
 
 	//player type limits
-	unsigned int maxPredator:4;
-	unsigned int maxAlien:4;
-	unsigned int maxMarine:4;
+	unsigned char maxPredator;
+	unsigned char maxAlien;
+	unsigned char maxMarine;
 
-	unsigned int maxMarineGeneral:4;
-	unsigned int maxMarinePulseRifle:4;
-	unsigned int maxMarineSmartgun:4;
-	unsigned int maxMarineFlamer:4;
-	unsigned int maxMarineSadar:4;
-	unsigned int maxMarineGrenade:4;
-	unsigned int maxMarineMinigun:4;
-	unsigned int maxMarineSmartDisc:4;
-	unsigned int maxMarinePistols:4;
+	unsigned char maxMarineGeneral;
+	unsigned char maxMarinePulseRifle;
+	unsigned char maxMarineSmartgun;
+	unsigned char maxMarineFlamer;
+	unsigned char maxMarineSadar;
+	unsigned char maxMarineGrenade;
+	unsigned char maxMarineMinigun;
+	unsigned char maxMarineSmartDisc;
+	unsigned char maxMarinePistols;
 
-	unsigned int useSharedLives:1;
+	unsigned char useSharedLives;
 
-	unsigned int gameSpeed:2;
+	unsigned char gameSpeed;
 
-	unsigned int endGame:1;
+	unsigned char endGame;
 
-	unsigned int preDestroyLights:1;
-	unsigned int disableFriendlyFire:1;
-	unsigned int fallingDamage:1;
-	unsigned int pistolInfiniteAmmo:1;
-	unsigned int specialistPistols:1;
+	unsigned char preDestroyLights;
+	unsigned char disableFriendlyFire;
+	unsigned char fallingDamage;
+	unsigned char pistolInfiniteAmmo;
+	unsigned char specialistPistols;
 
 } PACKED NETMESSAGE_GAMEDESCRIPTION;
 PACKED_POP

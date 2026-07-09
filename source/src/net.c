@@ -9,6 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#ifdef __ANDROID__
+#include <android/log.h>   /* stderr doesn't reach logcat on this build; log directly */
+#define NET_LOG(...) __android_log_print(ANDROID_LOG_INFO, "AVP_NET", __VA_ARGS__)
+#else
+#define NET_LOG(...) fprintf(stderr, __VA_ARGS__)
+#endif
 
 #include "fixer.h"
 
@@ -63,6 +69,8 @@ static int net_inprogress(void) { return WSAGetLastError() == WSAEWOULDBLOCK; }
 #include <poll.h>
 #include <errno.h>
 #include <time.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 typedef int NetSocket;
 #define NET_BAD (-1)
 #define net_closesock close
@@ -276,30 +284,39 @@ static void net_handle_frame(int ci, DPID from, DPID to, unsigned char *data, in
 	}
 }
 
-/* Drain readable bytes from one connection, extracting complete frames. */
+/* Drain readable bytes from one connection, extracting complete frames.
+   Extraction is interleaved with reading: we pull out every complete frame
+   before reading more, so a backlog larger than the buffer (a burst, or a pump
+   delayed by a frame hitch) is processed in chunks instead of overflowing the
+   16 KB buffer and getting force-closed — which used to masquerade as the peer
+   leaving and rejoining ("has left" / "has connected" spam). */
 static void net_pump_conn(int ci) {
 	NetConn *c = &net_conns[ci];
-	int off = 0;
 	for (;;) {
-		int space = (int)sizeof(c->in) - c->inlen;
-		int n;
-		if (space <= 0) { net_conn_close(ci); return; }     /* desync / oversized */
+		int off = 0, space, n;
+
+		/* Extract all complete frames currently buffered, then compact. */
+		while (c->inlen - off >= NET_HDR_SIZE) {
+			int32_t size = net_rd32(c->in + off);
+			int32_t from = net_rd32(c->in + off + 4);
+			int32_t to   = net_rd32(c->in + off + 8);
+			if (size < 0 || size > NET_FRAMEMAX) { net_conn_close(ci); return; }
+			if (c->inlen - off - NET_HDR_SIZE < size) break;    /* wait for the rest */
+			net_handle_frame(ci, from, to, c->in + off + NET_HDR_SIZE, size);
+			off += NET_HDR_SIZE + size;
+		}
+		if (off > 0) { memmove(c->in, c->in + off, c->inlen - off); c->inlen -= off; }
+
+		/* Read more. Buffer full with no complete frame => a single frame really
+		   exceeds NET_FRAMEMAX, i.e. genuine desync. */
+		space = (int)sizeof(c->in) - c->inlen;
+		if (space <= 0) { net_conn_close(ci); return; }
 		n = (int)recv(c->sock, (char *)c->in + c->inlen, space, 0);
-		if (n > 0) { c->inlen += n; continue; }
-		if (n == 0) { net_conn_close(ci); return; }         /* peer closed */
-		if (net_wouldblock()) break;                        /* nothing more now */
-		net_conn_close(ci); return;                         /* error */
+		if (n > 0) { c->inlen += n; continue; }              /* loop: extract, read again */
+		if (n == 0) { net_conn_close(ci); return; }          /* peer closed */
+		if (net_wouldblock()) break;                         /* nothing more now */
+		net_conn_close(ci); return;                          /* error */
 	}
-	while (c->inlen - off >= NET_HDR_SIZE) {
-		int32_t size = net_rd32(c->in + off);
-		int32_t from = net_rd32(c->in + off + 4);
-		int32_t to   = net_rd32(c->in + off + 8);
-		if (size < 0 || size > NET_FRAMEMAX) { net_conn_close(ci); return; }
-		if (c->inlen - off - NET_HDR_SIZE < size) break;    /* wait for the rest */
-		net_handle_frame(ci, from, to, c->in + off + NET_HDR_SIZE, size);
-		off += NET_HDR_SIZE + size;
-	}
-	if (off > 0) { memmove(c->in, c->in + off, c->inlen - off); c->inlen -= off; }
 }
 
 static void net_udp_respond(void);   /* forward decl (defined below) */
@@ -492,6 +509,57 @@ static int net_join_pump(void) {
 	return (int)net_join_state;
 }
 
+/* Send a discovery QUERY to the directed broadcast of every local IPv4 interface,
+   plus the limited broadcast (255.255.255.255). Sending only to the limited
+   broadcast fails on multi-homed hosts: a Windows PC with WSL / Hyper-V / VMware /
+   Docker virtual adapters routes 255.255.255.255 out one (often wrong) adapter, so
+   a host on another interface's subnet (e.g. the Quest on Wi-Fi) never hears it —
+   which is exactly why Windows could host but not join a Quest-hosted game. */
+static void net_send_query_broadcasts(NetSocket sock, const unsigned char *pkt, int len) {
+	struct sockaddr_in b;
+	memset(&b, 0, sizeof b);
+	b.sin_family = AF_INET;
+	b.sin_port   = htons(NET_DISC_PORT);
+
+	b.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+	sendto(sock, (const char *)pkt, len, 0, (struct sockaddr *)&b, sizeof b);
+
+#ifdef _WIN32
+	{
+		INTERFACE_INFO ifl[32];
+		DWORD nb = 0;
+		if (WSAIoctl(sock, SIO_GET_INTERFACE_LIST, NULL, 0, ifl, sizeof ifl, &nb, NULL, NULL) == 0) {
+			int i, n = (int)(nb / sizeof(INTERFACE_INFO));
+			for (i = 0; i < n; i++) {
+				struct sockaddr_in *ad = (struct sockaddr_in *)&ifl[i].iiAddress;
+				struct sockaddr_in *mk = (struct sockaddr_in *)&ifl[i].iiNetmask;
+				u_long flags = ifl[i].iiFlags;
+				if (!(flags & IFF_UP) || (flags & IFF_LOOPBACK)) continue;
+				if (ad->sin_addr.s_addr == 0) continue;
+				b.sin_addr.s_addr = ad->sin_addr.s_addr | ~mk->sin_addr.s_addr;
+				sendto(sock, (const char *)pkt, len, 0, (struct sockaddr *)&b, sizeof b);
+			}
+		}
+	}
+#else
+	{
+		struct ifaddrs *ifap = NULL, *ifa;
+		if (getifaddrs(&ifap) == 0) {
+			for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+				struct sockaddr_in *ad, *mk;
+				if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+				if (!(ifa->ifa_flags & IFF_BROADCAST) || (ifa->ifa_flags & IFF_LOOPBACK)) continue;
+				ad = (struct sockaddr_in *)ifa->ifa_addr;
+				mk = (struct sockaddr_in *)ifa->ifa_netmask;
+				b.sin_addr.s_addr = ad->sin_addr.s_addr | (mk ? ~mk->sin_addr.s_addr : 0xFFFFFFFFu);
+				sendto(sock, (const char *)pkt, len, 0, (struct sockaddr *)&b, sizeof b);
+			}
+			freeifaddrs(ifap);
+		}
+	}
+#endif
+}
+
 /* Start browsing the LAN for hosts (opens a broadcasting UDP socket). Seeds the
    list with the manually entered IP, if any, so both paths coexist. */
 static void net_start_browse(void) {
@@ -529,13 +597,9 @@ static int net_pump_browse(void) {
 	if (!net_browsing || net_udp == NET_BAD) return 0;
 
 	if ((net_browse_tick++ % 30) == 0) {           /* ~ twice a second at 60fps */
-		struct sockaddr_in b;
-		memset(&b, 0, sizeof b);
-		b.sin_family = AF_INET; b.sin_port = htons(NET_DISC_PORT);
-		b.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 		net_wr32(pkt, NET_DISC_MAGIC);
 		net_wr32(pkt + 4, NETDISC_QUERY);
-		sendto(net_udp, (const char*)pkt, 8, 0, (struct sockaddr*)&b, sizeof b);
+		net_send_query_broadcasts(net_udp, pkt, 8);
 	}
 
 	for (;;) {
@@ -570,6 +634,14 @@ static int net_pump_browse(void) {
 BOOL DpExtInit(DWORD cGrntdBufs, DWORD cBytesPerBuf, BOOL bErrChcks)
 {
 	fprintf(stderr, "DpExtInit(%d, %d, %d)\n", cGrntdBufs, cBytesPerBuf, bErrChcks);
+	/* Cross-platform wire-layout check: these MUST be identical on the Quest
+	   (clang) and Windows (MSVC) builds or messages are read at the wrong offsets
+	   (garbage player IDs, "connected/left" spam). Compare the two platforms' logs. */
+	NET_LOG("net: layout NET_MAXPLAYERS=%d hdr=%d playerdata=%d gamedesc=%d\n",
+		(int)NET_MAXPLAYERS,
+		(int)sizeof(NETMESSAGEHEADER),
+		(int)sizeof(GAMEDESCRIPTION_PLAYERDATA),
+		(int)sizeof(NETMESSAGE_GAMEDESCRIPTION));
 	net_winsock_init();
 	return TRUE;
 }

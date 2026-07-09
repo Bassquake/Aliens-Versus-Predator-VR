@@ -268,7 +268,7 @@ typedef struct netgame_gamedata
 	
 	
 	BOOL sendDecals;
-	unsigned int needGameDescription :1;
+	unsigned char needGameDescription;
 
 	BOOL skirmishMode; //for single player multiplayer games
 
@@ -285,14 +285,14 @@ typedef struct netgame_gamedata
 	//don't bother tring to synch strategies if the checksum values are different
 	int myStrategyCheckSum; 
 
-	unsigned int tcpip_available :1;
-	unsigned int ipx_available :1;
-	unsigned int modem_available :1;
-	unsigned int serial_available :1;
+	unsigned char tcpip_available;
+	unsigned char ipx_available;
+	unsigned char modem_available;
+	unsigned char serial_available;
 
 	NETGAME_CONNECTIONTYPE connectionType;
 	
-	unsigned int landingNoise:1;
+	unsigned char landingNoise;
 
 	int joiningGameStatus;
 
@@ -407,40 +407,40 @@ typedef struct netmessage_playerstate
 	unsigned char characterType :2; //send character type each frame (in case it changes)
 	unsigned char nextCharacterType :2; //if player is currently dead and about to become a new character
 	unsigned char characterSubType :4;
-	signed int xPos: 23;
-	signed int xOrient: 9;
-	signed int yPos: 23;
-	signed int yOrient: 9;
-	signed int zPos: 23;
-	signed int zOrient: 9;
+	int xPos;
+	short xOrient;
+	int yPos;
+	short yOrient;
+	int zPos;
+	short zOrient;
 	unsigned char sequence;
 	unsigned char currentWeapon;
 	unsigned short CloakingEffectiveness;
 
-	unsigned int Elevation : 12;
-	unsigned int IHaveAMuzzleFlash: 2;
-	unsigned int IAmFiringPrimary: 1;								
-	unsigned int IAmFiringSecondary: 1;								
-	unsigned int IAmAlive: 1;
-//	unsigned int IAmHost: 1;
-	unsigned int IAmOnFire: 1;
-	unsigned int IHaveADisk:	1;
-	unsigned int IHaveLifeLeft:1;
-	unsigned int IAmCrouched:1;
-	unsigned int Special:1;
+	unsigned short Elevation;
+	unsigned char IHaveAMuzzleFlash;
+	unsigned char IAmFiringPrimary;								
+	unsigned char IAmFiringSecondary;								
+	unsigned char IAmAlive;
+//	unsigned char IAmHost;
+	unsigned char IAmOnFire;
+	unsigned char IHaveADisk;
+	unsigned char IHaveLifeLeft;
+	unsigned char IAmCrouched;
+	unsigned char Special;
 
-	unsigned int scream:5;
+	unsigned char scream;
 
-	unsigned int IAmInvulnerable:1;
+	unsigned char IAmInvulnerable;
 
 #if EXTRAPOLATION_TEST
 	//this lot will need to be sent more efficiently
-	int standard_gravity:1;
-	int velocity_x :10; //in 10's of cm/second
-	int velocity_y :10;	//in 10's of cm/second
-	int velocity_z :10;	//in 10's of cm/second
+	signed char standard_gravity;
+	short velocity_x; //in 10's of cm/second
+	short velocity_y;	//in 10's of cm/second
+	short velocity_z;	//in 10's of cm/second
 #endif
-	unsigned int landingNoise:1;
+	unsigned char landingNoise;
 
 } PACKED NETMESSAGE_PLAYERSTATE;
 PACKED_POP
@@ -448,11 +448,11 @@ PACKED_POP
 PACKED_PUSH
 typedef struct netmessage_playerstate_minimal
 {
-	unsigned short Elevation : 12;
-	unsigned short IHaveAMuzzleFlash: 2;
-	unsigned short IAmFiringPrimary: 1;								
-	unsigned short IAmFiringSecondary: 1;								
-	unsigned short IAmAlive: 1;
+	unsigned short Elevation;
+	unsigned char IHaveAMuzzleFlash;
+	unsigned char IAmFiringPrimary;								
+	unsigned char IAmFiringSecondary;								
+	unsigned char IAmAlive;
 	unsigned char IAmOnFire: 1;
 	unsigned char IHaveADisk:	1;
 	unsigned char IHaveLifeLeft:1;
@@ -467,9 +467,9 @@ typedef struct netmessage_playerstate_medium
 {
 	NETMESSAGE_PLAYERSTATE_MINIMAL minimalMessage;
 
-	signed int xOrient: 9;
-	signed int yOrient: 9;
-	signed int zOrient: 9;
+	short xOrient;
+	short yOrient;
+	short zOrient;
 
 } PACKED NETMESSAGE_PLAYERSTATE_MEDIUM;
 PACKED_POP
@@ -559,12 +559,12 @@ PACKED_POP
 PACKED_PUSH
 typedef struct netmessage_lobstate
 {
-	signed int xPos: 23;
-	signed int xOrient: 9;
-	signed int yPos: 23;
-	signed int yOrient: 9;
-	signed int zPos: 23;
-	signed int zOrient: 9;
+	int xPos;
+	short xOrient;
+	int yPos;
+	short yOrient;
+	int zPos;
+	short zOrient;
 	signed int objectId;
 	unsigned char type;
 	unsigned char IOType;
@@ -582,13 +582,13 @@ typedef struct netmessage_lobdamaged_header
 	DPID playerId;
 	
 	signed int objectId;
-	short ammo_id:11;
+	short ammo_id;
 	
-	short damageProfile:1; 
-	short multiple:1; 
-	short sectionID:1; 
-	short delta_seq:1; 
-	short direction:1; 
+	signed char damageProfile; 
+	signed char multiple; 
+	signed char sectionID; 
+	signed char delta_seq; 
+	signed char direction; 
 } PACKED NETMESSAGE_LOBDAMAGED_HEADER;
 PACKED_POP
 
@@ -596,12 +596,12 @@ PACKED_PUSH
 typedef struct netmessage_ghosthierarchydamaged_header
 {
 	signed int Guid;
-	short ammo_id:11;
+	short ammo_id;
 	
-	short damageProfile:1; 
-	short multiple:1; 
-	short sectionID:1; 
-	short direction:1; 
+	signed char damageProfile; 
+	signed char multiple; 
+	signed char sectionID; 
+	signed char direction; 
 } PACKED NETMESSAGE_GHOSTHIERARCHYDAMAGED_HEADER;
 PACKED_POP
 
@@ -609,10 +609,10 @@ PACKED_PUSH
 typedef struct netmessage_inanimatedamaged_header
 {
 	char name[8];
-	short ammo_id:11;
+	short ammo_id;
 	
-	short damageProfile:1; 
-	short multiple:1; 
+	signed char damageProfile; 
+	signed char multiple; 
 } PACKED NETMESSAGE_INANIMATEDAMAGED_HEADER;
 PACKED_POP
 
@@ -626,13 +626,13 @@ typedef struct netmessage_damage_profile
 	short Electrical;
 	short Acid;
 
-	unsigned int ExplosivePower	:3;
-	unsigned int Slicing		:2;
-	unsigned int ProduceBlood	:1;
-	unsigned int ForceBoom		:2;
-	unsigned int BlowUpSections	:1;
-	unsigned int Special		:1;
-	unsigned int MakeExitWounds	:1;
+	unsigned char ExplosivePower;
+	unsigned char Slicing;
+	unsigned char ProduceBlood;
+	unsigned char ForceBoom;
+	unsigned char BlowUpSections;
+	unsigned char Special;
+	unsigned char MakeExitWounds;
 } PACKED NETMESSAGE_DAMAGE_PROFILE;
 PACKED_POP
 
@@ -661,9 +661,9 @@ PACKED_POP
 PACKED_PUSH
 typedef struct netmessage_damage_direction
 {
-	int direction_x:10;
-	int direction_y:10;
-	int direction_z:10;
+	short direction_x;
+	short direction_y;
+	short direction_z;
 } PACKED NETMESSAGE_DAMAGE_DIRECTION;
 PACKED_POP
 //that was the last part of the local object damage stuff
@@ -702,13 +702,13 @@ typedef struct netmessage_inanimatedamaged
 	short Electrical;
 	short Acid;
 
-	unsigned int ExplosivePower	:3;
-	unsigned int Slicing		:2;
-	unsigned int ProduceBlood	:1;
-	unsigned int ForceBoom		:2;
-	unsigned int BlowUpSections	:1;
-	unsigned int Special		:1;
-	unsigned int MakeExitWounds	:1;
+	unsigned char ExplosivePower;
+	unsigned char Slicing;
+	unsigned char ProduceBlood;
+	unsigned char ForceBoom;
+	unsigned char BlowUpSections;
+	unsigned char Special;
+	unsigned char MakeExitWounds;
 
 	enum AMMO_ID ammo_id;
 
@@ -749,12 +749,12 @@ PACKED_POP
 PACKED_PUSH
 typedef struct netmessage_agunstate
 {
-	signed int xPos: 23;
-	signed int xOrient: 9;
-	signed int yPos: 23;
-	signed int yOrient: 9;
-	signed int zPos: 23;
-	signed int zOrient: 9;
+	int xPos;
+	short xOrient;
+	int yPos;
+	short yOrient;
+	int zPos;
+	short zOrient;
 	signed int objectId;
 	unsigned char IAmFiring: 1;
 	unsigned char IAmEnabled: 1;
@@ -807,12 +807,12 @@ typedef struct netmessage_predatorsights
 //	THREE_LASER_DOT_DESC Dots;
 // was 85 bytes
 	
-	signed int xPos: 23;
-	signed int xOrient: 9;
-	signed int yPos: 23;
-	signed int yOrient: 9;
-	signed int zPos: 23;
-	signed int zOrient: 9;
+	int xPos;
+	short xOrient;
+	int yPos;
+	short yOrient;
+	int zPos;
+	short zOrient;
 
 	DPID TargetID;
 
@@ -834,28 +834,28 @@ typedef struct netmessage_alienaistate
 {
 	signed int Guid;
 
-	signed int xPos: 23;
-	signed int xOrient: 9;
-	signed int yPos: 23;
-	signed int yOrient: 9;
-	signed int zPos: 23;
-	signed int zOrient: 9;
+	int xPos;
+	short xOrient;
+	int yPos;
+	short yOrient;
+	int zPos;
+	short zOrient;
 
 	unsigned char sequence_type;
 	unsigned char sub_sequence;
-	unsigned short sequence_length:13; //in 256ths of a second , up to ~32 seconds
+	unsigned short sequence_length; //in 256ths of a second , up to ~32 seconds
 
 	#if 0
-	unsigned int Elevation : 12;
+	unsigned short Elevation;
 	unsigned char IAmFiringPrimary: 1;								
 	unsigned char IAmFiringSecondary: 1;								
 	#endif
-	unsigned short IAmOnFire: 1;
-	unsigned short AlienType: 2;//alien/predalien/praetorian
+	unsigned char IAmOnFire;
+	unsigned char AlienType;//alien/predalien/praetorian
 
 	#if EXTRAPOLATION_TEST
-	unsigned short speed:15;
-	unsigned short standard_gravity:1;
+	unsigned short speed;
+	unsigned char standard_gravity;
 	#endif
 
 } PACKED NETMESSAGE_ALIENAISTATE;
@@ -897,10 +897,10 @@ typedef struct netmessage_faralienposition
 {
 	signed int Guid;
 
-	unsigned int targetModuleIndex:14;
-	unsigned int index:15; //index is either module index , or an index in the aux locations list
-	unsigned int indexIsModuleIndex:1;
-	unsigned int alienType:2;
+	unsigned short targetModuleIndex;
+	unsigned short index; //index is either module index , or an index in the aux locations list
+	unsigned char indexIsModuleIndex;
+	unsigned char alienType;
 
 } PACKED NETMESSAGE_FARALIENPOSITION;
 PACKED_POP
@@ -998,7 +998,7 @@ typedef struct netmessage_spotothersound
 	int vx;
 	int vy;
 	int vz;
-	int explosion:1;
+	signed char explosion;
 
 } PACKED NETMESSAGE_SPOTOTHERSOUND;
 PACKED_POP

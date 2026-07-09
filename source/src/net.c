@@ -9,12 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#ifdef __ANDROID__
-#include <android/log.h>   /* stderr doesn't reach logcat on this build; log directly */
-#define NET_LOG(...) __android_log_print(ANDROID_LOG_INFO, "AVP_NET", __VA_ARGS__)
-#else
-#define NET_LOG(...) fprintf(stderr, __VA_ARGS__)
-#endif
 
 #include "fixer.h"
 
@@ -634,14 +628,6 @@ static int net_pump_browse(void) {
 BOOL DpExtInit(DWORD cGrntdBufs, DWORD cBytesPerBuf, BOOL bErrChcks)
 {
 	fprintf(stderr, "DpExtInit(%d, %d, %d)\n", cGrntdBufs, cBytesPerBuf, bErrChcks);
-	/* Cross-platform wire-layout check: these MUST be identical on the Quest
-	   (clang) and Windows (MSVC) builds or messages are read at the wrong offsets
-	   (garbage player IDs, "connected/left" spam). Compare the two platforms' logs. */
-	NET_LOG("net: layout NET_MAXPLAYERS=%d hdr=%d playerdata=%d gamedesc=%d\n",
-		(int)NET_MAXPLAYERS,
-		(int)sizeof(NETMESSAGEHEADER),
-		(int)sizeof(GAMEDESCRIPTION_PLAYERDATA),
-		(int)sizeof(NETMESSAGE_GAMEDESCRIPTION));
 	net_winsock_init();
 	return TRUE;
 }

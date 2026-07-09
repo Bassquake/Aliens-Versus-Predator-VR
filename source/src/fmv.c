@@ -521,9 +521,13 @@ static void fmv_compute_lighting_rgb(FMVTEXTURE *ftPtr)
 		totalGreen += p[1];
 		totalBlue  += p[2];
 	}
-	FmvColourRed   = (int)(totalRed   / 48 * 16);
-	FmvColourGreen = (int)(totalGreen / 48 * 16);
-	FmvColourBlue  = (int)(totalBlue  / 48 * 16);
+	/* totalX/48 = channel average * 256 ~= ONE_FIXED for a full-white frame, which
+	   matches the screen's own self-illum white scale. The old extra *16 pushed this
+	   to ~8-16x ONE_FIXED so almost every frame clamped to full brightness, flooding
+	   the room (worse with several screens). */
+	FmvColourRed   = (int)(totalRed   / 48);
+	FmvColourGreen = (int)(totalGreen / 48);
+	FmvColourBlue  = (int)(totalBlue  / 48);
 }
 
 /* ── Menu music (audio-only looped SMK playback) ────────────────────────── */
@@ -1451,9 +1455,11 @@ void FindLightingValuesFromTriggeredFMV(unsigned char *bufferPtr, FMVTEXTURE *ft
 	}
 	while(--pixels);
 
-	FmvColourRed = totalRed/48*16;
-	FmvColourGreen = totalGreen/48*16;
-	FmvColourBlue = totalBlue/48*16;
+	/* /48 ~= ONE_FIXED for a white frame; the old *16 over-scaled it ~16x and
+	   over-lit the room (see fmv_compute_lighting_rgb). */
+	FmvColourRed = totalRed/48;
+	FmvColourGreen = totalGreen/48;
+	FmvColourBlue = totalBlue/48;
 
 }
 

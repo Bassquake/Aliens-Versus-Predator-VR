@@ -1327,6 +1327,17 @@ int vr_eye_index = 0;
 
 int vr_eye_index = 0; /* 0 = first/left eye, 1 = second/right; read by MaintainHUD */
 
+/* Head-centre room-scale offset in game units (X,Z), updated each VR frame in
+   AvpShowViewsVR. Added to the networked player position (AddNetMsg_PlayerState)
+   so remote players see physical room-scale walking, not just joystick movement. */
+int vr_room_offset_x = 0;
+int vr_room_offset_z = 0;
+
+/* 1 while the player is physically walking in room space (the room offset is
+   changing faster than idle head-sway). Read by GetMy*Sequence() so the ghost
+   plays a walk cycle for room-scale movement, not just joystick locomotion. */
+int vr_physically_moving = 0;
+
 void AvpShowViewsVR(void)
 {
     extern SDL_GLContext context;
@@ -1449,6 +1460,41 @@ void AvpShowViewsVR(void)
     if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright)
         cached_vr_y_scale = (float)game_eye_to_floor / ref_head_y;
     float vr_y_scale = cached_vr_y_scale;
+
+    /* Head-centre room-scale offset in game units, for the network so remote
+       players see room-scale walking. Same transform as the per-eye camera offset
+       in the loop below, but from the head centre (average of both eyes). */
+    {
+        float hx = eye_mid_x - ref_head_x;
+        float hz = eye_mid_z - ref_head_z;
+        if (xr_snap_yaw != 0) {
+            float snap_rad = (float)xr_snap_yaw * SDL_PI_F / 2048.0f;
+            float ss = SDL_sinf(snap_rad), sc = SDL_cosf(snap_rad);
+            float rx = hx * sc - hz * ss;
+            float rz = hx * ss + hz * sc;
+            hx = rx; hz = rz;
+        }
+        vr_room_offset_x =  (int)(hx * vr_y_scale);
+        vr_room_offset_z = -(int)(hz * vr_y_scale);
+
+        /* Physical walk detection: horizontal room-offset speed per frame. The
+           threshold rejects idle head-sway/leaning; sustained walking clears it.
+           Smoothed slightly so the walk cycle doesn't flicker at the boundary. */
+        {
+            static int prev_ox = 0, prev_oz = 0;
+            static int moving_hold = 0;
+            int dox = vr_room_offset_x - prev_ox;
+            int doz = vr_room_offset_z - prev_oz;
+            long long sp2 = (long long)dox * dox + (long long)doz * doz;
+            prev_ox = vr_room_offset_x;
+            prev_oz = vr_room_offset_z;
+            /* ~15 game units/frame ≈ 0.5 m/s at 72fps: above idle sway, below a
+               deliberate walk (~25-30 units/frame). Tune if it over/under-triggers. */
+            if (sp2 > 15 * 15)          moving_hold = 8;   /* fast enough => walking */
+            else if (moving_hold > 0)   moving_hold--;     /* keep walking briefly */
+            vr_physically_moving = (moving_hold > 0);
+        }
+    }
 
     /* Reset hand pose validity; updated below from controller tracking. */
     vr_right_hand_valid = 0;

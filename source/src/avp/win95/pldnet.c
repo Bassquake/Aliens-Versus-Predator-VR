@@ -2274,6 +2274,19 @@ void AddNetMsg_PlayerState(STRATEGYBLOCK *sbPtr)
 		else if(dynPtr->Position.vy > 4100000) messagePtr->yPos = 4100000;
 		else messagePtr->yPos = dynPtr->Position.vy;
 		messagePtr->yOrient = (dynPtr->OrientEuler.EulerY>>NET_EULERSCALESHIFT);
+#ifdef __ANDROID__
+		/* In VR the body yaw (OrientEuler.EulerY) does not turn with the head or
+		   snap-turn (turning is view-only), so it would broadcast a fixed facing.
+		   Send the actual VR world heading instead - HMD + snap, the same source
+		   pmove.c uses for locomotion - so remote players see the Quest player face
+		   where they are looking. */
+		{
+			extern int VR_IsIn3DMode(void);
+			extern int xr_hmd_move_sin, xr_hmd_move_cos;
+			if (VR_IsIn3DMode())
+				messagePtr->yOrient = ((ArcTan(xr_hmd_move_sin, xr_hmd_move_cos) & 4095) >> NET_EULERSCALESHIFT);
+		}
+#endif
 		
 		if(dynPtr->Position.vz < -4100000) messagePtr->zPos = -4100000;
 		else if(dynPtr->Position.vz > 4100000) messagePtr->zPos = 4100000;

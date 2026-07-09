@@ -1,4 +1,7 @@
 # Ignore everything in this directory
-*
+/.vs/
+/avp.dir/
+/[Xx]64/
+/[Ww]in32/
 # Except this file
 !.gitignore

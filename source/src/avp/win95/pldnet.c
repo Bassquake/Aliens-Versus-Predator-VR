@@ -2265,9 +2265,20 @@ void AddNetMsg_PlayerState(STRATEGYBLOCK *sbPtr)
 		LOCALASSERT((dynPtr->OrientEuler.EulerZ >=0 )&&(dynPtr->OrientEuler.EulerZ < 4096));	/* 9 bits of signed data */
 
 		/* NB we can fit +-4194303 into 23 bits */
-		if(dynPtr->Position.vx < -4100000) messagePtr->xPos = -4100000;
-		else if(dynPtr->Position.vx > 4100000) messagePtr->xPos = 4100000;
-		else messagePtr->xPos = dynPtr->Position.vx;
+		int netPosX = dynPtr->Position.vx, netPosZ = dynPtr->Position.vz;
+#ifdef __ANDROID__
+		/* Add the VR head-centre room-scale offset so remote players see physical
+		   room-scale walking, not just joystick locomotion (the local game position
+		   only moves by joystick; room-scale is a view offset - see AvpShowViewsVR). */
+		{
+			extern int VR_IsIn3DMode(void);
+			extern int vr_room_offset_x, vr_room_offset_z;
+			if (VR_IsIn3DMode()) { netPosX += vr_room_offset_x; netPosZ += vr_room_offset_z; }
+		}
+#endif
+		if(netPosX < -4100000) messagePtr->xPos = -4100000;
+		else if(netPosX > 4100000) messagePtr->xPos = 4100000;
+		else messagePtr->xPos = netPosX;
 		messagePtr->xOrient = (dynPtr->OrientEuler.EulerX>>NET_EULERSCALESHIFT);
 		
 		if(dynPtr->Position.vy < -4100000) messagePtr->yPos = -4100000;
@@ -2288,9 +2299,9 @@ void AddNetMsg_PlayerState(STRATEGYBLOCK *sbPtr)
 		}
 #endif
 		
-		if(dynPtr->Position.vz < -4100000) messagePtr->zPos = -4100000;
-		else if(dynPtr->Position.vz > 4100000) messagePtr->zPos = 4100000;
-		else messagePtr->zPos = dynPtr->Position.vz;
+		if(netPosZ < -4100000) messagePtr->zPos = -4100000;
+		else if(netPosZ > 4100000) messagePtr->zPos = 4100000;
+		else messagePtr->zPos = netPosZ;
 		messagePtr->zOrient = (dynPtr->OrientEuler.EulerZ>>NET_EULERSCALESHIFT);
 		 
 	
@@ -8396,6 +8407,15 @@ static MARINE_SEQUENCE GetMyMarineSequence(void)
 		/* Actually not moving - overruled! */
 		playerIsMoving=0;
 	}
+#ifdef __ANDROID__
+	/* Room-scale physical walking counts as moving too, so the ghost plays a walk
+	   cycle for physical movement (which changes neither the game Position nor the
+	   movement input flags that drive this animation). */
+	{
+		extern int vr_physically_moving;
+		if (vr_physically_moving && playerIsMoving==0) playerIsMoving=1;
+	}
+#endif
 
 	if(PlayerStatusPtr->ShapeState!=PMph_Standing) 
 	{
@@ -8544,6 +8564,15 @@ static ALIEN_SEQUENCE GetMyAlienSequence(void)
 		/* Actually not moving - overruled! */
 		playerIsMoving=0;
 	}
+#ifdef __ANDROID__
+	/* Room-scale physical walking counts as moving too, so the ghost plays a walk
+	   cycle for physical movement (which changes neither the game Position nor the
+	   movement input flags that drive this animation). */
+	{
+		extern int vr_physically_moving;
+		if (vr_physically_moving && playerIsMoving==0) playerIsMoving=1;
+	}
+#endif
 
 	if(PlayerStatusPtr->ShapeState!=PMph_Standing) playerIsCrouching = 1;
 	else playerIsCrouching = 0;		
@@ -8779,6 +8808,15 @@ static PREDATOR_SEQUENCE GetMyPredatorSequence(void)
 		/* Actually not moving - overruled! */
 		playerIsMoving=0;
 	}
+#ifdef __ANDROID__
+	/* Room-scale physical walking counts as moving too, so the ghost plays a walk
+	   cycle for physical movement (which changes neither the game Position nor the
+	   movement input flags that drive this animation). */
+	{
+		extern int vr_physically_moving;
+		if (vr_physically_moving && playerIsMoving==0) playerIsMoving=1;
+	}
+#endif
 
 	if(PlayerStatusPtr->ShapeState!=PMph_Standing) playerIsCrouching = 1;
 	else playerIsCrouching = 0;		

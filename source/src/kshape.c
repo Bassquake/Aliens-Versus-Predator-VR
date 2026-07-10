@@ -4380,7 +4380,11 @@ extern void TranslationSetup(void)
 	RotateVector(&v,&Global_VDB_Ptr->VDB_Mat);
 
 	ViewMatrix[3+0*4] = ((float)-v.vx)*o;
-	ViewMatrix[3+1*4] = ((float)-v.vy) * (vr_is_rendering ? 1.0f : (4.0f/3.0f)) * p;
+	#ifdef __ANDROID__
+		ViewMatrix[3+1*4] = ((float)-v.vy) * (vr_is_rendering ? 1.0f : (4.0f/3.0f)) * p;
+	#else
+		ViewMatrix[3 + 1 * 4] = ((float)-v.vy) * 4.0f / 3.0f * p;
+	#endif
 	ViewMatrix[3+2*4] = ((float)-v.vz)*CameraZoomScale;
 
 	if (MIRROR_CHEATMODE)

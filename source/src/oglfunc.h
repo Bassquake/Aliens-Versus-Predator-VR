@@ -116,4 +116,84 @@ extern void load_ogl_functions(int mode);
 extern int check_for_errors_(const char *file, int line);
 #define check_for_errors() check_for_errors_(__FILE__, __LINE__)
 
+/* --- Modern GL (2.0/3.0) entry points --------------------------------------
+ * opengl.c's shader + desktop-FSR code calls these by name. On Android they
+ * link against libGLESv3; on desktop the Windows opengl32 import library only
+ * exports GL 1.1, so load them as function pointers (see load_ogl_functions in
+ * oglfunc.c) and remap the plain names onto the pointers. Guarded to non-VR;
+ * the VR build keeps the real GLES symbols. */
+#ifndef __ANDROID__
+extern PFNGLACTIVETEXTUREPROC            pfn_glActiveTexture;
+extern PFNGLATTACHSHADERPROC             pfn_glAttachShader;
+extern PFNGLBINDATTRIBLOCATIONPROC       pfn_glBindAttribLocation;
+extern PFNGLBINDBUFFERPROC               pfn_glBindBuffer;
+extern PFNGLBINDFRAMEBUFFERPROC          pfn_glBindFramebuffer;
+extern PFNGLBINDRENDERBUFFERPROC         pfn_glBindRenderbuffer;
+extern PFNGLBINDVERTEXARRAYPROC          pfn_glBindVertexArray;
+extern PFNGLBUFFERDATAPROC               pfn_glBufferData;
+extern PFNGLCOMPILESHADERPROC            pfn_glCompileShader;
+extern PFNGLCREATEPROGRAMPROC            pfn_glCreateProgram;
+extern PFNGLCREATESHADERPROC             pfn_glCreateShader;
+extern PFNGLDELETEFRAMEBUFFERSPROC       pfn_glDeleteFramebuffers;
+extern PFNGLDELETERENDERBUFFERSPROC      pfn_glDeleteRenderbuffers;
+extern PFNGLDELETESHADERPROC             pfn_glDeleteShader;
+extern PFNGLDISABLEVERTEXATTRIBARRAYPROC pfn_glDisableVertexAttribArray;
+extern PFNGLENABLEVERTEXATTRIBARRAYPROC  pfn_glEnableVertexAttribArray;
+extern PFNGLFRAMEBUFFERRENDERBUFFERPROC  pfn_glFramebufferRenderbuffer;
+extern PFNGLFRAMEBUFFERTEXTURE2DPROC     pfn_glFramebufferTexture2D;
+extern PFNGLGENBUFFERSPROC               pfn_glGenBuffers;
+extern PFNGLGENFRAMEBUFFERSPROC          pfn_glGenFramebuffers;
+extern PFNGLGENRENDERBUFFERSPROC         pfn_glGenRenderbuffers;
+extern PFNGLGENERATEMIPMAPPROC           pfn_glGenerateMipmap;
+extern PFNGLGETATTRIBLOCATIONPROC        pfn_glGetAttribLocation;
+extern PFNGLGETPROGRAMINFOLOGPROC        pfn_glGetProgramInfoLog;
+extern PFNGLGETPROGRAMIVPROC             pfn_glGetProgramiv;
+extern PFNGLGETSHADERINFOLOGPROC         pfn_glGetShaderInfoLog;
+extern PFNGLGETSHADERIVPROC              pfn_glGetShaderiv;
+extern PFNGLGETUNIFORMLOCATIONPROC       pfn_glGetUniformLocation;
+extern PFNGLLINKPROGRAMPROC              pfn_glLinkProgram;
+extern PFNGLRENDERBUFFERSTORAGEPROC      pfn_glRenderbufferStorage;
+extern PFNGLSHADERSOURCEPROC             pfn_glShaderSource;
+extern PFNGLUNIFORM1IPROC                pfn_glUniform1i;
+extern PFNGLUNIFORM2FPROC                pfn_glUniform2f;
+extern PFNGLUSEPROGRAMPROC               pfn_glUseProgram;
+extern PFNGLVERTEXATTRIBPOINTERPROC      pfn_glVertexAttribPointer;
+
+#define glActiveTexture            pfn_glActiveTexture
+#define glAttachShader             pfn_glAttachShader
+#define glBindAttribLocation       pfn_glBindAttribLocation
+#define glBindBuffer               pfn_glBindBuffer
+#define glBindFramebuffer          pfn_glBindFramebuffer
+#define glBindRenderbuffer         pfn_glBindRenderbuffer
+#define glBindVertexArray          pfn_glBindVertexArray
+#define glBufferData               pfn_glBufferData
+#define glCompileShader            pfn_glCompileShader
+#define glCreateProgram            pfn_glCreateProgram
+#define glCreateShader             pfn_glCreateShader
+#define glDeleteFramebuffers       pfn_glDeleteFramebuffers
+#define glDeleteRenderbuffers      pfn_glDeleteRenderbuffers
+#define glDeleteShader             pfn_glDeleteShader
+#define glDisableVertexAttribArray pfn_glDisableVertexAttribArray
+#define glEnableVertexAttribArray  pfn_glEnableVertexAttribArray
+#define glFramebufferRenderbuffer  pfn_glFramebufferRenderbuffer
+#define glFramebufferTexture2D     pfn_glFramebufferTexture2D
+#define glGenBuffers               pfn_glGenBuffers
+#define glGenFramebuffers          pfn_glGenFramebuffers
+#define glGenRenderbuffers         pfn_glGenRenderbuffers
+#define glGenerateMipmap           pfn_glGenerateMipmap
+#define glGetAttribLocation        pfn_glGetAttribLocation
+#define glGetProgramInfoLog        pfn_glGetProgramInfoLog
+#define glGetProgramiv             pfn_glGetProgramiv
+#define glGetShaderInfoLog         pfn_glGetShaderInfoLog
+#define glGetShaderiv              pfn_glGetShaderiv
+#define glGetUniformLocation       pfn_glGetUniformLocation
+#define glLinkProgram              pfn_glLinkProgram
+#define glRenderbufferStorage      pfn_glRenderbufferStorage
+#define glShaderSource             pfn_glShaderSource
+#define glUniform1i                pfn_glUniform1i
+#define glUniform2f                pfn_glUniform2f
+#define glUseProgram               pfn_glUseProgram
+#define glVertexAttribPointer      pfn_glVertexAttribPointer
+#endif /* !__ANDROID__ */
+
 #endif

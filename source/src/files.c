@@ -658,7 +658,11 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 	localdir = (char *)malloc(strlen(homedir)+10);
 	strcpy(localdir, homedir);
 	strcat(localdir, "/");
+#ifdef __ANDROID__
 	strcat(localdir, ".avpvr");
+#else
+	strcat(localdir, ".avp");
+#endif
 
 	tmp = NULL;
 	
@@ -689,6 +693,18 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 		}
 
 		gamedir = strrchr(tmp, '/');
+#ifdef _WIN32
+		/* argv[0] on Windows is a backslash path (e.g. ...\Release\avp.exe), so
+		   strrchr for '/' finds nothing and the exe-directory logic silently
+		   fails, dropping through to "current directory" — which differs between
+		   running from Explorer (CWD = exe folder) and the VS debugger (CWD =
+		   project dir). Also honour '\\' so we always derive the exe's own folder. */
+		{
+			char *bslash = strrchr(tmp, '\\');
+			if (bslash && (!gamedir || bslash > gamedir))
+				gamedir = bslash;
+		}
+#endif
 
 		if (gamedir) {
 			*gamedir = 0;
@@ -749,7 +765,7 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 	
 	if (gamedir == NULL) {
 		/* 5. current directory */
-		gamedir = ".";
+		gamedir = tmp;
 	}
 	
 #elif defined __APPLE__

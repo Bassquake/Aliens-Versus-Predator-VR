@@ -32,6 +32,12 @@
     <!-- Allow access to the vibrator (for controller haptics) -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- LAN multiplayer: sockets need INTERNET; discovery broadcast reception
+         needs a Wi-Fi multicast lock, which needs these Wi-Fi permissions. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <!-- OpenXR permissions (for runtime broker communication) -->
     <uses-permission android:name="org.khronos.openxr.permission.OPENXR" />
     <uses-permission android:name="org.khronos.openxr.permission.OPENXR_SYSTEM" />

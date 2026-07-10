@@ -52,6 +52,45 @@ int ogl_have_texture_filter_anisotropic;
 int ogl_use_multisample_filter_hint;
 int ogl_use_texture_filter_anisotropic;
 
+#ifndef __ANDROID__
+/* Modern GL (2.0/3.0) entry points — see oglfunc.h. Loaded in load_ogl_functions. */
+PFNGLACTIVETEXTUREPROC            pfn_glActiveTexture;
+PFNGLATTACHSHADERPROC             pfn_glAttachShader;
+PFNGLBINDATTRIBLOCATIONPROC       pfn_glBindAttribLocation;
+PFNGLBINDBUFFERPROC               pfn_glBindBuffer;
+PFNGLBINDFRAMEBUFFERPROC          pfn_glBindFramebuffer;
+PFNGLBINDRENDERBUFFERPROC         pfn_glBindRenderbuffer;
+PFNGLBINDVERTEXARRAYPROC          pfn_glBindVertexArray;
+PFNGLBUFFERDATAPROC               pfn_glBufferData;
+PFNGLCOMPILESHADERPROC            pfn_glCompileShader;
+PFNGLCREATEPROGRAMPROC            pfn_glCreateProgram;
+PFNGLCREATESHADERPROC             pfn_glCreateShader;
+PFNGLDELETEFRAMEBUFFERSPROC       pfn_glDeleteFramebuffers;
+PFNGLDELETERENDERBUFFERSPROC      pfn_glDeleteRenderbuffers;
+PFNGLDELETESHADERPROC             pfn_glDeleteShader;
+PFNGLDISABLEVERTEXATTRIBARRAYPROC pfn_glDisableVertexAttribArray;
+PFNGLENABLEVERTEXATTRIBARRAYPROC  pfn_glEnableVertexAttribArray;
+PFNGLFRAMEBUFFERRENDERBUFFERPROC  pfn_glFramebufferRenderbuffer;
+PFNGLFRAMEBUFFERTEXTURE2DPROC     pfn_glFramebufferTexture2D;
+PFNGLGENBUFFERSPROC               pfn_glGenBuffers;
+PFNGLGENFRAMEBUFFERSPROC          pfn_glGenFramebuffers;
+PFNGLGENRENDERBUFFERSPROC         pfn_glGenRenderbuffers;
+PFNGLGENERATEMIPMAPPROC           pfn_glGenerateMipmap;
+PFNGLGETATTRIBLOCATIONPROC        pfn_glGetAttribLocation;
+PFNGLGETPROGRAMINFOLOGPROC        pfn_glGetProgramInfoLog;
+PFNGLGETPROGRAMIVPROC             pfn_glGetProgramiv;
+PFNGLGETSHADERINFOLOGPROC         pfn_glGetShaderInfoLog;
+PFNGLGETSHADERIVPROC              pfn_glGetShaderiv;
+PFNGLGETUNIFORMLOCATIONPROC       pfn_glGetUniformLocation;
+PFNGLLINKPROGRAMPROC              pfn_glLinkProgram;
+PFNGLRENDERBUFFERSTORAGEPROC      pfn_glRenderbufferStorage;
+PFNGLSHADERSOURCEPROC             pfn_glShaderSource;
+PFNGLUNIFORM1IPROC                pfn_glUniform1i;
+PFNGLUNIFORM2FPROC                pfn_glUniform2f;
+PFNGLUSEPROGRAMPROC               pfn_glUseProgram;
+PFNGLVERTEXATTRIBPOINTERPROC      pfn_glVertexAttribPointer;
+#endif /* !__ANDROID__ */
+
 static void dummyfunc()
 {
 }
@@ -140,6 +179,50 @@ void load_ogl_functions(int mode)
 	LoadOGLProc(PFNGLTEXSUBIMAGE2DPROC, glTexSubImage2D);
 	LoadOGLProc(PFNGLVERTEXPOINTERPROC, glVertexPointer);
 	LoadOGLProc(PFNGLVIEWPORTPROC, glViewport);
+
+#ifndef __ANDROID__
+	/* Modern GL (2.0/3.0) entry points used by the shader + FSR paths. Only
+	   meaningful with a real GL context (mode != 0); left NULL in software mode. */
+	if (mode) {
+		#define LOAD_GL_EXT(t, n) pfn_##n = (t)SDL_GL_GetProcAddress(#n)
+		LOAD_GL_EXT(PFNGLACTIVETEXTUREPROC,            glActiveTexture);
+		LOAD_GL_EXT(PFNGLATTACHSHADERPROC,             glAttachShader);
+		LOAD_GL_EXT(PFNGLBINDATTRIBLOCATIONPROC,       glBindAttribLocation);
+		LOAD_GL_EXT(PFNGLBINDBUFFERPROC,               glBindBuffer);
+		LOAD_GL_EXT(PFNGLBINDFRAMEBUFFERPROC,          glBindFramebuffer);
+		LOAD_GL_EXT(PFNGLBINDRENDERBUFFERPROC,         glBindRenderbuffer);
+		LOAD_GL_EXT(PFNGLBINDVERTEXARRAYPROC,          glBindVertexArray);
+		LOAD_GL_EXT(PFNGLBUFFERDATAPROC,               glBufferData);
+		LOAD_GL_EXT(PFNGLCOMPILESHADERPROC,            glCompileShader);
+		LOAD_GL_EXT(PFNGLCREATEPROGRAMPROC,            glCreateProgram);
+		LOAD_GL_EXT(PFNGLCREATESHADERPROC,             glCreateShader);
+		LOAD_GL_EXT(PFNGLDELETEFRAMEBUFFERSPROC,       glDeleteFramebuffers);
+		LOAD_GL_EXT(PFNGLDELETERENDERBUFFERSPROC,      glDeleteRenderbuffers);
+		LOAD_GL_EXT(PFNGLDELETESHADERPROC,             glDeleteShader);
+		LOAD_GL_EXT(PFNGLDISABLEVERTEXATTRIBARRAYPROC, glDisableVertexAttribArray);
+		LOAD_GL_EXT(PFNGLENABLEVERTEXATTRIBARRAYPROC,  glEnableVertexAttribArray);
+		LOAD_GL_EXT(PFNGLFRAMEBUFFERRENDERBUFFERPROC,  glFramebufferRenderbuffer);
+		LOAD_GL_EXT(PFNGLFRAMEBUFFERTEXTURE2DPROC,     glFramebufferTexture2D);
+		LOAD_GL_EXT(PFNGLGENBUFFERSPROC,               glGenBuffers);
+		LOAD_GL_EXT(PFNGLGENFRAMEBUFFERSPROC,          glGenFramebuffers);
+		LOAD_GL_EXT(PFNGLGENRENDERBUFFERSPROC,         glGenRenderbuffers);
+		LOAD_GL_EXT(PFNGLGENERATEMIPMAPPROC,           glGenerateMipmap);
+		LOAD_GL_EXT(PFNGLGETATTRIBLOCATIONPROC,        glGetAttribLocation);
+		LOAD_GL_EXT(PFNGLGETPROGRAMINFOLOGPROC,        glGetProgramInfoLog);
+		LOAD_GL_EXT(PFNGLGETPROGRAMIVPROC,             glGetProgramiv);
+		LOAD_GL_EXT(PFNGLGETSHADERINFOLOGPROC,         glGetShaderInfoLog);
+		LOAD_GL_EXT(PFNGLGETSHADERIVPROC,              glGetShaderiv);
+		LOAD_GL_EXT(PFNGLGETUNIFORMLOCATIONPROC,       glGetUniformLocation);
+		LOAD_GL_EXT(PFNGLLINKPROGRAMPROC,              glLinkProgram);
+		LOAD_GL_EXT(PFNGLRENDERBUFFERSTORAGEPROC,      glRenderbufferStorage);
+		LOAD_GL_EXT(PFNGLSHADERSOURCEPROC,             glShaderSource);
+		LOAD_GL_EXT(PFNGLUNIFORM1IPROC,                glUniform1i);
+		LOAD_GL_EXT(PFNGLUNIFORM2FPROC,                glUniform2f);
+		LOAD_GL_EXT(PFNGLUSEPROGRAMPROC,               glUseProgram);
+		LOAD_GL_EXT(PFNGLVERTEXATTRIBPOINTERPROC,      glVertexAttribPointer);
+		#undef LOAD_GL_EXT
+	}
+#endif /* !__ANDROID__ */
 
 	if (!mode) {
 		return;

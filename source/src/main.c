@@ -155,6 +155,49 @@ static const char * gamedatapath = NULL;
 
 /* ** */
 
+#ifndef __ANDROID__
+/* -----------------------------------------------------------------------
+ * Desktop (non-VR) definitions for the VR / upscaling config + query
+ * symbols. On the VR build these live inside the Android OpenXR block below;
+ * on desktop OpenXR isn't compiled, so the frontend menus, user profile, HUD
+ * and renderer (which reference them unconditionally) would fail to link.
+ *   - The VR comfort/turn/refresh options are inert on desktop (no headset).
+ *   - MSAA and FSR are real desktop settings (FSR is a desktop-only spatial
+ *     upscaler; its config wrongly lived in the Android block before).
+ * --------------------------------------------------------------------- */
+int VRRefreshRateIndex  = 0;
+int VRTurnMode          = 0;
+int VRSnapAngleIndex    = 1;
+int VRSmoothTurnSpeed   = 5;
+int VRSmoothDeadzone    = 4;
+int VRVignetteOn        = 1;
+int VRVignetteStrength  = 5;
+float vr_vignette_strength = 0.0f;
+
+int MSAASampleIndex = 1;
+int MSAA_SampleCount(void)
+{
+    switch (MSAASampleIndex) { case 1: return 2; case 2: return 4; default: return 0; }
+}
+
+int FSRQualityIndex = 0;
+float FSR_RenderScale(void)
+{
+    switch (FSRQualityIndex) {
+        case 1:  return 1.3f;  /* Ultra Quality */
+        case 2:  return 1.5f;  /* Quality       */
+        case 3:  return 1.7f;  /* Balanced      */
+        case 4:  return 2.0f;  /* Performance   */
+        default: return 1.0f;  /* Off           */
+    }
+}
+
+int   VR_IsIn3DMode(void)           { return 0; }
+int   VR_IsBatterySaverActive(void) { return 0; }
+float VR_GetTargetHz(void)          { return 60.0f; }
+#endif /* !__ANDROID__ */
+
+#ifdef __ANDROID__
 /* ========================================================================
  * OpenXR Setup Begin
  * ======================================================================== */
@@ -1951,7 +1994,7 @@ static void render_frame(void)
 /* ========================================================================
  * OpenXR Setup End
  * ======================================================================== */
-
+#endif
 /* ** */
 
 static void IngameKeyboardInput_ClearBuffer(void)
@@ -3329,15 +3372,6 @@ static int SetOGLVideoMode(int Width, int Height)
     FSR_SetOutputSize(Width, Height); /* desktop FSR output (window) resolution */
 #endif
 
-    int NewWidth, NewHeight;
-    SDL_GetWindowSize(window, &Width, &Height);
-    if (Width != NewWidth || Height != NewHeight) {
-        //printf("Failed to change size: %d,%d vs. %d,%d\n", Width, Height, NewWidth, NewHeight);
-        //Width = NewWidth;
-        //Height = NewHeight;
-        //SetWindowSize(Width, Height, Width, Height);
-    }
-    
     pglEnable(GL_BLEND);
     pglBlendFunc(GL_SRC_ALPHA, GL_ONE);
     
@@ -3964,7 +3998,7 @@ void InGameFlipBuffers(void)
     while ((err = glGetError()) != GL_NO_ERROR)
         SDL_Log("GL error: 0x%04X", err);
 #endif
-
+#ifdef __ANDROID__
     if (xr_enabled) {
         handle_xr_events();
         if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
@@ -3996,6 +4030,7 @@ void InGameFlipBuffers(void)
         }
         /* XR session not running (e.g. 2D panel mode) — fall through to SDL swap */
     }
+#endif
 
 #ifndef __ANDROID__
     /* Desktop: if this in-game frame was rendered into the FSR low-res target,
@@ -4018,7 +4053,7 @@ void FlipBuffers()
        backbuffer so the menu draws to the window, not the FBO. */
     FSR_AbortFrame();
 #endif
-
+#ifdef __ANDROID__
     if (xr_enabled) {
         handle_xr_events();
         if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
@@ -4027,6 +4062,7 @@ void FlipBuffers()
         }
         /* XR session not running (e.g. 2D panel mode) — fall through to SDL swap */
     }
+#endif
     
     // RESET STATE for software blit - prevent PBO/VAO/VBO issues
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
@@ -4330,11 +4366,11 @@ int main(int argc, char *argv[])
         }
         
         IngameKeyboardInput_ClearBuffer();
-        
+#ifdef __ANDROID__
         vr_recalibrate = 1;   // recalibrate heading + room-scale on first VR frame
         xr_2d_mode = false;   // 3D game starting — stop quad rendering
         SDL_Log("*** xr_2d_mode set to FALSE — game starting ***");
-        
+#endif
         while(AvP.MainLoopRunning) {
 #ifdef __ANDROID__
             if (xr_should_quit) break;
@@ -4375,7 +4411,19 @@ int main(int argc, char *argv[])
                                          && (AvP.Network == I_No_Network)
                                          && vrDeathPS && !vrDeathPS->IsAlive
                                          && deathFadeLevel == 0;
-                        if (vrDeathScreen) {
+                        if ((xr_enabled && xr_session_running) && InGameMenusAreRunning()) {
+                            /* Multiplayer: the pause menu is up but the loop stays in this
+                               gameplay branch to keep the network game simulating (a live
+                               net game can't pause). Render the flat 2D menu instead of the
+                               3D scene — mirrors the single-player menu branch — so the menu
+                               quad presented by the xr_2d_mode block below is actually shown.
+                               (Single player never reaches here: it takes the menu-only
+                               branch, where menusActive gates this whole block off.) */
+                            xr_2d_mode = true;
+                            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                            glClear(GL_COLOR_BUFFER_BIT);
+                            ThisFramesRenderingHasBegun();
+                        } else if (vrDeathScreen) {
                             /* Render the flat frame (death-cam view) into the 640x480
                                surface. This sets up the full per-frame render state
                                (Global_VDB_Ptr, pipeline, etc.) that MaintainHUD /
@@ -4393,15 +4441,32 @@ int main(int argc, char *argv[])
                             InGameFlipBuffers();
                         } else {
 #endif
-                            AvpShowViews();
-                            InGameFlipBuffers();
+                            /* Desktop (and Android when XR isn't running): when the pause
+                               menu is up don't re-render the 3D scene or present here — set
+                               the frame up like the menu-only branch so D3D_FadeDownScreen
+                               accumulates to black over the frozen frame (re-rendering a
+                               fresh game frame every time never darkens, and presenting both
+                               the game and the menu strobes). The menu is drawn and presented
+                               once after AvP_InGameMenus() below. Matters for network games,
+                               where the loop stays in this branch while the menu is open. */
+                            if (InGameMenusAreRunning()) {
+                                ThisFramesRenderingHasBegun();
+                            } else {
+                                AvpShowViews();
+                                InGameFlipBuffers();
+                            }
 #ifdef __ANDROID__
                         }
 #endif
 
+                        /* Skip the HUD while the pause menu is up (matches the single-player
+                           menu branch, which never calls MaintainHUD) so it isn't drawn over
+                           the live HUD in a network game. */
+                        if (!InGameMenusAreRunning()
 #ifdef __ANDROID__
-                        if (!VR_IsIn3DMode())
+                            && !VR_IsIn3DMode()
 #endif
+                           )
                         MaintainHUD();
 
                         CheckCDAndChooseTrackIfNeeded();
@@ -4450,7 +4515,17 @@ int main(int argc, char *argv[])
                     }
 #endif
                     //InGameFlipBuffers();
-                    
+#ifndef __ANDROID__
+                    /* Present the in-game menu frame. The gameplay branch above skips its
+                       own present while the menu is up, and the menu-only branch never
+                       presents, so this is the single present for any frame the pause menu
+                       is showing — in both single-player and network games. Exactly one
+                       InGameFlipBuffers() per frame either way, so the background settles to
+                       black under the fade instead of strobing. */
+                    if (menusActive)
+                        InGameFlipBuffers();
+#endif
+
                     FrameCounterHandler();
                     {
                         PLAYER_STATUS *playerStatusPtr = (PLAYER_STATUS *) (Player->ObStrategyBlock->SBdataptr);
@@ -4478,8 +4553,9 @@ int main(int argc, char *argv[])
                 RestartLevel();
             }
         }
-        
+#ifdef __ANDROID__
         xr_2d_mode = true;    // back to menus
+#endif
         
         AvP.LevelCompleted = thisLevelHasBeenCompleted;
         

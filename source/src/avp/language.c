@@ -173,7 +173,12 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 		}
 	}
 
-	if (stringID == TEXTSTRING_MAINMENU_SUBTITLE) return "VR Edition";
+	if (stringID == TEXTSTRING_MAINMENU_SUBTITLE)
+#ifdef __ANDROID__
+		return "VR Edition";
+#else
+		return "Classic 2000";
+#endif
 
 	LOCALASSERT(stringID<MAX_NO_OF_TEXTSTRINGS);
 	if (stringID < MAX_NO_OF_TEXTSTRINGS) {

@@ -6,7 +6,7 @@
 This is a fork of [atsb/NakedAvP](https://github.com/atsb/NakedAVP) to use OpenXR for VR headets like the Meta Quest. Confimed to work with Quest 2 and Quest 3 running 2.4 OS. 
 
 > [!NOTE]
-> Now also runs on Windows as well just like the original game (flat). You can multiplay against others including Quest users!! Linux and Mac coming soon.
+> Now also runs on Windows as well just like the original game (flat). You can multiplay on a local LAN against others including Quest users!! Linux and Mac coming soon.
 
 This is early stage as bugs and fixes are likely needed.
 

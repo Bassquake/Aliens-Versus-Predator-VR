@@ -116,7 +116,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 	// These strings do not exist in data.
 	if (stringID > MIN_NEW_TEXTSTRINGS && stringID < MAX_NEW_TEXTSTRINGS) {
 		switch (stringID) {
-			case TEXTSTRING_MAINMENU_EXITGAME_HELP_NEW: return "Exit the game.";
+			case TEXTSTRING_MAINMENU_EXITGAME_HELP_NEW: return "Quit the game.";
 			case TEXTSTRING_MAINMENU_CREDITS_NEW: return "Credits";
 			case TEXTSTRING_MAINMENU_CREDITS_HELP_NEW: return "View the credits.";
 			case TEXTSTRING_AVOPTIONS_CROSSHAIR: return "Show Crosshair";

@@ -578,6 +578,10 @@ elseif (WIN32)
     # Place the exe and all accompanying files inside a avp/ subfolder,
     # mirroring the avp.app bundle layout on macOS.
     set_target_properties(avp PROPERTIES
+        # Name the exe per-arch (avp_x64.exe / avp_x86.exe) so 32- and 64-bit
+        # builds can coexist. Set here (not in the generated .vcxproj) so it
+        # survives a CMake regenerate.
+        OUTPUT_NAME "avp_${AVP_ARCH}"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../../../build/windows/${AVP_ARCH}"
         # Launch the VS debugger (F5 / "Local Windows Debugger") with the CWD set
         # to the exe's own folder, so it finds the assets copied next to it —

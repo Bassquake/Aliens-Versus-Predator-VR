@@ -54,7 +54,7 @@ To run Aliens Versus Predator on Windows (flat), download the exe from Releases 
 
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/assets-files-windows.png)
 
-See below if want to include CD music if you have the physical game second CD, otherwise just click avp.exe to run!
+See below if want to include CD music if you have the physical game second CD, otherwise just click avp_x64.exe (or avp_x86.exe for the 32-bit build) to run!
 
 ## CD music
 You can skip this if you don't have the audio cd that comes with the game, it'll just play without background music. Or provide your own music! Would need 15 tracks.
@@ -63,7 +63,7 @@ You can skip this if you don't have the audio cd that comes with the game, it'll
 - Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset or Windows game location. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
 
 ## Run it!
-Go to Unknown Sources on the headset and click on Aliens Versus Predator: VR. On Windows, simply run the avp.exe. Have fun!
+Go to Unknown Sources on the headset and click on Aliens Versus Predator: VR. On Windows, simply run avp_x64.exe (or avp_x86.exe for the 32-bit build). Have fun!
 > [!CAUTION]
 > This is early stage but is in playable state as Marine and Predator. I'm still looking at how to do the wall climbing on Aliens level. I'm not really much of a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
 

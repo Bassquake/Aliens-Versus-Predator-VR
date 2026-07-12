@@ -206,6 +206,15 @@ extern int TimeScale;
 static AVP_MENUS AvPMenus;
 extern AVPMENU  AvPMenusData[];
 
+/* VR (Quest) input helper: main.c needs to know when the user-profile select
+ * menu is showing so it can remap the right-controller B button to "delete
+ * profile" (KEY_BACKSPACE) instead of its usual "back" (KEY_ESCAPE). AvPMenus
+ * is file-static, so expose a tiny accessor rather than the whole struct. */
+int VR_OnUserProfileSelectMenu(void)
+{
+	return AvPMenus.CurrentMenu == AVPMENU_USERPROFILESELECT;
+}
+
 extern int AlienEpisodeToPlay;
 extern int MarineEpisodeToPlay;
 extern int PredatorEpisodeToPlay;

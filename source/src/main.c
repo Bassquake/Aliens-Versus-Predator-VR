@@ -102,6 +102,9 @@ extern SCREENDESCRIPTORBLOCK ScreenDescriptorBlock;
 extern unsigned char KeyboardInput[MAX_NUMBER_OF_INPUT_KEYS];
 extern unsigned char GotAnyKey;
 extern int NormalFrameTime;
+/* True while the user-profile select menu is showing — lets us remap the B
+ * button to "delete profile" there (see menu navigation block below). */
+extern int VR_OnUserProfileSelectMenu(void);
 
 SDL_Window *window;
 SDL_GLContext context;
@@ -2426,6 +2429,10 @@ int axes, balls, hats;
                     if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &bget, &bs)) && bs.isActive)
                         a_pressed = bs.currentState ? 1 : 0;
                 }
+                /* On the user-profile select menu only A selects — X is disabled
+                 * so the on-screen "Press A / B" prompt matches the controls. */
+                if (VR_OnUserProfileSelectMenu())
+                    x_pressed = 0;
                 KeyboardInput[KEY_CR] = x_pressed | a_pressed;
                 if (KeyboardInput[KEY_CR] && !prev_cr) {
                     DebouncedKeyboardInput[KEY_CR] = 1;
@@ -2443,21 +2450,41 @@ int axes, balls, hats;
                 if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &bget, &bstate))
                         && bstate.isActive)
                     y_pressed = bstate.currentState ? 1 : 0;
+                /* Y is disabled on the user-profile select menu (no back action
+                 * there — only A selects and B deletes). */
+                if (VR_OnUserProfileSelectMenu())
+                    y_pressed = 0;
                 if (y_pressed && !KeyboardInput[KEY_ESCAPE])
                     DebouncedKeyboardInput[KEY_ESCAPE] = 1;
                 KeyboardInput[KEY_ESCAPE] = y_pressed;
             }
 
-            /* B button → back (mirrors Y, right controller). */
+            /* B button → back (mirrors Y, right controller), EXCEPT on the
+             * user-profile select menu where it deletes the highlighted profile
+             * (KEY_BACKSPACE, matching the desktop keyboard shortcut). On that
+             * menu X and Y are disabled, so only A (select) and B (delete) act.
+             *
+             * Edge-triggered on b_prev: a B tap lasts several frames, so a level
+             * trigger would carry the still-held button into the delete-confirm
+             * dialog it just opened and immediately cancel it. Firing only on the
+             * rising edge means the menu that was showing when B went down is the
+             * one that receives the key. */
             if (xr_b_button_action) {
+                static int b_prev = 0;
                 bget.action = xr_b_button_action;
                 int b_pressed = 0;
                 if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &bget, &bstate))
                         && bstate.isActive)
                     b_pressed = bstate.currentState ? 1 : 0;
-                if (b_pressed && !KeyboardInput[KEY_ESCAPE])
-                    DebouncedKeyboardInput[KEY_ESCAPE] = 1;
-                KeyboardInput[KEY_ESCAPE] |= b_pressed;
+
+                int b_delete = VR_OnUserProfileSelectMenu();
+                if (b_pressed && !b_prev)
+                    DebouncedKeyboardInput[b_delete ? KEY_BACKSPACE : KEY_ESCAPE] = 1;
+                /* Keep the level state in sync so held reads stay consistent. */
+                KeyboardInput[KEY_BACKSPACE] = (b_pressed &&  b_delete) ? 1 : 0;
+                if (b_pressed && !b_delete)
+                    KeyboardInput[KEY_ESCAPE] |= 1;
+                b_prev = b_pressed;
             }
 
             /* Both sticks → navigate up/down/left/right.

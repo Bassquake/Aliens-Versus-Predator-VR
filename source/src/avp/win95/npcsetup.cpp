@@ -278,6 +278,7 @@ extern "C"
 {
 	extern BOOL Current_Level_Requires_Mirror_Image();
     extern int AllowGoldWeapons;
+    extern int DebuggingCommandsActive;
 };
 
 void InitNPCs(RIFFHANDLE h)
@@ -291,6 +292,19 @@ void InitNPCs(RIFFHANDLE h)
 	for(int i=0;i<HNPC_Last;i++)
 	{
 		Load_HNPC[i]=FALSE;
+	}
+
+	/* When running with -debug (DebuggingCommandsActive), force every character
+	   model to load so the *BOT console commands (PREDOBOT, MARINEBOT, ALIENBOT,
+	   XENOBORG, ...) work on any level -- not just ones whose environment already
+	   contains that character. Without this, GetNamedHierarchyFromLibrary() has
+	   no hierarchy for the requested character and bot creation fails with
+	   "NO HMODEL". Single-player only: bots are rejected in network games, which
+	   load their own fixed 3-character set below. */
+	if (DebuggingCommandsActive && AvP.Network == I_No_Network)
+	{
+		for (int j = 0; j < HNPC_Last; j++)
+			Load_HNPC[j] = TRUE;
 	}
 
 	#if debug

@@ -63,7 +63,7 @@ You can skip this if you don't have the audio cd that comes with the game, it'll
 - Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset or Windows game location. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
 
 ## Run it!
-Go to Unknown Sources on the headset and click on Aliens Versus Predator: VR. On Windows, simply run avp_x64.exe (or avp_x86.exe for the 32-bit build). Have fun!
+Go to Unknown Sources on the headset and click on Aliens Versus Predator: VR. On Windows, simply run avp_x64.exe (or avp_x86.exe for the 32-bit build if available). Have fun!
 > [!CAUTION]
 > This is early stage but is in playable state as Marine and Predator. I'm still looking at how to do the wall climbing on Aliens level. I'm not really much of a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
 

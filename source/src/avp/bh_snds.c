@@ -38,7 +38,7 @@ void * SoundBehaveInit(void* bhdata, STRATEGYBLOCK* sbptr)
 	sbb->sound_not_started = 1;
 	
 	sbb->wav_name = (char *) AllocateMem (strlen (stt->sound_name) + 1);
-	strcpy (sbb->wav_name, stt->sound_name);
+	strcpy_s (sbb->wav_name, strlen (stt->sound_name) + 1, stt->sound_name);
 
 	sbb->playing=stt->playing;
 	sbb->loop=stt->loop;

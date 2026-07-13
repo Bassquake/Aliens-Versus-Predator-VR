@@ -3699,30 +3699,20 @@ static void handle_keypress(int key, int unicode, int press)
     if (key == -1)
         return;
     
-    // Nasty hack to allow temporary character entry by TCH68k on Github
-    
     if ((key == KEY_LEFTSHIFT) || (key == KEY_RIGHTSHIFT))
     {
         ShiftDown = press;
     }
     else if (press) {
-        if ((key >= KEY_A) && (key <= KEY_Z))
-        {
-            RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_CHAR(65 + (key - KEY_A) + ShiftAddition[ShiftDown ^ CapsLockOn]);
-        }
-        else if ((key >= KEY_0) && (key <= KEY_9))
-        {
-            RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_CHAR(48 + (key - KEY_0)); /* TODO: Shift numbers -> symbols */
-        }
-        else if ((key >= KEY_NUMPAD0) && (key <= KEY_NUMPAD9))
-        {
-            RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_CHAR(48 + (key - KEY_NUMPAD0));
-        }
-        else if (false) /* TODO: other symbols */
-        {
-            // BOO!
-        }
-        else switch (key) {
+        /* Printable characters (letters, digits, symbols) are delivered by
+           SDL_EVENT_TEXT_INPUT, which honours the real keyboard layout and
+           shift/caps-lock state. This path used to *also* synthesise a WM_CHAR
+           from the raw key code, feeding the console a second copy of every
+           letter/digit -- that produced the doubled "aa" in the command
+           console (and "aA" when this path's shift/caps guess disagreed with
+           the OS). Only the editing keys below, which TEXT_INPUT does not
+           generate, are handled here now. */
+        switch (key) {
                 case KEY_CAPS:
                     CapsLockOn ^= 1;
                     break;
@@ -4263,6 +4253,31 @@ int main(int argc, char *argv[])
             default:
                 printf("%s", usage_string);
                 exit(EXIT_FAILURE);
+        }
+    }
+#else
+    /* MSVC has no getopt, so the block above is compiled out on Windows.
+       Without a replacement, every command-line switch -- including -debug --
+       was silently ignored, leaving DebuggingCommandsActive at 0 so console
+       cheat codes like GOD did nothing. Scan argv manually for the flags we
+       support on Windows. Accept -debug, -d and --debug for the debug switch. */
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        if (!strcmp(a, "-f") || !strcmp(a, "--fullscreen")) {
+            WantFullscreen = 1;
+        } else if (!strcmp(a, "-w") || !strcmp(a, "--windowed")) {
+            WantFullscreen = 0;
+        } else if (!strcmp(a, "-s") || !strcmp(a, "--nosound")) {
+            WantSound = 0;
+        } else if (!strcmp(a, "-c") || !strcmp(a, "--nocdrom")) {
+            WantCDRom = 0;
+        } else if (!strcmp(a, "-j") || !strcmp(a, "--nojoy")) {
+            WantJoystick = 0;
+        } else if (!strcmp(a, "-d") || !strcmp(a, "-debug") || !strcmp(a, "--debug")) {
+            extern int DebuggingCommandsActive;
+            DebuggingCommandsActive = 1;
+        } else if ((!strcmp(a, "-p") || !strcmp(a, "--datapath")) && (i + 1 < argc)) {
+            gamedatapath = argv[++i];
         }
     }
 #endif

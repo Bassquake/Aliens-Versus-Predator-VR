@@ -210,14 +210,7 @@ ConsoleVariable :: ~ConsoleVariable()
 		{
 			if
 			(
-				oi() -> ThisIsACheat
-				?
-				STRUTIL_SC_Strequal //case sensitive comparisons for cheats
-				(
-					pProjCh_In,
-					oi() -> pSCString_Symbol -> pProjCh()
-				)
-				:
+				// case insensitive for everything, including cheats
 				STRUTIL_SC_Strequal_Insensitive
 				(
 					pProjCh_In,

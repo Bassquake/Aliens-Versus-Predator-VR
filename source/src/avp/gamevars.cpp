@@ -118,11 +118,9 @@ void CreateGameSpecificConsoleVariables(void)
 	BOOL IsACheat = FALSE;
 	#endif
 
-	#ifndef AVP_DEBUG_VERSION // allow debug commands without -debug
-	#ifndef AVP_DEBUG_FOR_FOX // allow debug commands without -debug
-	if (DebuggingCommandsActive)
-	#endif
-	#endif
+	/* Cheat console variables (TIMESCALE, WIREFRAMEMODE, etc.) are always
+	   registered so they can be used in normal mode without -debug.
+	   They still pass IsACheat, so using one flags the game as cheated. */
 	{
 		ConsoleVariable :: MakeSimpleConsoleVariable_FixP
 		(

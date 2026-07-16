@@ -217,27 +217,17 @@ void SCString :: ProcessAnyCheatCodes(void)
 			return;
 		}
 	}
-	#ifndef AVP_DEBUG_VERSION // allow debug commands without -debug
-	#ifndef AVP_DEBUG_FOR_FOX // allow debug commands without -debug
-	if (DebuggingCommandsActive)
-	#endif
-	#endif
+	/* The GOD (immortality) cheat is always available, even without -debug,
+	   so cheat codes work in normal mode. */
 	{
 		if
 		(
-			#ifndef AVP_DEBUG_VERSION 
-			STRUTIL_SC_Strequal
-			(
-				pProjCh_Val,
-				"GOD" //ProjChar* pProjCh_2
-			)
-			#else // allow case insensitive
+			// case insensitive so the cheat works in normal mode too
 			STRUTIL_SC_Strequal_Insensitive
 			(
 				pProjCh_Val,
 				"GOD" //ProjChar* pProjCh_2
 			)
-			#endif
 		)
 		{
 			Cheats :: ToggleImmortality();

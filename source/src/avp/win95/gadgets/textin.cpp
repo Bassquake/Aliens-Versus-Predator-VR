@@ -1272,10 +1272,7 @@ ConsoleSymbol* TextInputState :: GetNxtMatchingCompletion(void) const
 				// Check for a match:
 				if
 				(
-					pConsoleSym_I->ThisIsACheat
-					?
-					bManualMatch( pConsoleSym_I -> GetpSCString() -> pProjCh() )
-					:
+					// case insensitive for everything, including cheats
 					bManualMatchInsensitive( pConsoleSym_I -> GetpSCString() -> pProjCh() )
 				)
 				{
@@ -1300,10 +1297,7 @@ ConsoleSymbol* TextInputState :: GetNxtMatchingCompletion(void) const
 
 			if
 			(
-				oi()->ThisIsACheat
-				?
-				bManualMatch( oi() -> GetpSCString() -> pProjCh() )
-				:
+				// case insensitive for everything, including cheats
 				bManualMatchInsensitive( oi() -> GetpSCString() -> pProjCh() )
 			)
 			{

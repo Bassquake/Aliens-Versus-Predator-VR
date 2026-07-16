@@ -262,15 +262,8 @@
 					
 					if
 					(
-						oi()->ThisIsACheat ? 
-
-						STRUTIL_SC_Strequal //case sensitive comparisons for cheats
-						(
-							oi() -> pSCString_Symbol -> pProjCh(),
-							commandPtr
-						)
-						:
-						STRUTIL_SC_Strequal_Insensitive //case insensitive otherwise
+						// case insensitive for everything, including cheats
+						STRUTIL_SC_Strequal_Insensitive
 						(
 							oi() -> pSCString_Symbol -> pProjCh(),
 							commandPtr

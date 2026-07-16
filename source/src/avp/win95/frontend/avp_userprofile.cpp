@@ -44,6 +44,8 @@ extern int VRSmoothTurnSpeed;
 extern int VRSmoothDeadzone;
 extern int VRVignetteOn;
 extern int VRVignetteStrength;
+extern int GiveAllWeaponsCheatEnabled;
+extern int GodModeCheatEnabled;
 
 
 List<AVP_USER_PROFILE *> UserProfilesList;
@@ -269,6 +271,8 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRSmoothDeadzone = 4; /* 0.2 deflection by default (0..10) */
 	VRVignetteOn = 1; /* comfort vignette on by default */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
+	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
+	GodModeCheatEnabled = 0; /* "god mode" cheat off by default */
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -317,6 +321,8 @@ extern void GetSettingsFromUserProfile(void)
 	VRSmoothDeadzone =			UserProfilePtr->VRSmoothDeadzone;
 	VRVignetteOn =				UserProfilePtr->VRVignetteOn;
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
+	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
+	GodModeCheatEnabled =			UserProfilePtr->GodModeCheat;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
 	SetDetailLevelsFromMenu();
@@ -352,6 +358,8 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRSmoothDeadzone =		VRSmoothDeadzone;
 	profilePtr->VRVignetteOn =		VRVignetteOn;
 	profilePtr->VRVignetteStrength =	VRVignetteStrength;
+	profilePtr->GiveAllWeaponsCheat =	GiveAllWeaponsCheatEnabled;
+	profilePtr->GodModeCheat =		GodModeCheatEnabled;
    	strncpy(profilePtr->MultiplayerCallsign,MP_PlayerName,15);
 }
 

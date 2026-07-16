@@ -93,7 +93,9 @@ typedef struct
 	unsigned char VRSmoothDeadzone; //VR smooth turn deadzone: 0..10
 	unsigned char VRVignetteOn; //VR comfort vignette: 0=off, 1=on
 	unsigned char VRVignetteStrength; //VR comfort vignette strength: 0..10
-	char Padding[68];
+	unsigned char GiveAllWeaponsCheat; //main menu Cheats: give all weapons at level start (single-player only). 0=off (was Padding)
+	unsigned char GodModeCheat; //main menu Cheats: immortality in single-player. 0=off (was Padding)
+	char Padding[66];
 
 	int CDPlayerVolume;
 

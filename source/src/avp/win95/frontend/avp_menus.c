@@ -2512,7 +2512,13 @@ static void ActUponUsersInput(void)
 				case AVPMENU_CHEATOPTIONS:
 				{
 					CheatMode_Active = CHEATMODE_NONACTIVE;
-					break;	
+					break;
+				}
+				case AVPMENU_CHEATS:
+				{
+					/* persist the "give all weapons" toggle to the profile */
+					SaveUserProfile(UserProfilePtr);
+					break;
 				}
 
 				case AVPMENU_MULTIPLAYER_CONFIG :

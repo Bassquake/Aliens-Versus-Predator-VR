@@ -169,6 +169,16 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press A to select a profile, or B to delete a profile.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";
 			case TEXTSTRING_SAVEPROGRESS_TITLE: return "Save progress?";
+			case TEXTSTRING_MAINMENU_CHEATS: return "Extra Cheats";
+			case TEXTSTRING_MAINMENU_CHEATS_HELP: return "Cheat options for single-player (not Skirmish or Multiplayer).";
+			case TEXTSTRING_CHEATS_GIVEALLWEAPONS: return "Give all weapons";
+			case TEXTSTRING_CHEATS_GIVEALLWEAPONS_HELP: return "Start each Single Player level with every weapon for your species.";
+			case TEXTSTRING_CHEATS_GIVEALLWEAPONS_OFF: return "Off (Default)";
+			case TEXTSTRING_CHEATS_GIVEALLWEAPONS_ON:  return "On";
+			case TEXTSTRING_CHEATS_GODMODE: return "Invincibility";
+			case TEXTSTRING_CHEATS_GODMODE_HELP: return "Become immortal in Single Player (not Skirmish or Multiplayer).";
+			case TEXTSTRING_CHEATS_GODMODE_NO:  return "No (Default)";
+			case TEXTSTRING_CHEATS_GODMODE_YES: return "Yes";
 			default: break;
 		}
 	}

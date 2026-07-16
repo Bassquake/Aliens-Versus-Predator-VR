@@ -20,10 +20,18 @@ rounds fired etc etc etc*/
 #include "inventry.h"
 #include "cheat.h"
 
-/* TEMPORARY TEST AID: give the player every weapon (with ammo) at the start of
-   every single-player level so all weapons can be tried out. Set to 0 (or delete
-   this block and its use below) to restore normal per-level starting loadouts. */
-#define TEST_ALL_WEAPONS 0
+/* "Give all weapons" cheat (main menu -> Cheats). When enabled, the player
+   starts every single-player level with every weapon (and ammo) for their
+   species. Set from the menu, persisted per user profile. Single-player only:
+   the use below is gated on AvP.Network==I_No_Network, which excludes both
+   Multiplayer and Skirmish. */
+int GiveAllWeaponsCheatEnabled = 0;
+
+/* "God mode" cheat (main menu -> Extra Cheats). When enabled, the player is
+   immortal in single-player. Applied at player init in player.c, gated on
+   AvP.Network==I_No_Network so it never affects Multiplayer or Skirmish.
+   Set from the menu, persisted per user profile. */
+int GodModeCheatEnabled = 0;
 
 /* for win95 net game support */
 #include "pldnet.h"
@@ -619,13 +627,12 @@ void InitialisePlayersInventory(PLAYER_STATUS *playerStatusPtr)
     playerStatusPtr->JetpackEnabled = StartingEquipment.marine_jetpack;
     playerStatusPtr->GrapplingHookEnabled = StartingEquipment.predator_grappling_hook;
 
-#if TEST_ALL_WEAPONS
-	/* Temporary: hand over every weapon for this species so they can be tested in
-	   any level. Single-player only, to avoid affecting multiplayer loadouts.
-	   Also force-enable the movement gadgets (Marine jetpack / Predator grappling
-	   hook) so the Left Trigger can be tested on levels that don't normally grant
-	   them - otherwise the trigger is correctly a no-op there. */
-	if (AvP.Network == I_No_Network)
+	/* "Give all weapons" cheat: hand over every weapon for this species. Gated on
+	   AvP.Network==I_No_Network so it only applies to the single-player campaign,
+	   never Multiplayer or Skirmish. Also force-enable the movement gadgets
+	   (Marine jetpack / Predator grappling hook) so they can be used on levels
+	   that don't normally grant them. */
+	if (GiveAllWeaponsCheatEnabled && AvP.Network == I_No_Network)
 	{
 		GiveAllWeaponsToPlayer(playerStatusPtr);
 
@@ -634,7 +641,6 @@ void InitialisePlayersInventory(PLAYER_STATUS *playerStatusPtr)
 		if (AvP.PlayerType == I_Predator)
 			playerStatusPtr->GrapplingHookEnabled = 1;
 	}
-#endif
 
 	LoadAllWeapons(PlayerStatusPtr);
 }

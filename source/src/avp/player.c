@@ -48,6 +48,7 @@ extern DPID AVPDPNetID;
 VECTORCH PlayerStartLocation;
 MATRIXCH PlayerStartMat;
 extern int NormalFrameTime;
+extern int GodModeCheatEnabled; /* main menu -> Extra Cheats: immortality (single-player only) */
 extern ACTIVESOUNDSAMPLE ActiveSounds[];
 extern int PlayerDamagedOverlayIntensity;
 extern int playerNoise;
@@ -346,8 +347,9 @@ void InitPlayer(STRATEGYBLOCK* sbPtr, int sb_type)
 	/* security clearance */
 	psPtr->securityClearances = 0;
 
-	/* thou art mortal */
-	psPtr->IsImmortal = 0;
+	/* thou art mortal - unless the "God mode" Extra Cheat is enabled. Single-player
+	   only: AvP.Network==I_No_Network excludes Multiplayer and Skirmish. */
+	psPtr->IsImmortal = (GodModeCheatEnabled && AvP.Network==I_No_Network) ? 1 : 0;
 	
 	if (AvP.Network==I_No_Network)
 	{

@@ -568,15 +568,15 @@ int PlatPlaySound(int activeIndex)
 	if (!ActiveSounds[activeIndex].paused) {
 		alSourcePlay (ActiveSounds[activeIndex].ds3DBufferP);
 
-#ifdef OPENAL_DEBUG		
+#ifdef OPENAL_DEBUG
 		if (ActiveSounds[activeIndex].loop) {
 			fprintf(stderr, "OPENAL: Playing sound %i %s looping in slot %i\n",
 				si, GameSounds[si].wavName, activeIndex);
 		} else {
 			fprintf(stderr, "OPENAL: Playing sound %i %s once in slot %i\n",
-				si, GameSounds[si].wavName, activeIndex);				
+				si, GameSounds[si].wavName, activeIndex);
 		}
-#endif		
+#endif
 	}
 
 	return 1;
@@ -778,7 +778,7 @@ int PlatDo3dSound(int activeIndex)
 		newVolume = VOLUME_MIN;
 	}
 
-#ifdef OPENAL_DEBUG	
+#ifdef OPENAL_DEBUG
 	fprintf(stderr, "OPENAL: PlatDo3dSound: idx = %d, volume = %d, distance = %d\n", activeIndex, newVolume, distance);
 #endif
 
@@ -1016,7 +1016,7 @@ void PlatUpdatePlayer()
 		pos[1] = Global_VDB_Ptr->VDB_World.vy; // 10000.0;
 		pos[2] = Global_VDB_Ptr->VDB_World.vz; // 10000.0;
 		
-#ifdef OPENAL_DEBUG			
+#ifdef OPENAL_DEBUG
 		fprintf(stderr, "OPENAL: Player: (%f, %f, %f) (%f, %f, %f %f, %f, %f) (%f, %f, %f)\n", pos[0], pos[1], pos[2], or[0], or[1], or[2], or[3], or[4], or[5], vel[0], vel[1], vel[2]);
 #endif
 

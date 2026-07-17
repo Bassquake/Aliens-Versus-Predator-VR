@@ -1101,7 +1101,14 @@ void PredatorBehaviour(STRATEGYBLOCK *sbPtr)
         predatorStatusPointer->incidentFlag=0;
 
         predatorStatusPointer->incidentTimer-=NormalFrameTime;
-        
+
+        /* Keep the predator's active cry (hurt/acid/roar/taunt/dying scream, all
+           carried on soundHandle) tracking the predator as it moves, so a
+           roaring, moving predator stays directional instead of freezing the cry
+           where it started. Matches the alien soundHandle2 fix. */
+        if(predatorStatusPointer->soundHandle!=SOUND_NOACTIVEINDEX)
+                Sound_Update3d(predatorStatusPointer->soundHandle,&(sbPtr->DynPtr->Position));
+
         if (predatorStatusPointer->incidentTimer<0) {
                 predatorStatusPointer->incidentFlag=1;
                 predatorStatusPointer->incidentTimer=32767+(FastRandom()&65535);

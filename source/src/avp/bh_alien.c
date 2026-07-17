@@ -903,6 +903,11 @@ void AlienBehaviour(STRATEGYBLOCK *sbPtr)
 	}
 
 	if(alienStatusPointer->soundHandle!=SOUND_NOACTIVEINDEX) Sound_Update3d(alienStatusPointer->soundHandle,&(sbPtr->DynPtr->Position));
+	/* soundHandle2 carries the alien's screams/screech/taunt/hurt cries. Keep it
+	   tracking the alien too (as soundHandle and facehuggers already do) so a
+	   screeching, moving alien stays directional instead of freezing the cry at
+	   the spot where it started. */
+	if(alienStatusPointer->soundHandle2!=SOUND_NOACTIVEINDEX) Sound_Update3d(alienStatusPointer->soundHandle2,&(sbPtr->DynPtr->Position));
 
 	if (sbPtr->SBDamageBlock.IsOnFire) {
 

@@ -146,7 +146,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CONTROLLERCONFIG_HELP:  return "Configure your controllers for playing the game.";
 			case TEXTSTRING_CONTROLLERCONFIG_BACK:  return "Back";
 			case TEXTSTRING_VRTURN_MODE:        return "Turning Mode";
-			case TEXTSTRING_VRTURN_MODE_HELP:   return "Snap rotates in fixed steps; Smooth rotates continuously.";
+			case TEXTSTRING_VRTURN_MODE_HELP:   return "Snap rotates in fixed steps. Smooth rotates continuously.";
 			case TEXTSTRING_VRTURN_SNAP:        return "Snap (Default)";
 			case TEXTSTRING_VRTURN_SMOOTH:      return "Smooth";
 			case TEXTSTRING_VRSNAP_ANGLE:       return "Snap Turn Angle";
@@ -183,6 +183,11 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CHEATS_ENEMYSPEED_MARINE:   return "Marine speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR: return "Predator speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_HELP: return "Slow this enemy type down in Single Player. Full is normal speed, empty stops them (not Skirmish or Multiplayer).";
+			case TEXTSTRING_HUDADJUST: return "Adjust HUD Elements";
+			case TEXTSTRING_HUDADJUST_HELP: return "Pull HUD elements toward the centre of view. Raise this if your headset FOV is too narrow to see them.";
+			case TEXTSTRING_HUDADJUST_1: return "1 (Default)";
+			case TEXTSTRING_HUDADJUST_2: return "2";
+			case TEXTSTRING_HUDADJUST_3: return "3";
 			default: break;
 		}
 	}

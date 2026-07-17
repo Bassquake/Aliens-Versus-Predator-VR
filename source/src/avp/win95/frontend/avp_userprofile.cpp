@@ -49,6 +49,7 @@ extern int GodModeCheatEnabled;
 extern int EnemySpeedAlien;
 extern int EnemySpeedMarine;
 extern int EnemySpeedPredator;
+extern int HUDInsetLevel;
 
 
 List<AVP_USER_PROFILE *> UserProfilesList;
@@ -279,6 +280,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	EnemySpeedAlien = 10;    /* enemy speed sliders default to full speed (10 = 1.0) */
 	EnemySpeedMarine = 10;
 	EnemySpeedPredator = 10;
+	HUDInsetLevel = 0;       /* "Adjust HUD elements" defaults to level 1 (current layout) */
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -333,6 +335,7 @@ extern void GetSettingsFromUserProfile(void)
 	EnemySpeedAlien =			10 - UserProfilePtr->EnemySpeedAlien;
 	EnemySpeedMarine =			10 - UserProfilePtr->EnemySpeedMarine;
 	EnemySpeedPredator =			10 - UserProfilePtr->EnemySpeedPredator;
+	HUDInsetLevel =				UserProfilePtr->HUDInsetLevel;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
 	SetDetailLevelsFromMenu();
@@ -374,6 +377,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->EnemySpeedAlien =		10 - EnemySpeedAlien;
 	profilePtr->EnemySpeedMarine =		10 - EnemySpeedMarine;
 	profilePtr->EnemySpeedPredator =	10 - EnemySpeedPredator;
+	profilePtr->HUDInsetLevel =		HUDInsetLevel;
    	strncpy(profilePtr->MultiplayerCallsign,MP_PlayerName,15);
 }
 

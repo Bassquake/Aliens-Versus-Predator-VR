@@ -176,6 +176,7 @@ int VRSmoothDeadzone    = 4;
 int VRVignetteOn        = 1;
 int VRVignetteStrength  = 5;
 float vr_vignette_strength = 0.0f;
+int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
 
 int MSAASampleIndex = 1;
 int MSAA_SampleCount(void)
@@ -435,6 +436,10 @@ int VRSmoothDeadzone = 4;
 /* Comfort vignette while smooth-turning: on/off + strength 0..10 (tunnel closure). */
 int VRVignetteOn = 1;
 int VRVignetteStrength = 5;
+/* "Adjust HUD elements" (Controller Config): 0=default layout, 1 and 2 pull the
+ * HUD progressively toward the centre of view for narrow-FOV headsets.
+ * Consumed in AvpShowViewsVR when setting vr_hud_clip_scale. */
+int HUDInsetLevel = 0;
 /* Current smoothed vignette opacity 0..1, fades in/out as smooth-turn starts/stops.
  * Updated in the input read each frame; consumed by VR_DrawVignette() per eye. */
 float vr_vignette_strength = 0.0f;

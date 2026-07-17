@@ -2144,9 +2144,21 @@ void AvpShowViewsVR(void)
                                 Larger = closer. 0.0 = optical infinity.
                                 0.014 ≈ 2 m, 0.02 ≈ 1.5 m, 0.028 ≈ 1 m    */
         #define VR_HUD_STEREO_DEPTH 0.02f
-        vr_hud_clip_scale = 0.50f;
+        /* "Adjust HUD elements" (Controller Config -> HUDInsetLevel): pull the HUD
+         * toward the centre of view for narrow-FOV headsets. Level 0 (default) is
+         * the tuned 0.50; each higher level nudges it in slightly (also a touch
+         * smaller, which helps it fit a narrow FOV). The crosshair recompute below
+         * and hud.c both divide by vr_hud_clip_scale, so they stay consistent. */
+        {
+            extern int HUDInsetLevel;
+            static const float hudInsetScale[3] = { 0.50f, 0.45f, 0.40f };
+            int lvl = HUDInsetLevel;
+            if (lvl < 0) lvl = 0;
+            if (lvl > 2) lvl = 2;
+            vr_hud_clip_scale = hudInsetScale[lvl];
+        }
         vr_hud_offset_x   = (eye == 0) ? +VR_HUD_STEREO_DEPTH : -VR_HUD_STEREO_DEPTH;
-        vr_hud_offset_y   = -0.15f;
+        vr_hud_offset_y   = -0.10f;//-0.15
         vr_eye_index = eye;
         /* Recompute GunMuzzleSightX/Y in HUD-pixel space so the crosshair drawn by
          * MaintainHUD lands at the same clip-space position as the 3D aim point.

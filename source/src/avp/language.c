@@ -179,6 +179,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CHEATS_GODMODE_HELP: return "Become immortal in Single Player (not Skirmish or Multiplayer).";
 			case TEXTSTRING_CHEATS_GODMODE_NO:  return "No (Default)";
 			case TEXTSTRING_CHEATS_GODMODE_YES: return "Yes";
+			case TEXTSTRING_CHEATS_ENEMYSPEED_ALIEN:    return "Alien speed";
+			case TEXTSTRING_CHEATS_ENEMYSPEED_MARINE:   return "Marine speed";
+			case TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR: return "Predator speed";
+			case TEXTSTRING_CHEATS_ENEMYSPEED_HELP: return "Slow this enemy type down in Single Player. Full is normal speed, empty stops them (not Skirmish or Multiplayer).";
 			default: break;
 		}
 	}

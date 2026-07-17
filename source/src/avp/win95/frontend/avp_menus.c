@@ -103,6 +103,9 @@ extern int VRSmoothTurnSpeed;
 extern int VRSmoothDeadzone;
 extern int VRVignetteOn;
 extern int VRVignetteStrength;
+extern int EnemySpeedAlien;    /* Extra Cheats speed sliders: 10 = 1.0 .. 0 = 0.0 */
+extern int EnemySpeedMarine;
+extern int EnemySpeedPredator;
 /* Non-zero when Quest Battery Saver is forcing 72 Hz; locks the VR refresh-rate
  * option to 72 Hz in the AV-options menu. Defined in main.c (returns 0 on desktop). */
 extern int VR_IsBatterySaverActive(void);
@@ -4002,6 +4005,16 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 				DrawAvPMenuGfx(AVPMENUGFX_SLIDER,x,y+4,elementPtr->Brightness,AVPMENUFORMAT_LEFTJUSTIFIED);
 			}
 
+			/* Enemy speed sliders: show the 0.0-1.0 value just past the bar. */
+			if (elementPtr->c.SliderValuePtr == &EnemySpeedAlien
+			 || elementPtr->c.SliderValuePtr == &EnemySpeedMarine
+			 || elementPtr->c.SliderValuePtr == &EnemySpeedPredator)
+			{
+				char valbuf[8];
+				int v = *elementPtr->c.SliderValuePtr;
+				sprintf(valbuf,"%d.%d",v/10,v%10);
+				RenderText(valbuf,MENU_CENTREX+MENU_ELEMENT_SPACING+225,y,elementPtr->Brightness,AVPMENUFORMAT_LEFTJUSTIFIED);
+			}
 
 			break;
 		}

@@ -59,6 +59,9 @@ extern int VRVignetteOn;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
+extern int EnemySpeedAlien;    /* speed slider: 10 = full speed (default) .. 0 = stopped */
+extern int EnemySpeedMarine;
+extern int EnemySpeedPredator;
 
 
 extern AVPMENU_ELEMENT* AvPMenu_Multiplayer_LoadConfig;
@@ -772,6 +775,10 @@ static AVPMENU_ELEMENT AvPMenu_Cheats[] =
 {
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_CHEATS_GIVEALLWEAPONS},	{1}, {&GiveAllWeaponsCheatEnabled}, {TEXTSTRING_CHEATS_GIVEALLWEAPONS_OFF}, TEXTSTRING_CHEATS_GIVEALLWEAPONS_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_CHEATS_GODMODE},		{1}, {&GodModeCheatEnabled}, {TEXTSTRING_CHEATS_GODMODE_NO}, TEXTSTRING_CHEATS_GODMODE_HELP},
+	/* Graphical sliders: empty (left) = 0.0 (stopped) .. full (right) = 1.0 (normal speed). */
+	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_CHEATS_ENEMYSPEED_ALIEN},	{10}, {&EnemySpeedAlien},	{0}, TEXTSTRING_CHEATS_ENEMYSPEED_HELP},
+	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_CHEATS_ENEMYSPEED_MARINE},	{10}, {&EnemySpeedMarine},	{0}, TEXTSTRING_CHEATS_ENEMYSPEED_HELP},
+	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR},{10}, {&EnemySpeedPredator},	{0}, TEXTSTRING_CHEATS_ENEMYSPEED_HELP},
 	{AVPMENU_ELEMENT_ENDOFMENU}
 };
 
@@ -983,7 +990,7 @@ AVPMENU AvPMenusData[]=
 	{AVPMENU_FONT_SMALL,TEXTSTRING_CONTROLLERCONFIG_TITLE,	AvPMenu_ControllerConfig, AVPMENU_OPTIONS, 0},
 
 	// AVPMENU_CHEATS
-	{AVPMENU_FONT_BIG,TEXTSTRING_MAINMENU_CHEATS,	AvPMenu_Cheats, AVPMENU_MAIN, 0},
+	{AVPMENU_FONT_SMALL,TEXTSTRING_MAINMENU_CHEATS,	AvPMenu_Cheats, AVPMENU_MAIN, 0},
 
 };
 

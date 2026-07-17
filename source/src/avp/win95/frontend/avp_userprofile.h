@@ -95,7 +95,10 @@ typedef struct
 	unsigned char VRVignetteStrength; //VR comfort vignette strength: 0..10
 	unsigned char GiveAllWeaponsCheat; //main menu Cheats: give all weapons at level start (single-player only). 0=off (was Padding)
 	unsigned char GodModeCheat; //main menu Cheats: immortality in single-player. 0=off (was Padding)
-	char Padding[66];
+	unsigned char EnemySpeedAlien;    //main menu Cheats: alien enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
+	unsigned char EnemySpeedMarine;   //main menu Cheats: marine enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
+	unsigned char EnemySpeedPredator; //main menu Cheats: predator enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
+	char Padding[63];
 
 	int CDPlayerVolume;
 

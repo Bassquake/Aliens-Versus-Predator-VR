@@ -164,6 +164,7 @@ extern int NPC_CannotReachTarget(NPC_MOVEMENTDATA *moveData, VECTORCH* thisTarge
 extern void NPCGetAvoidanceDirection(STRATEGYBLOCK *sbPtr, VECTORCH *velocityDirection, NPC_OBSTRUCTIONREPORT *details);
 extern void NPCGetTargetPosition(VECTORCH *targetPoint,STRATEGYBLOCK *target);
 extern int NPCSetVelocity(STRATEGYBLOCK *sbPtr, VECTORCH* targetDirn, int in_speed);
+extern int EnemySpeedFactorForType(AVP_BEHAVIOUR_TYPE type); /* "Enemy speed" Extra Cheat: per-species slowdown factor */
 extern int NPCOrientateToVector(STRATEGYBLOCK *sbPtr, VECTORCH *zAxisVector, int turnspeed, VECTORCH *offset);
 extern void NPCGetMovementTarget(STRATEGYBLOCK *sbPtr, STRATEGYBLOCK *target, VECTORCH *targetPosition, int* targetIsAirduct,int alien);
 extern void NPCGetMovementDirection(STRATEGYBLOCK *sbPtr, VECTORCH *velocityDirection, VECTORCH* target, WAYPOINT_MANAGER *waypointManager);

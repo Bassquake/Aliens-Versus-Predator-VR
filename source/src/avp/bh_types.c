@@ -1419,9 +1419,33 @@ void ObjectBehaviours(void)
 }			
 
 
+extern int EnemySpeedFactorForType(AVP_BEHAVIOUR_TYPE type); /* bh_ais.c */
+
 void ExecuteBehaviour(STRATEGYBLOCK* sbptr)
 {
+	int savedNormalFrameTime = 0;
+	int enemySpeedSlowed = 0;
+
 	GLOBALASSERT(sbptr);
+
+	/* "Enemy speed" Extra Cheat: run a slowed enemy's whole behaviour on a
+	   slowed clock so its attacks, firing and animations slow to match its
+	   reduced movement. Single-player only; the factor is ONE_FIXED (no change)
+	   for the player and anything not covered by a slider. NormalFrameTime is
+	   restored after the behaviour runs. */
+	if (AvP.Network == I_No_Network)
+	{
+		int enemySpeedFactor = EnemySpeedFactorForType(sbptr->I_SBtype);
+		if (enemySpeedFactor != ONE_FIXED)
+		{
+			savedNormalFrameTime = NormalFrameTime;
+			NormalFrameTime = MUL_FIXED(NormalFrameTime, enemySpeedFactor);
+			/* Never let it hit 0: some NPC code divides by NormalFrameTime.
+			   1 (a fixed-point ~0.000015s) is effectively frozen anyway. */
+			if (NormalFrameTime < 1) NormalFrameTime = 1;
+			enemySpeedSlowed = 1;
+		}
+	}
 
 	switch(sbptr->I_SBtype)
 	{
@@ -1693,6 +1717,10 @@ void ExecuteBehaviour(STRATEGYBLOCK* sbptr)
     default:
 			break;
 	}
+
+	/* restore the real frame time after a slowed enemy's behaviour (see top) */
+	if (enemySpeedSlowed)
+		NormalFrameTime = savedNormalFrameTime;
 }
 
 

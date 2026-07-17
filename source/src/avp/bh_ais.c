@@ -660,13 +660,50 @@ void NPCGetTargetPosition(VECTORCH *targetPoint, STRATEGYBLOCK *target)
         }
 }
 
+/* "Enemy speed" Extra Cheat: per-species NPC speed (main menu -> Extra Cheats).
+   Each global is a speed slider: 10 = full speed (1.0, default) .. 0 = stopped (0.0). */
+extern int EnemySpeedAlien;
+extern int EnemySpeedMarine;
+extern int EnemySpeedPredator;
+
+/* Returns the speed scale (fixed-point) for an NPC of the given behaviour type,
+   or ONE_FIXED (no change) for anything not covered by a slider. Used both for
+   locomotion (here) and to slow attack/firing timing (in bh_types.c). */
+int EnemySpeedFactorForType(AVP_BEHAVIOUR_TYPE type)
+{
+        int idx;
+
+        switch (type)
+        {
+                case I_BehaviourAlien:
+                case I_BehaviourQueenAlien:
+                case I_BehaviourFaceHugger:
+                case I_BehaviourPredatorAlien:
+                        idx = EnemySpeedAlien;
+                        break;
+                case I_BehaviourMarine:
+                        idx = EnemySpeedMarine;
+                        break;
+                case I_BehaviourPredator:
+                        idx = EnemySpeedPredator;
+                        break;
+                default:
+                        return ONE_FIXED;
+        }
+
+        /* idx is the speed setting: 10 = full speed (1.0), 0 = stopped (0.0). */
+        if (idx >= 10) return ONE_FIXED;
+        if (idx <= 0) return 0;
+        return (idx * ONE_FIXED) / 10;
+}
+
 /*------------------------Patrick 31/1/97-----------------------------
   Returns 2d approach velocity and time for given NPC, target, and speed
   targetDirn must be a normalised vector direction.
   --------------------------------------------------------------------*/
 int NPCSetVelocity(STRATEGYBLOCK *sbPtr, VECTORCH* targetDirn, int in_speed)
 {
-        int orientated,speed;
+        int orientated,speed,enemySpeedFactor;
 
         LOCALASSERT(sbPtr);
         LOCALASSERT(sbPtr->DynPtr);
@@ -679,6 +716,13 @@ int NPCSetVelocity(STRATEGYBLOCK *sbPtr, VECTORCH* targetDirn, int in_speed)
         
         /* Set up speed as local, so we can tamper with it. */
         speed=in_speed;
+
+        /* "Enemy speed" Extra Cheat (single-player only): slow this NPC's
+           locomotion by the per-species factor. ONE_FIXED means no change.
+           Applied to the target speed here so the AI accelerates toward the
+           reduced speed naturally, with no feedback. */
+        enemySpeedFactor = (AvP.Network==I_No_Network) ? EnemySpeedFactorForType(sbPtr->I_SBtype) : ONE_FIXED;
+        speed = MUL_FIXED(speed, enemySpeedFactor);
 
         if ((sbPtr->I_SBtype!=I_BehaviourMarine)&&(sbPtr->I_SBtype!=I_BehaviourPredator)
                 &&(sbPtr->I_SBtype!=I_BehaviourXenoborg)) {
@@ -748,8 +792,9 @@ int NPCSetVelocity(STRATEGYBLOCK *sbPtr, VECTORCH* targetDirn, int in_speed)
                                         if ((predatorStatusPointer->behaviourState==PBS_Wandering)
                                                 ||((predatorStatusPointer->behaviourState==PBS_Avoidance)&&(predatorStatusPointer->lastState==PBS_Wandering))) {
                                                 movementData=GetThisMovementData(MDI_Casual_Predator);
-                                                /* Fix reduced max speed. */
-                                                speed=movementData->maxSpeed;
+                                                /* Fix reduced max speed. (Re-apply the enemy-speed
+                                                   cheat factor, since this overwrites speed.) */
+                                                speed=MUL_FIXED(movementData->maxSpeed,enemySpeedFactor);
                                         } else {
                                                 movementData=GetThisMovementData(MDI_Predator);
                                         }

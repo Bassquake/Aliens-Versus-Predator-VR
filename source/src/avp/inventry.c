@@ -33,6 +33,14 @@ int GiveAllWeaponsCheatEnabled = 0;
    Set from the menu, persisted per user profile. */
 int GodModeCheatEnabled = 0;
 
+/* "Enemy speed" cheats (main menu -> Extra Cheats). One speed slider per enemy
+   species: 10 = full speed (1.0, default), down to 0 = stopped (0.0, each step
+   is 0.1). Applied to NPC locomotion and attack/firing timing, single-player
+   only. Persisted per user profile (stored there as 10-speed for compatibility). */
+int EnemySpeedAlien = 10;
+int EnemySpeedMarine = 10;
+int EnemySpeedPredator = 10;
+
 /* for win95 net game support */
 #include "pldnet.h"
 #include "pldghost.h"

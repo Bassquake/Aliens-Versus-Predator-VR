@@ -46,6 +46,9 @@ extern int VRVignetteOn;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
+extern int EnemySpeedAlien;
+extern int EnemySpeedMarine;
+extern int EnemySpeedPredator;
 
 
 List<AVP_USER_PROFILE *> UserProfilesList;
@@ -273,6 +276,9 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
 	GodModeCheatEnabled = 0; /* "god mode" cheat off by default */
+	EnemySpeedAlien = 10;    /* enemy speed sliders default to full speed (10 = 1.0) */
+	EnemySpeedMarine = 10;
+	EnemySpeedPredator = 10;
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -323,6 +329,10 @@ extern void GetSettingsFromUserProfile(void)
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
 	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
 	GodModeCheatEnabled =			UserProfilePtr->GodModeCheat;
+	/* Stored as (10 - speed) so a fresh/old profile (0) loads as full speed (10). */
+	EnemySpeedAlien =			10 - UserProfilePtr->EnemySpeedAlien;
+	EnemySpeedMarine =			10 - UserProfilePtr->EnemySpeedMarine;
+	EnemySpeedPredator =			10 - UserProfilePtr->EnemySpeedPredator;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
 	SetDetailLevelsFromMenu();
@@ -360,6 +370,10 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRVignetteStrength =	VRVignetteStrength;
 	profilePtr->GiveAllWeaponsCheat =	GiveAllWeaponsCheatEnabled;
 	profilePtr->GodModeCheat =		GodModeCheatEnabled;
+	/* Stored as (10 - speed) so full speed (10) writes 0, matching a fresh profile. */
+	profilePtr->EnemySpeedAlien =		10 - EnemySpeedAlien;
+	profilePtr->EnemySpeedMarine =		10 - EnemySpeedMarine;
+	profilePtr->EnemySpeedPredator =	10 - EnemySpeedPredator;
    	strncpy(profilePtr->MultiplayerCallsign,MP_PlayerName,15);
 }
 

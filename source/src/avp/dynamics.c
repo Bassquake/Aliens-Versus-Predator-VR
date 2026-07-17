@@ -710,9 +710,9 @@ extern void ObjectDynamics(void)
 			/* skip to next report */
 			reportPtr = reportPtr->NextCollisionReportPtr;
 		}
-		PrintDebuggingText("€‚ƒ ©¸ä\n");
+		PrintDebuggingText("ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½\n");
 		if(!Player->ObStrategyBlock->DynPtr->IsInContactWithFloor)
-			NewOnScreenMessage("€‚ƒ word ©¸ä word €‚ƒ word ¸ä word\n");
+			NewOnScreenMessage("ï¿½ï¿½ï¿½ï¿½ word ï¿½ï¿½ï¿½ word ï¿½ï¿½ï¿½ï¿½ word ï¿½ï¿½ word\n");
 	}
 	#endif
 	//NewTrailPoint(Player->ObStrategyBlock->DynPtr);

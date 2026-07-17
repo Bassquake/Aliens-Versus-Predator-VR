@@ -177,6 +177,7 @@ int VRVignetteOn        = 1;
 int VRVignetteStrength  = 5;
 float vr_vignette_strength = 0.0f;
 int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
+int ManualReloadEnabled = 0; /* "Manual Reload": 0=off (default), 1=on. Gates the VR knock + desktop R key. */
 
 int MSAASampleIndex = 1;
 int MSAA_SampleCount(void)
@@ -440,6 +441,9 @@ int VRVignetteStrength = 5;
  * HUD progressively toward the centre of view for narrow-FOV headsets.
  * Consumed in AvpShowViewsVR when setting vr_hud_clip_scale. */
 int HUDInsetLevel = 0;
+/* "Manual Reload" (Controller Config): 0=off (default), 1=on. Gates the VR
+ * controller-knock gesture and the desktop R key (checked in PlayerRequestManualReload). */
+int ManualReloadEnabled = 0;
 /* Current smoothed vignette opacity 0..1, fades in/out as smooth-turn starts/stops.
  * Updated in the input read each frame; consumed by VR_DrawVignette() per eye. */
 float vr_vignette_strength = 0.0f;

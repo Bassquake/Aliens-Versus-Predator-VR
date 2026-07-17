@@ -677,6 +677,48 @@ enum PARTICLE_ID GetBloodType(STRATEGYBLOCK *sbPtr) {
 
 static int FirePrimaryLate,FireSecondaryLate;
 
+/* Manual reload (VR: knock the controllers together). Drops whatever is left in
+   the current magazine and runs the weapon's normal reload cycle (delay,
+   animation and sound); a fresh magazine is then loaded by the existing
+   WEAPONSTATE_RELOAD_PRIMARY completion. No-op unless the equipped weapon is
+   idle, uses magazine ammo, has a spare magazine, and isn't already full. */
+void PlayerRequestManualReload(void)
+{
+	PLAYER_STATUS *playerStatusPtr;
+	PLAYER_WEAPON_DATA *weaponPtr;
+	TEMPLATE_WEAPON_DATA *twPtr;
+	TEMPLATE_AMMO_DATA *ammoPtr;
+
+	if (Player==NULL) return;
+	playerStatusPtr = (PLAYER_STATUS *) (Player->ObStrategyBlock->SBdataptr);
+	if (playerStatusPtr==NULL) return;
+	if (playerStatusPtr->MyFaceHugger) return; /* no weapon while facehugged */
+	if (playerStatusPtr->SelectedWeaponSlot>=MAX_NO_OF_WEAPON_SLOTS) return;
+
+	weaponPtr = &(playerStatusPtr->WeaponSlot[playerStatusPtr->SelectedWeaponSlot]);
+
+	/* only reload a ready weapon - don't interrupt firing/recoil/swapping/an
+	   existing reload */
+	if (weaponPtr->CurrentState != WEAPONSTATE_IDLE) return;
+
+	/* need a spare magazine (this also rules out melee weapons, which carry none) */
+	if (weaponPtr->PrimaryMagazinesRemaining==0) return;
+
+	twPtr = &TemplateWeapon[weaponPtr->WeaponIDNumber];
+	ammoPtr = &TemplateAmmo[twPtr->PrimaryAmmoID];
+	if (ammoPtr->AmmoPerMagazine<=0) return;
+
+	/* nothing to do if the current magazine is already full (or effectively
+	   infinite - such weapons read as 'full' here) */
+	if (weaponPtr->PrimaryRoundsRemaining >= (unsigned int)ammoPtr->AmmoPerMagazine) return;
+
+	/* drop the partial magazine, then run the normal reload cycle. The
+	   RELOAD_PRIMARY completion refills a full magazine when rounds==0. */
+	weaponPtr->PrimaryRoundsRemaining = 0;
+	weaponPtr->CurrentState = WEAPONSTATE_RELOAD_PRIMARY;
+	weaponPtr->StateTimeOutCounter = WEAPONSTATE_INITIALTIMEOUTCOUNT;
+}
+
 void UpdateWeaponStateMachine(void)
 {
 	PLAYER_WEAPON_DATA *weaponPtr;

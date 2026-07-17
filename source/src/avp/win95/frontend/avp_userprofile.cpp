@@ -50,6 +50,7 @@ extern int EnemySpeedAlien;
 extern int EnemySpeedMarine;
 extern int EnemySpeedPredator;
 extern int HUDInsetLevel;
+extern int ManualReloadEnabled;
 
 
 List<AVP_USER_PROFILE *> UserProfilesList;
@@ -281,6 +282,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	EnemySpeedMarine = 10;
 	EnemySpeedPredator = 10;
 	HUDInsetLevel = 0;       /* "Adjust HUD elements" defaults to level 1 (current layout) */
+	ManualReloadEnabled = 0; /* "Manual Reload" defaults to Off */
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -336,6 +338,7 @@ extern void GetSettingsFromUserProfile(void)
 	EnemySpeedMarine =			10 - UserProfilePtr->EnemySpeedMarine;
 	EnemySpeedPredator =			10 - UserProfilePtr->EnemySpeedPredator;
 	HUDInsetLevel =				UserProfilePtr->HUDInsetLevel;
+	ManualReloadEnabled =			UserProfilePtr->ManualReloadEnabled;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
 	SetDetailLevelsFromMenu();
@@ -378,6 +381,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->EnemySpeedMarine =		10 - EnemySpeedMarine;
 	profilePtr->EnemySpeedPredator =	10 - EnemySpeedPredator;
 	profilePtr->HUDInsetLevel =		HUDInsetLevel;
+	profilePtr->ManualReloadEnabled =	ManualReloadEnabled;
    	strncpy(profilePtr->MultiplayerCallsign,MP_PlayerName,15);
 }
 

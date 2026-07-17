@@ -1446,6 +1446,10 @@ enum TEXTSTRING_ID
 	TEXTSTRING_HUDADJUST_1, // value 0 (default): must stay immediately before _2/_3
 	TEXTSTRING_HUDADJUST_2, // value 1
 	TEXTSTRING_HUDADJUST_3, // value 2
+	TEXTSTRING_MANUALRELOAD,
+	TEXTSTRING_MANUALRELOAD_HELP,
+	TEXTSTRING_MANUALRELOAD_OFF, // value 0 (default): must stay immediately before _ON
+	TEXTSTRING_MANUALRELOAD_ON,  // value 1
 	MAX_NEW_TEXTSTRINGS
 };
 

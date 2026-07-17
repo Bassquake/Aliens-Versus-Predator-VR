@@ -99,7 +99,8 @@ typedef struct
 	unsigned char EnemySpeedMarine;   //main menu Cheats: marine enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char EnemySpeedPredator; //main menu Cheats: predator enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char HUDInsetLevel; //Controller Config: "Adjust HUD elements" 0=default,1,2 pull HUD toward centre (was Padding)
-	char Padding[62];
+	unsigned char ManualReloadEnabled; //Controller Config: "Manual Reload" 0=off (default), 1=on (was Padding)
+	char Padding[61];
 
 	int CDPlayerVolume;
 

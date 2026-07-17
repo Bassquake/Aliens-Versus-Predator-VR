@@ -188,6 +188,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_HUDADJUST_1: return "1 (Default)";
 			case TEXTSTRING_HUDADJUST_2: return "2";
 			case TEXTSTRING_HUDADJUST_3: return "3";
+			case TEXTSTRING_MANUALRELOAD: return "Manual Reload";
+			case TEXTSTRING_MANUALRELOAD_HELP: return "Manually reload weapons by almost touching the controllers together.";
+			case TEXTSTRING_MANUALRELOAD_OFF: return "Off (Default)";
+			case TEXTSTRING_MANUALRELOAD_ON:  return "On";
 			default: break;
 		}
 	}

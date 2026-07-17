@@ -115,7 +115,8 @@ PLAYER_INPUT_CONFIGURATION DefaultMarineInputPrimaryConfig =
     {KEY_F1},
     {KEY_F11},
     {KEY_F12},
-    {KEY_TAB}
+    {KEY_TAB},          // Marine_ShowScores (byte 26)
+    KEY_R               // Manual Reload (byte 27 = NUMBER_OF_MARINE_INPUTS)
 };
 PLAYER_INPUT_CONFIGURATION DefaultPredatorInputPrimaryConfig =
 {
@@ -140,11 +141,11 @@ PLAYER_INPUT_CONFIGURATION DefaultPredatorInputPrimaryConfig =
 
 	KEY_LMOUSE, 		// FirePrimaryWeapon;
 	KEY_RMOUSE, 		// FireSecondaryWeapon;
-	
+
     {KEY_RBRACKET},		// NextWeapon;
     {KEY_LBRACKET}, 	// PreviousWeapon;
     {KEY_BACKSPACE},	// FlashbackWeapon;
-	
+
     {KEY_FSTOP},	 	// Cloak;
     {KEY_SLASH},	 	// CycleVisionMode;
     {KEY_PAGEUP},		// ZoomIn;
@@ -155,7 +156,8 @@ PLAYER_INPUT_CONFIGURATION DefaultPredatorInputPrimaryConfig =
     {KEY_F1},
     KEY_F11,
     KEY_F12,
-    KEY_TAB
+    KEY_TAB,            // Predator_ShowScores (byte 29)
+    KEY_R               // Manual Reload (byte 30 = NUMBER_OF_PREDATOR_INPUTS = ExpansionSpace7)
 };
 
 PLAYER_INPUT_CONFIGURATION DefaultAlienInputPrimaryConfig =
@@ -1757,6 +1759,32 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 	}
 	#endif
 	if (DebouncedKeyboardInput[KEY_GRAVE]) IOFOCUS_Toggle();
+
+	/* Manual reload: rebindable key from the Marine/Predator key config (default R).
+	   The binding lives in the free config byte right after the standard keys
+	   (offset NUMBER_OF_*_INPUTS) of the live primary/secondary configs. Only while
+	   the player has control (not typing in the console or in a menu). On VR this is
+	   triggered by the controller proximity gesture instead. */
+	if (IOFOCUS_AcceptControls() && !InGameMenusAreRunning())
+	{
+		int reloadByte = -1;
+		if (AvP.PlayerType == I_Marine)        reloadByte = NUMBER_OF_MARINE_INPUTS;
+		else if (AvP.PlayerType == I_Predator) reloadByte = NUMBER_OF_PREDATOR_INPUTS;
+
+		if (reloadByte >= 0)
+		{
+			unsigned char kp = ((unsigned char*)primaryInput)[reloadByte];
+			unsigned char ks = ((unsigned char*)secondaryInput)[reloadByte];
+			/* KEY_VOID = explicitly unbound; KEY_ESCAPE (value 0) = never set / not a
+			   valid reload binding, since Escape is the menu key. */
+			if ((kp!=KEY_VOID && kp!=KEY_ESCAPE && DebouncedKeyboardInput[kp])
+			  ||(ks!=KEY_VOID && ks!=KEY_ESCAPE && DebouncedKeyboardInput[ks]))
+			{
+				extern void PlayerRequestManualReload(void);
+				PlayerRequestManualReload();
+			}
+		}
+	}
 }
 
 void LoadKeyConfiguration(void)

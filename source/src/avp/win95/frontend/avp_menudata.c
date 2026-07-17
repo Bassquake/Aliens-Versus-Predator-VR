@@ -58,6 +58,7 @@ extern int VRSmoothDeadzone;
 extern int VRVignetteOn;
 extern int VRVignetteStrength;
 extern int HUDInsetLevel;
+extern int ManualReloadEnabled;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
 extern int EnemySpeedAlien;    /* speed slider: 10 = full speed (default) .. 0 = stopped */
@@ -223,6 +224,7 @@ static AVPMENU_ELEMENT AvPMenu_ControllerConfig[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRVIGNETTE},	{1}, {&VRVignetteOn},		{TEXTSTRING_VRVIGNETTE_OFF},	TEXTSTRING_VRVIGNETTE_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRVIGNETTE_STRENGTH}, {10}, {&VRVignetteStrength},	{0},	TEXTSTRING_VRVIGNETTE_STRENGTH_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_HUDADJUST},	{2}, {&HUDInsetLevel},	{TEXTSTRING_HUDADJUST_1},	TEXTSTRING_HUDADJUST_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_MANUALRELOAD},	{1}, {&ManualReloadEnabled},	{TEXTSTRING_MANUALRELOAD_OFF},	TEXTSTRING_MANUALRELOAD_HELP},
 
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
 	{AVPMENU_ELEMENT_ENDOFMENU}
@@ -732,7 +734,8 @@ extra +1 for marine auto weapon change option.
 Not really necessary , since the marine has fewer options anyway (I think), but
 I'll add it to keep things honest.
 */
-static AVPMENU_ELEMENT AvPMenu_KeyConfig[NUMBER_OF_PREDATOR_INPUTS+2+1];
+/* +2 save/reset, +1 Manual Reload toggle, +1 end-of-menu (predator is the longest list) */
+static AVPMENU_ELEMENT AvPMenu_KeyConfig[NUMBER_OF_PREDATOR_INPUTS+2+1+1];
 
 static AVPMENU_ELEMENT AvPMenu_Options[] =
 {
@@ -1089,7 +1092,7 @@ extern void MakePredatorKeyConfigMenu(void)
 {
 	int i=0;
 	int j;
-	
+
 	AvPMenu_KeyConfig[i].ElementID = AVPMENU_ELEMENT_KEYCONFIGOK;
 	AvPMenu_KeyConfig[i].a.TextDescription = TEXTSTRING_MOUSECONTROLS_SAVETHESESETTINGS;
 	AvPMenu_KeyConfig[i].b.MenuToGoTo = AVPMENU_INGAME;
@@ -1108,6 +1111,16 @@ extern void MakePredatorKeyConfigMenu(void)
 		AvPMenu_KeyConfig[i+j].HelpString = TEXTSTRING_KEYCONTROLS_HELP;
 
 	}
+
+	/* "Manual Reload" rebindable key, right after the last key binding (Show Scores).
+	   As a KEYCONFIG row at element (2 + NUMBER_OF_PREDATOR_INPUTS) the standard
+	   positional mapping binds config byte NUMBER_OF_PREDATOR_INPUTS, which is the
+	   reserved ExpansionSpace7 slot. Read back in ReadPlayerGameInput. */
+	AvPMenu_KeyConfig[i+j].ElementID = AVPMENU_ELEMENT_KEYCONFIG;
+	AvPMenu_KeyConfig[i+j].a.TextDescription = TEXTSTRING_MANUALRELOAD;
+	AvPMenu_KeyConfig[i+j].b.MenuToGoTo = AVPMENU_MAIN;
+	AvPMenu_KeyConfig[i+j].HelpString = TEXTSTRING_KEYCONTROLS_HELP;
+	j++;
 	#else
 	AvPMenu_KeyConfig[i].ElementID = AVPMENU_ELEMENT_BUTTONSETTING;
 	AvPMenu_KeyConfig[i].a.TextDescription = TEXTSTRING_PREDATOR_KEY_FORWARD;
@@ -1141,6 +1154,16 @@ extern void MakeMarineKeyConfigMenu(void)
 		AvPMenu_KeyConfig[i+j].b.MenuToGoTo = AVPMENU_MAIN;
 		AvPMenu_KeyConfig[i+j].HelpString = TEXTSTRING_KEYCONTROLS_HELP;
 	}
+
+	/* "Manual Reload" rebindable key, right after the last key binding (Show Scores).
+	   As a KEYCONFIG row at element (2 + NUMBER_OF_MARINE_INPUTS) the standard
+	   positional mapping binds config byte NUMBER_OF_MARINE_INPUTS (a free slot in
+	   the marine config). Read back in ReadPlayerGameInput. */
+	AvPMenu_KeyConfig[i+j].ElementID = AVPMENU_ELEMENT_KEYCONFIG;
+	AvPMenu_KeyConfig[i+j].a.TextDescription = TEXTSTRING_MANUALRELOAD;
+	AvPMenu_KeyConfig[i+j].b.MenuToGoTo = AVPMENU_MAIN;
+	AvPMenu_KeyConfig[i+j].HelpString = TEXTSTRING_KEYCONTROLS_HELP;
+	j++;
 	#else
 	AvPMenu_KeyConfig[i].ElementID = AVPMENU_ELEMENT_BUTTONSETTING;
 	AvPMenu_KeyConfig[i].a.TextDescription = TEXTSTRING_MARINE_KEY_FORWARD;

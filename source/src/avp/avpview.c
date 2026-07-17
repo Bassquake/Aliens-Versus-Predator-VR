@@ -1545,6 +1545,37 @@ void AvpShowViewsVR(void)
 
     #undef GRIP_TO_GAME
 
+    /* Manual reload gesture: bring the two controllers close together (~10 cm).
+       Simple proximity trigger - no closing-speed requirement, so it fires as
+       soon as they are near enough. Debounced until the hands separate again so
+       one approach triggers once. Distances are game units
+       (GAME_UNITS_PER_METRE == 2200, so ~220u = 10 cm). */
+    {
+        extern void PlayerRequestManualReload(void);
+        extern int ManualReloadEnabled; /* Controller Config toggle (VR on/off) */
+        static int reload_bump_armed = 1; /* 0 while waiting for the hands to separate */
+
+        if (ManualReloadEnabled && vr_left_hand_valid && vr_right_hand_valid) {
+            VECTORCH hd;
+            int dist;
+            hd.vx = vr_left_hand_world.vx - vr_right_hand_world.vx;
+            hd.vy = vr_left_hand_world.vy - vr_right_hand_world.vy;
+            hd.vz = vr_left_hand_world.vz - vr_right_hand_world.vz;
+            dist = Approximate3dMagnitude(&hd);
+
+            #define RELOAD_BUMP_CLOSE_DIST   220 /* ~10 cm grip-to-grip: trigger */
+            #define RELOAD_BUMP_RELEASE_DIST 450 /* ~20 cm: must separate to re-arm */
+
+            if (reload_bump_armed && dist < RELOAD_BUMP_CLOSE_DIST) {
+                PlayerRequestManualReload();
+                reload_bump_armed = 0;
+            }
+            if (dist > RELOAD_BUMP_RELEASE_DIST) reload_bump_armed = 1;
+        }
+        /* On tracking loss leave reload_bump_armed as-is (avoids a double-fire on a
+           brief dropout while the controllers are held close). */
+    }
+
     vr_is_rendering = 1;
 
     /* FPS counter — updated every 0.5 s to avoid flicker.

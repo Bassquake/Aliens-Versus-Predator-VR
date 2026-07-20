@@ -74,6 +74,8 @@ Controls are as follow:
 
 ![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers.jpg)
 
+If you have Manual Reload on, almost touch controllers close together to trigger it.
+
 I will probably add ability to customise all these.
 
 ## Extra features

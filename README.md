@@ -1,7 +1,7 @@
 # Aliens Versus Predator: VR
 
 > [!TIP]
-> Check the new 0.3 update on releases page. List of fixes and features added on there.
+> Check the new 0.4 update on releases page. List of fixes and features added on there.
 
 This is a fork of [atsb/NakedAvP](https://github.com/atsb/NakedAVP) to use OpenXR for VR headets like the Meta Quest. Confimed to work with Quest 2 and Quest 3 running 2.4 OS. 
 
@@ -82,6 +82,7 @@ I will probably add ability to customise all these.
 - Framerate counter can be toggled in Video/Video Options.
 - Antialiasing options added for MSAA in Video/Video Options.
 - Apparently works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack! Edit: Seems theres an issue with the hud and crosshair for Marine with the Redux Mod. Not sure if can fix.
+- Cheat modes can be toggled now for those faint of heart!
 
 ## To do
 - ~~Fix Battery Saver crash.~~ Fixed.
@@ -91,6 +92,9 @@ I will probably add ability to customise all these.
 - ~~Add cd music.~~ Added.
 - ~~Maybe add anti-aliasing options but not sure if really needed.~~ Added MSAA options in Audio/Video Options screen.
 - ~~Add multiplayer functionality if possible.~~ Added.
+- ~~Add cheat modes.~~ Added.
+- ~~Add ability to adjust HUD.~~ Added.
+- ~~Add Manual Reload option.~~ Added.
 - To add correct wall walking for Aliens on Quest. Works fine on Windows. 
 - Add option for left handed users.
 - Add ability to customise controller key mapping.

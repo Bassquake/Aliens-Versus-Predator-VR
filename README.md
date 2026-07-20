@@ -1,7 +1,7 @@
 # Aliens Versus Predator: VR
 
 > [!TIP]
-> Check the new 0.4 update on releases page. List of fixes and features added on there.
+> Check the new 0.4 update on releases page. List of fixes and features added on there. Aliens wall walking still broken though.
 
 This is a fork of [atsb/NakedAvP](https://github.com/atsb/NakedAVP) to use OpenXR for VR headets like the Meta Quest. Confimed to work with Quest 2 and Quest 3 running 2.4 OS. 
 

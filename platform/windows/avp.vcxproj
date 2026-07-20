@@ -1160,7 +1160,9 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\menus.c" />
     <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\main.c" />
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="K:\Coding\Aliens-Versus-Predator-VR\platform\windows\x64\ZERO_CHECK.vcxproj">
       <Project>{87131D87-3C9A-3E3F-A13C-57C1458E0A57}</Project>
@@ -1168,6 +1170,9 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Avp_32x32_8bit.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

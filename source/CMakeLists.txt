@@ -414,6 +414,10 @@ LIST(APPEND source src/main.c)
 ### (not normally used)
 ##SET_SOURCE_FILES_PROPERTIES(${source} PROPERTIES LANGUAGE CXX)
 
+if(WIN32)
+    list(APPEND AVP_SOURCES ../platform/windows/Resource.rc)
+endif()
+
 # auto-include directories with source files
 FOREACH(sourcefile IN LISTS source)
     GET_FILENAME_COMPONENT(includedir ${sourcefile} PATH) # newer CMake uses DIRECTORY

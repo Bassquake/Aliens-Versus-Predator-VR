@@ -673,4 +673,10 @@
       <UniqueIdentifier>{A5D8517C-4C72-3334-BDB8-CFCEFE919AB8}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Avp_32x32_8bit.ico" />
+  </ItemGroup>
 </Project>

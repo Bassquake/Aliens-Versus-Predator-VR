@@ -1704,18 +1704,44 @@ void AvpShowViewsVR(void)
         q.quatz =  (int)(xr_views[eye].pose.orientation.z * ONE_FIXED);
         QuatToMat(&q, &Global_VDB_Ptr->VDB_Mat);
 
-        /* Apply the snap/turn rotation (a yaw about the game-up axis).
-         * MatrixMultiply(A,B,C) -> C = B*A.
-         *   - Normal case (floor, and always for Marine/Predator): post-multiply,
-         *     VDB_Mat * snap_mat, which after the world->view transpose applies the
-         *     yaw in world space before the camera — a clean heading turn that does
-         *     not tilt when the head is pitched. This is the original behaviour and
-         *     must be preserved for everyone who isn't a climbing Alien.
-         *   - Climbing Alien only: pre-multiply, snap_mat * VDB_Mat, so that once
-         *     the world-space climb tilt is applied below the final view is
-         *     R * snap * HMD and the snap becomes a heading yaw about the wall's
-         *     up-normal (rather than spinning/rolling the tilted view). */
-        if (xr_snap_yaw != 0) {
+        /* Climbing Alien: split the head pose so its HEADING (yaw) is applied as a
+         * pan AFTER the tilt (below) while its pitch/roll stay before it - so
+         * turning the head pans along the wall instead of rolling. Extract the head
+         * heading from its horizontal forward (matrix row 3) and remove it here;
+         * re-applied after the tilt.
+         * TUNING (needs on-device check): if the view faces BACKWARDS, negate both
+         * S and C; if head-turn pans the WRONG way, that's the heading sign. */
+        MATRIXCH vr_head_yaw, vr_head_yaw_inv;
+        int vr_head_yaw_active = 0;
+        if (vr_climb_tilt_active) {
+            float fx = (float)Global_VDB_Ptr->VDB_Mat.mat31;   /* head forward, horizontal */
+            float fz = (float)Global_VDB_Ptr->VDB_Mat.mat33;
+            float mag = SDL_sqrtf(fx*fx + fz*fz);
+            if (mag > 1.0f) {
+                /* forward is row 3 negated (world->view row 3 is the camera's
+                 * backward axis), so negate both to get the true head heading. */
+                int S = -(int)((fx/mag)*65536.0f), C = -(int)((fz/mag)*65536.0f);
+                vr_head_yaw.mat11 =  C; vr_head_yaw.mat12 = 0;         vr_head_yaw.mat13 = -S;
+                vr_head_yaw.mat21 =  0; vr_head_yaw.mat22 = ONE_FIXED; vr_head_yaw.mat23 =  0;
+                vr_head_yaw.mat31 =  S; vr_head_yaw.mat32 = 0;         vr_head_yaw.mat33 =  C;
+                vr_head_yaw_inv.mat11 =  C; vr_head_yaw_inv.mat12 = 0;         vr_head_yaw_inv.mat13 =  S;
+                vr_head_yaw_inv.mat21 =  0; vr_head_yaw_inv.mat22 = ONE_FIXED; vr_head_yaw_inv.mat23 =  0;
+                vr_head_yaw_inv.mat31 = -S; vr_head_yaw_inv.mat32 = 0;         vr_head_yaw_inv.mat33 =  C;
+                MATRIXCH tmp;
+                MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vr_head_yaw_inv, &tmp); /* HeadYaw_inv * VDB_Mat */
+                Global_VDB_Ptr->VDB_Mat = tmp;
+                vr_head_yaw_active = 1;
+            }
+        }
+
+        /* Apply the snap/turn rotation. Off the wall it's a yaw about the game-up
+         * axis: post-multiply VDB_Mat * snap_mat, which after the world->view
+         * transpose applies the yaw in world space before the camera — a clean
+         * heading turn that does not tilt when the head is pitched. Original
+         * behaviour, kept for the floor and always for Marine/Predator.
+         * A climbing Alien handles the snap separately, after the tilt (below),
+         * so it pans around the wall instead of rolling. */
+        if (xr_snap_yaw != 0 && !vr_climb_tilt_active) {
             int snap_s = GetSin(xr_snap_yaw);
             int snap_c = GetCos(xr_snap_yaw);
             MATRIXCH snap_mat;
@@ -1723,10 +1749,7 @@ void AvpShowViewsVR(void)
             snap_mat.mat21 = 0;       snap_mat.mat22 = ONE_FIXED; snap_mat.mat23 = 0;
             snap_mat.mat31 =  snap_s; snap_mat.mat32 = 0;         snap_mat.mat33 =  snap_c;
             MATRIXCH snapped;
-            if (vr_climb_tilt_active)
-                MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &snap_mat, &snapped); /* snap_mat * VDB_Mat */
-            else
-                MatrixMultiply(&snap_mat, &Global_VDB_Ptr->VDB_Mat, &snapped); /* VDB_Mat * snap_mat */
+            MatrixMultiply(&snap_mat, &Global_VDB_Ptr->VDB_Mat, &snapped); /* VDB_Mat * snap_mat */
             Global_VDB_Ptr->VDB_Mat = snapped;
         }
 
@@ -1739,6 +1762,76 @@ void AvpShowViewsVR(void)
             MATRIXCH tilted;
             MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vr_climb_tilt, &tilted);
             Global_VDB_Ptr->VDB_Mat = tilted;
+        }
+
+        /* Re-apply the head heading as a pan AFTER the tilt (removed before it,
+         * above) so turning the head pans along the wall instead of rolling. */
+        if (vr_head_yaw_active) {
+            MATRIXCH tmp;
+            MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vr_head_yaw, &tmp); /* HeadYaw * VDB_Mat */
+            Global_VDB_Ptr->VDB_Mat = tmp;
+        }
+
+        /* Climbing snap turn: yaw about world-vertical (Y), left-multiplied AFTER
+         * the tilt so it pans the tilted view's heading around the wall instead of
+         * rolling it. By elimination: the known-good tilt rotates about the wall's
+         * horizontal tangent (= pitch), rotating about the wall normal was roll
+         * (previous test), so the remaining vertical axis is the pan/heading axis.
+         * The original code applied this same yaw BEFORE the tilt, which is why it
+         * rolled. (If the pan turns the wrong WAY, negate xr_snap_yaw here.) */
+        if (vr_climb_tilt_active && xr_snap_yaw != 0) {
+            int snap_s = GetSin(xr_snap_yaw);
+            int snap_c = GetCos(xr_snap_yaw);
+            MATRIXCH snap_mat;
+            snap_mat.mat11 =  snap_c; snap_mat.mat12 = 0;         snap_mat.mat13 = -snap_s;
+            snap_mat.mat21 = 0;       snap_mat.mat22 = ONE_FIXED; snap_mat.mat23 = 0;
+            snap_mat.mat31 =  snap_s; snap_mat.mat32 = 0;         snap_mat.mat33 =  snap_c;
+            MATRIXCH panned;
+            MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &snap_mat, &panned); /* snap_mat * VDB_Mat */
+            Global_VDB_Ptr->VDB_Mat = panned;
+        }
+
+        /* Keep the hands/weapon in front of the face through the climb tilt.
+         * Movement (VR_RotateMoveVelocity in pmove.c) rotates a head-frame velocity
+         * by R (= vr_climb_tilt) to align it with the tilted view, and that works.
+         * A hand is a POSITION in that view - the inverse relationship - so rotate
+         * its offset-from-eye and its orientation by R^T instead. This is the
+         * minimal transform: no reference view, head-heading split or snap folded
+         * in (those all sent the marker behind / orbiting). Done once (eye 0);
+         * GRIP_TO_GAME rebuilds the raw poses next frame so this doesn't accumulate.
+         * (RotateVector(v, M) computes M^T*v, so RotateVector(v, R) gives R^T*v.) */
+        if (eye == 0 && vr_climb_tilt_active) {
+            MATRIXCH RT;   /* R^T = transpose of vr_climb_tilt, for the orientation */
+            RT.mat11 = vr_climb_tilt.mat11; RT.mat12 = vr_climb_tilt.mat21; RT.mat13 = vr_climb_tilt.mat31;
+            RT.mat21 = vr_climb_tilt.mat12; RT.mat22 = vr_climb_tilt.mat22; RT.mat23 = vr_climb_tilt.mat32;
+            RT.mat31 = vr_climb_tilt.mat13; RT.mat32 = vr_climb_tilt.mat23; RT.mat33 = vr_climb_tilt.mat33;
+
+            if (vr_right_hand_valid) {
+                VECTORCH off;
+                off.vx = vr_right_hand_world.vx - base_world.vx;
+                off.vy = vr_right_hand_world.vy - base_world.vy;
+                off.vz = vr_right_hand_world.vz - base_world.vz;
+                RotateVector(&off, &vr_climb_tilt);            /* off = R^T * off */
+                vr_right_hand_world.vx = base_world.vx + off.vx;
+                vr_right_hand_world.vy = base_world.vy + off.vy;
+                vr_right_hand_world.vz = base_world.vz + off.vz;
+                MATRIXCH hm;
+                MatrixMultiply(&vr_right_hand_mat, &RT, &hm);  /* hm = R^T * hand_mat */
+                vr_right_hand_mat = hm;
+            }
+            if (vr_left_hand_valid) {
+                VECTORCH off;
+                off.vx = vr_left_hand_world.vx - base_world.vx;
+                off.vy = vr_left_hand_world.vy - base_world.vy;
+                off.vz = vr_left_hand_world.vz - base_world.vz;
+                RotateVector(&off, &vr_climb_tilt);
+                vr_left_hand_world.vx = base_world.vx + off.vx;
+                vr_left_hand_world.vy = base_world.vy + off.vy;
+                vr_left_hand_world.vz = base_world.vz + off.vz;
+                MATRIXCH hm;
+                MatrixMultiply(&vr_left_hand_mat, &RT, &hm);
+                vr_left_hand_mat = hm;
+            }
         }
 
         /* Capture the head-tracked orientation (same for both eyes) for 3D audio.

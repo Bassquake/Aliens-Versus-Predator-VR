@@ -373,30 +373,50 @@ static void VR_RotateMoveVelocity(DYNAMICSBLOCK *dynPtr)
 		return;
 	}
 
-	/* 1. HMD horizontal heading: body forward -> where the player is looking. */
-	MATRIXCH hm;
-	hm.mat11 = xr_hmd_move_cos; hm.mat12 = 0;         hm.mat13 = -xr_hmd_move_sin;
-	hm.mat21 = 0;               hm.mat22 = ONE_FIXED; hm.mat23 = 0;
-	hm.mat31 = xr_hmd_move_sin; hm.mat32 = 0;         hm.mat33 = xr_hmd_move_cos;
-	RotateVector(&dynPtr->LinVelocity, &hm);
+	/* Body down axis (world space) = OrientMat row 2, which the physics homes onto
+	   the contact-surface normal. ~(0,1,0) on the floor, ~horizontal on a wall,
+	   ~(0,-1,0) on a ceiling. */
+	float bx = dynPtr->OrientMat.mat21 / 65536.0f;
+	float by = dynPtr->OrientMat.mat22 / 65536.0f;
+	float bz = dynPtr->OrientMat.mat23 / 65536.0f;
+	float blen = sqrtf(bx*bx + by*by + bz*bz);
+	if (blen > 0.0001f) { bx /= blen; by /= blen; bz /= blen; }
 
-	/* 2. Wall/ceiling: rotate the heading-relative velocity onto the surface. R
-	   is the shortest-arc rotation taking world-down (0,1,0) onto the body's down
-	   axis (OrientMat row 2), which the physics homes onto the contact surface.
-	   So the flat-ground "forward" is bent up/along the wall. On the floor the
-	   body is upright, so R is identity (handled below when the horizontal
-	   magnitude s is ~0) and this is a no-op. The body down axis is ~(0,1,0) on
-	   the floor, ~horizontal on a wall, ~(0,-1,0) on a ceiling. */
+	float s = sqrtf(bx*bx + bz*bz);  /* sin(tilt) = horizontal magnitude of down axis */
+	float c = by;                    /* cos(tilt) */
+
+	/* 1. Base heading: rotate the stick's body-forward onto a world horizontal
+	   direction, before the surface tilt R below.
+	     - Floor (upright): follow the HMD horizontal heading, so movement tracks
+	       where the player looks (original behaviour).
+	     - Wall/ceiling: re-anchor to the wall so "forward" runs UP the wall no
+	       matter where the head points. R (step 2) maps the horizontal "toward the
+	       wall" direction (the down axis' horizontal projection) onto up-the-wall,
+	       so we aim the base heading there. This is the on-grab heading reset the
+	       desktop build gets for free from the body orientation. */
+	int head_sin, head_cos;
+	static int last_wall_sin = 0, last_wall_cos = 65536; /* continuity onto a flat ceiling */
+	if (s > 0.0001f) {
+		head_sin = (int)((bx / s) * 65536.0f);   /* toward-wall horizontal unit vector */
+		head_cos = (int)((bz / s) * 65536.0f);
+		last_wall_sin = head_sin; last_wall_cos = head_cos;
+	} else if (c < 0.0f) {
+		head_sin = last_wall_sin; head_cos = last_wall_cos;   /* flat ceiling: keep last */
+	} else {
+		head_sin = xr_hmd_move_sin; head_cos = xr_hmd_move_cos; /* upright floor: HMD heading */
+	}
 	{
-		float bx = dynPtr->OrientMat.mat21 / 65536.0f;   /* body down axis, world space */
-		float by = dynPtr->OrientMat.mat22 / 65536.0f;
-		float bz = dynPtr->OrientMat.mat23 / 65536.0f;
-		float blen = sqrtf(bx*bx + by*by + bz*bz);
-		if (blen > 0.0001f) { bx /= blen; by /= blen; bz /= blen; }
+		MATRIXCH hm;
+		hm.mat11 = head_cos; hm.mat12 = 0;         hm.mat13 = -head_sin;
+		hm.mat21 = 0;        hm.mat22 = ONE_FIXED; hm.mat23 = 0;
+		hm.mat31 = head_sin; hm.mat32 = 0;         hm.mat33 = head_cos;
+		RotateVector(&dynPtr->LinVelocity, &hm);
+	}
 
-		float s = sqrtf(bx*bx + bz*bz);  /* sin(tilt) = horizontal magnitude */
-		float c = by;                    /* cos(tilt) */
-
+	/* 2. Surface tilt R: shortest-arc rotation taking world-down (0,1,0) onto the
+	   body down axis, bending the flat "forward" up/along the wall. Identity on the
+	   floor (skipped when upright). */
+	{
 		/* Reused on a flat ceiling (down exactly antipodal, axis undefined) to
 		   keep the roll continuous through the wall->ceiling climb. */
 		static float last_ax = 1.0f, last_az = 0.0f;

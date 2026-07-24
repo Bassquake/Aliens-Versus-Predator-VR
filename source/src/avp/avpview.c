@@ -2189,6 +2189,30 @@ void AvpShowViewsVR(void)
                     if (is_idle)
                         hmc->timer_increment = 0;
                 }
+                /* --- VR: shrink the first-person arms + weapon in view ------
+                 * The whole arms/weapon HModel is rotated by ObMat at its root
+                 * and, per Process_Section (hmodel.c), a uniform scale baked into
+                 * ObMat propagates down every bone — so arms and gun shrink
+                 * together about the grip (ObWorld) while staying pinned to the
+                 * hand. We scale a fresh copy each eye (ObMat is reassigned from
+                 * the controller pose above), so nothing accumulates, and the
+                 * muzzle flash below follows because it reads the (now-scaled)
+                 * barrel bone DoHModel just recomputed. VR-only: the desktop/HUD
+                 * weapon paths never run through here. 1.0 = normal (exact
+                 * no-op); lower = smaller. Tune to taste. */
+                #define VR_WEAPON_VIEW_SCALE 1.00f
+                {
+                    MATRIXCH *wm = &PlayersWeapon.ObMat;
+                    wm->mat11 = (int)(wm->mat11 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat12 = (int)(wm->mat12 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat13 = (int)(wm->mat13 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat21 = (int)(wm->mat21 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat22 = (int)(wm->mat22 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat23 = (int)(wm->mat23 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat31 = (int)(wm->mat31 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat32 = (int)(wm->mat32 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat33 = (int)(wm->mat33 * VR_WEAPON_VIEW_SCALE);
+                }
                 RenderThisDisplayblock(&PlayersWeapon);
                 if (!is_alien && PlayersWeapon.HModelControlBlock)
                     PlayersWeapon.HModelControlBlock->timer_increment = saved_ti;

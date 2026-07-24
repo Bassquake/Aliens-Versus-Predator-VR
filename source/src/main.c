@@ -1440,10 +1440,24 @@ static void handle_xr_events(void)
             case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING:
                 xr_should_quit = true;
                 break;
+            case XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING: {
+                /* The runtime recentred our reference space — e.g. the user held
+                 * the Meta button to "Reset View". Our cached VR calibration
+                 * (heading, room-scale X/Z origin, and ref_head_y which sets the
+                 * eyeline height scale) is now relative to the OLD origin, so
+                 * re-run the same calibration the first VR frame does. Recapture
+                 * happens on the next AvpShowViewsVR when it sees this flag. */
+                XrEventDataReferenceSpaceChangePending *rc =
+                        (XrEventDataReferenceSpaceChangePending*)&event_buffer;
+                SDL_Log("XR reference space recentred (type %d) — recalibrating VR",
+                        (int)rc->referenceSpaceType);
+                vr_recalibrate = 1;
+                break;
+            }
             default:
                 break;
         }
-        
+
         event_buffer.type = XR_TYPE_EVENT_DATA_BUFFER;
     }
 }

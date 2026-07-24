@@ -1399,6 +1399,14 @@ void AvpShowViewsVR(void)
      * Y is not captured here — it uses absolute STAGE height for floor alignment. */
     static float ref_head_x = 0.0f, ref_head_y = 0.0f, ref_head_z = 0.0f;
     static bool  ref_captured = false;
+    /* Reference scale that anchors the first-person weapon's on-screen size
+     * (captured once below, then held for the session). Deliberately NOT cleared
+     * on recenter: the gun keeps one constant on-screen size regardless of
+     * standing/seated/recenter. Re-anchoring it here instead made the gun grow
+     * when you stood up and recentred — a taller head lowers vr_y_scale, which
+     * maps the hand nearer in game units, so a re-anchored fixed-size gun fills
+     * more of the view. */
+    static float vr_weapon_ref_scale = 0.0f;
     if (vr_recalibrate) {
         ref_captured  = false;
         vr_recalibrate = 0;
@@ -1460,6 +1468,17 @@ void AvpShowViewsVR(void)
     if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright)
         cached_vr_y_scale = (float)game_eye_to_floor / ref_head_y;
     float vr_y_scale = cached_vr_y_scale;
+
+    /* Anchor for the first-person weapon's on-screen size. The gun is a fixed
+     * game-unit model placed at the hand, and the hand's distance from the eye
+     * scales with vr_y_scale — so its apparent size would drift whenever
+     * vr_y_scale changes (standing vs seated after a recenter, or the character
+     * crouching). Capture vr_y_scale from the first genuine, upright calibration
+     * and hold it for the session; the weapon-scale code below multiplies by
+     * vr_y_scale/vr_weapon_ref_scale so the gun keeps that one constant on-screen
+     * size no matter how vr_y_scale later changes. */
+    if (vr_weapon_ref_scale <= 0.0f && ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright)
+        vr_weapon_ref_scale = vr_y_scale;
 
     /* Head-centre room-scale offset in game units, for the network so remote
        players see room-scale walking. Same transform as the per-eye camera offset
@@ -2192,26 +2211,57 @@ void AvpShowViewsVR(void)
                 /* --- VR: shrink the first-person arms + weapon in view ------
                  * The whole arms/weapon HModel is rotated by ObMat at its root
                  * and, per Process_Section (hmodel.c), a uniform scale baked into
-                 * ObMat propagates down every bone — so arms and gun shrink
-                 * together about the grip (ObWorld) while staying pinned to the
-                 * hand. We scale a fresh copy each eye (ObMat is reassigned from
-                 * the controller pose above), so nothing accumulates, and the
-                 * muzzle flash below follows because it reads the (now-scaled)
-                 * barrel bone DoHModel just recomputed. VR-only: the desktop/HUD
-                 * weapon paths never run through here. 1.0 = normal (exact
-                 * no-op); lower = smaller. Tune to taste. */
-                #define VR_WEAPON_VIEW_SCALE 1.00f
+                 * ObMat propagates down every bone — so baking wscale into ObMat
+                 * shrinks arms+gun together. We do it on a fresh copy each eye
+                 * (ObMat is reassigned from the controller pose above), so nothing
+                 * accumulates, and the muzzle flash below follows because it reads
+                 * the (now-scaled) barrel bone DoHModel just recomputed. VR-only:
+                 * the desktop/HUD weapon paths never run through here. 1.0 =
+                 * normal (exact no-op); lower = smaller. Tune to taste. */
+                #define VR_WEAPON_VIEW_SCALE 0.90f
                 {
+                    /* Keep the gun a constant on-screen size regardless of the
+                     * eyeline/room scale (which recenter recomputes). The hand is
+                     * placed at a distance ∝ vr_y_scale, so scale by the same ratio
+                     * relative to the first-calibration reference: at the reference
+                     * this equals VR_WEAPON_VIEW_SCALE (its tuned look), and it
+                     * holds that apparent size across recenters. */
+                    float wscale = VR_WEAPON_VIEW_SCALE;
+                    if (vr_weapon_ref_scale > 0.0f)
+                        wscale *= vr_y_scale / vr_weapon_ref_scale;
+
+                    /* Scale about the GRIP (the controller), not the model origin.
+                     * ObWorld sits a fixed offset FORWARD of the grip (the
+                     * VR_WEAPON_OFFSET pullback), so baking wscale into ObMat alone
+                     * scales the model about that origin and slides the grip along
+                     * the gun as wscale varies — standing lowers wscale, creeping
+                     * the grip up the barrel so the hand ends up partway up the gun.
+                     * Pulling ObWorld toward the hand by the same wscale scales the
+                     * whole assembly (offset included) about the grip instead, so
+                     * the grip stays pinned to the controller and every part keeps a
+                     * constant physical offset from the hand at any wscale. */
+                    if (vr_right_hand_valid) {
+                        PlayersWeapon.ObWorld.vx = vr_right_hand_world.vx + (int)((PlayersWeapon.ObWorld.vx - vr_right_hand_world.vx) * wscale);
+                        PlayersWeapon.ObWorld.vy = vr_right_hand_world.vy + (int)((PlayersWeapon.ObWorld.vy - vr_right_hand_world.vy) * wscale);
+                        PlayersWeapon.ObWorld.vz = vr_right_hand_world.vz + (int)((PlayersWeapon.ObWorld.vz - vr_right_hand_world.vz) * wscale);
+                        VECTORCH ov;
+                        ov.vx = PlayersWeapon.ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
+                        ov.vy = PlayersWeapon.ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
+                        ov.vz = PlayersWeapon.ObWorld.vz - Global_VDB_Ptr->VDB_World.vz;
+                        RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
+                        PlayersWeapon.ObView = ov;
+                    }
+
                     MATRIXCH *wm = &PlayersWeapon.ObMat;
-                    wm->mat11 = (int)(wm->mat11 * VR_WEAPON_VIEW_SCALE);
-                    wm->mat12 = (int)(wm->mat12 * VR_WEAPON_VIEW_SCALE);
-                    wm->mat13 = (int)(wm->mat13 * VR_WEAPON_VIEW_SCALE);
-                    wm->mat21 = (int)(wm->mat21 * VR_WEAPON_VIEW_SCALE);
-                    wm->mat22 = (int)(wm->mat22 * VR_WEAPON_VIEW_SCALE);
-                    wm->mat23 = (int)(wm->mat23 * VR_WEAPON_VIEW_SCALE);
-                    wm->mat31 = (int)(wm->mat31 * VR_WEAPON_VIEW_SCALE);
-                    wm->mat32 = (int)(wm->mat32 * VR_WEAPON_VIEW_SCALE);
-                    wm->mat33 = (int)(wm->mat33 * VR_WEAPON_VIEW_SCALE);
+                    wm->mat11 = (int)(wm->mat11 * wscale);
+                    wm->mat12 = (int)(wm->mat12 * wscale);
+                    wm->mat13 = (int)(wm->mat13 * wscale);
+                    wm->mat21 = (int)(wm->mat21 * wscale);
+                    wm->mat22 = (int)(wm->mat22 * wscale);
+                    wm->mat23 = (int)(wm->mat23 * wscale);
+                    wm->mat31 = (int)(wm->mat31 * wscale);
+                    wm->mat32 = (int)(wm->mat32 * wscale);
+                    wm->mat33 = (int)(wm->mat33 * wscale);
                 }
                 RenderThisDisplayblock(&PlayersWeapon);
                 if (!is_alien && PlayersWeapon.HModelControlBlock)

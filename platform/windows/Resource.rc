@@ -2,13 +2,20 @@
 //
 #include "resource.h"
 
-#define VS_VERSION_INFO 1
+// Pulls in the Windows resource macros this script relies on — LANG_ENGLISH /
+// SUBLANG_ENGLISH_UK, VS_VERSION_INFO, VERSIONINFO, BLOCK, VALUE, the FILEOS/FILETYPE
+// flags, etc. Without it every one of those is undefined and the resource compiler
+// (rc.exe or windres) fails with "PRIMARY LANGUAGE ID not a number",
+// "file not found: VS_VERSION_INFO", "unexpected value in RCDATA", and so on.
+#define APSTUDIO_READONLY_SYMBOLS
+#include "winres.h"
+#undef APSTUDIO_READONLY_SYMBOLS
 
 /////////////////////////////////////////////////////////////////////////////
 // English (United Kingdom) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENG)
-LANGUAGE 0x09, 0x02
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
 #pragma code_page(1252)
 
 #ifdef APSTUDIO_INVOKED
@@ -52,7 +59,7 @@ IDI_ICON1               ICON                    "Avp_32x32_8bit.ico"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,4,0,0
+ FILEVERSION 0,5,0,0
  PRODUCTVERSION 1,0,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
@@ -70,7 +77,7 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Bassquake"
             VALUE "FileDescription", "Aliens versus Predator Classic for Windows ported from NakedAvP to VR."
-            VALUE "FileVersion", "0.4.0.0"
+            VALUE "FileVersion", "0.5.0.0"
             VALUE "InternalName", "avp.exe"
             VALUE "LegalCopyright", "Copyright (C) 2026"
             VALUE "OriginalFilename", "avp.exe"
@@ -98,3 +105,4 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
+

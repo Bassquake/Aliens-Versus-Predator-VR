@@ -11338,17 +11338,34 @@ void DoMultiplayerSpecificHud()
 	PLAYER_STATUS *playerStatusPtr= (PLAYER_STATUS *) (Player->ObStrategyBlock->SBdataptr);
 	char text[200];
 
-	//Show score table if either 
+	//Show score table if either
 	//1. Player has asked to
 	//2. Game is over
 	//3. Player is dead and not observing anyone
-	if(ShowMultiplayerScoreTimer>0 || 
+	int scoreVisible = (ShowMultiplayerScoreTimer>0 ||
 		netGameData.myGameState==NGS_EndGameScreen ||
-		(!playerStatusPtr->IsAlive && !MultiplayerObservedPlayer))
+		(!playerStatusPtr->IsAlive && !MultiplayerObservedPlayer));
+
+	if(scoreVisible)
 	{
+#ifdef __ANDROID__
+		/* VR: the score table is drawn once into a world-locked floating quad by
+		   AvpShowViewsVR (it reads vr_scoreboard_visible and re-runs
+		   DoMultiplayerEndGameScreen into an offscreen surface), so it isn't glued
+		   to the head like the rest of the HUD. Publish visibility for the
+		   compositor and skip the per-eye head-locked draw when rendering VR.
+		   These VR globals only exist in the Android build; avpview.c clears
+		   vr_scoreboard_visible each VR frame, so we only ever set it here. */
+		extern int vr_is_rendering, vr_scoreboard_visible;
+		if(vr_is_rendering)
+			vr_scoreboard_visible = 1;
+		else
+			DoMultiplayerEndGameScreen();
+#else
 		DoMultiplayerEndGameScreen();
+#endif
 	}
-	else 
+	else
 	{
 		
 		if(MultiplayerObservedPlayer)

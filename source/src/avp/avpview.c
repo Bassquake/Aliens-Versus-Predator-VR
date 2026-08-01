@@ -103,6 +103,38 @@ static int msaa_ext_checked   = 0;
 static int msaa_ext_available = 0;
 static int eye_fbo_samples    = 0;   /* sample count the eye FBOs were last built with */
 
+/* Offscreen RGBA surface the MP score table is rendered into once per frame, so
+ * the compositor (main.c) can float it as a world-locked quad instead of the
+ * per-eye head-locked HUD. Created lazily by VR_EnsureScoreFBO(). vr_score_tex /
+ * vr_score_quad_ready are read by main.c. 4:3 to match the quad's aspect. */
+static GLuint score_fbo   = 0;
+static const int score_fbo_w = 1024, score_fbo_h = 768;
+GLuint vr_score_tex        = 0;
+int    vr_score_quad_ready = 0;
+
+static void VR_EnsureScoreFBO(void)
+{
+    if (score_fbo) return;
+    glGenTextures(1, &vr_score_tex);
+    glBindTexture(GL_TEXTURE_2D, vr_score_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, score_fbo_w, score_fbo_h, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenFramebuffers(1, &score_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, score_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, vr_score_tex, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        SDL_Log("VR: score FBO incomplete");
+        glDeleteFramebuffers(1, &score_fbo); score_fbo = 0;
+        glDeleteTextures(1, &vr_score_tex);  vr_score_tex = 0;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 static void VR_InitMSAAProcs(void)
 {
     if (msaa_ext_checked) return;
@@ -130,6 +162,10 @@ static int VR_EffectiveMSAASamples(void)
 
 /* Set to 1 during AvpShowViewsVR so kshape.c can skip the 4/3 Y-axis correction */
 int vr_is_rendering = 0;
+/* Set each frame by DoMultiplayerSpecificHud (pldnet.c): 1 when the MP score table
+ * should be shown AND we're rendering VR, so AvpShowViewsVR draws it into a floating
+ * quad and the per-eye head-locked draw is skipped. Always 0 on desktop. */
+int vr_scoreboard_visible = 0;
 /* Set to 1 before a new game starts; AvpShowViewsVR resets the room-scale anchor
  * and computes xr_snap_yaw so the player starts facing the correct game direction. */
 int vr_recalibrate = 1;
@@ -1596,6 +1632,11 @@ void AvpShowViewsVR(void)
     }
 
     vr_is_rendering = 1;
+    /* Recomputed by DoMultiplayerSpecificHud during the per-eye MaintainHUD below;
+     * consumed after the eye loop to render the floating score quad. Reset here so a
+     * stale value from a previous frame/mode can't leave the quad up. */
+    vr_scoreboard_visible = 0;
+    vr_score_quad_ready   = 0;
 
     /* FPS counter — updated every 0.5 s to avoid flicker.
        Format: "60/72" = measured game fps / headset target hz from OpenXR. */
@@ -2432,6 +2473,82 @@ void AvpShowViewsVR(void)
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
         VR_ReleaseSwapchainImage(eye);
 
+    }
+
+    /* --- MP score table: render ONCE into an offscreen surface so the compositor
+     * (main.c) can float it as a world-locked quad instead of the per-eye
+     * head-locked HUD. DoMultiplayerSpecificHud (pldnet.c) set vr_scoreboard_visible
+     * during the per-eye MaintainHUD above and, in VR, skipped the head-locked draw
+     * so it isn't shown twice. Drawn after both eyes so it can't disturb them.
+     *
+     * The surface is cleared to a semi-transparent dark panel (PREMULTIPLIED alpha:
+     * rgb already scaled by alpha, so pure black premult is just (0,0,0,A)) and the
+     * quad layer uses XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT so the world
+     * shows through, dimmed. SCORE_PANEL_ALPHA tunes it: 1.0 = opaque, lower = more
+     * world visible. HUD text is additive (GL_SRC_ALPHA,GL_ONE) so it stays bright on
+     * the dark panel. */
+    #define SCORE_PANEL_ALPHA 0.72f
+    if (vr_scoreboard_visible) {
+        extern void DoMultiplayerEndGameScreen(void);
+        VR_EnsureScoreFBO();
+        if (score_fbo) {
+            SCREENDESCRIPTORBLOCK saved_score_sdb = ScreenDescriptorBlock;
+            float saved_hud_scale = vr_hud_clip_scale;
+            float saved_hud_ox    = vr_hud_offset_x;
+            float saved_hud_oy    = vr_hud_offset_y;
+
+            glBindFramebuffer(GL_FRAMEBUFFER, score_fbo);
+            glViewport(0, 0, score_fbo_w, score_fbo_h);
+            /* Re-establish the game shader + engine texture/filter caches before
+             * driving the HUD text pipeline out here (after the eye loop). Without
+             * this the font texture binding is stale and nothing draws — this is the
+             * same reset AvpShowViewsVR does at frame start and the FMV path does. */
+            RestoreGameShaderState();
+            glDisable(GL_DEPTH_TEST);
+            /* Premultiplied dark panel: rgb = 0 (black), alpha = SCORE_PANEL_ALPHA. */
+            glClearColor(0.0f, 0.0f, 0.0f, SCORE_PANEL_ALPHA);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            /* Neutral HUD mapping: D3D_HUDQuad_Output maps SDB coords straight
+             * across the whole surface (no head-lock scale/offset). */
+            ScreenDescriptorBlock.SDB_Width    = score_fbo_w;
+            ScreenDescriptorBlock.SDB_Height   = score_fbo_h;
+            ScreenDescriptorBlock.SDB_CentreX  = score_fbo_w / 2;
+            ScreenDescriptorBlock.SDB_CentreY  = score_fbo_h / 2;
+            ScreenDescriptorBlock.SDB_ClipLeft  = 0;
+            ScreenDescriptorBlock.SDB_ClipRight = score_fbo_w;
+            ScreenDescriptorBlock.SDB_ClipUp    = 0;
+            ScreenDescriptorBlock.SDB_ClipDown  = score_fbo_h;
+            vr_hud_clip_scale = 1.0f;
+            vr_hud_offset_x   = 0.0f;
+            vr_hud_offset_y   = 0.0f;
+
+            DoMultiplayerEndGameScreen();
+            FlushRenderBuffer();
+
+            /* Force a UNIFORM panel alpha across the whole surface. HUD text is drawn
+             * additively (GL_SRC_ALPHA,GL_ONE), which drives the alpha of every glyph
+             * cell toward 1 (opaque) — so each text cell was compositing as an opaque
+             * black box over the semi-transparent panel. Rewrite ONLY the alpha channel
+             * (colour mask R,G,B off) back to SCORE_PANEL_ALPHA everywhere, keeping the
+             * additive RGB (dark panel + bright text). Result: one even translucency,
+             * no per-glyph boxes. If the runtime ignores quad alpha this still reads as
+             * a solid dark panel with bright text. */
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+            glClearColor(0.0f, 0.0f, 0.0f, SCORE_PANEL_ALPHA);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+            ScreenDescriptorBlock = saved_score_sdb;
+            vr_hud_clip_scale = saved_hud_scale;
+            vr_hud_offset_x   = saved_hud_ox;
+            vr_hud_offset_y   = saved_hud_oy;
+            glEnable(GL_DEPTH_TEST);
+            /* Leave clean state for the compositor blit / next frame. */
+            RestoreGameShaderState();
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            vr_score_quad_ready = 1;
+        }
     }
 
     vr_is_rendering = 0;

@@ -508,6 +508,20 @@ VRSwapchain *vr_swapchains = NULL;
  * by the 3D path; reusing an MSAA-touched image for the flat menu made the Quest
  * compositor null-deref under Battery Saver when opening the in-game pause menu. */
 static VRSwapchain vr_menu_swapchain = {0};
+/* Dedicated swapchain for the MP score-table quad layer (floats over the 3D
+ * world while dead / showing scores). Same rationale as the menu swapchain —
+ * kept separate from the MSAA per-eye images. Fed from avpview.c's vr_score_tex. */
+static VRSwapchain vr_score_swapchain = {0};
+/* Floating MP scoreboard, produced by avpview.c (AvpShowViewsVR). */
+extern int    vr_scoreboard_visible; /* 1 when the score table should float this frame */
+extern GLuint vr_score_tex;          /* RGBA offscreen holding the rendered score table */
+extern int    vr_score_quad_ready;   /* 1 once vr_score_tex has been drawn this frame */
+/* Set by the recenter event (handle_xr_events) so the floating scoreboard re-anchors
+ * in front of the new facing; consumed in render_frame. */
+static int    vr_score_reanchor = 0;
+/* Same, for the 2D menu/intro quad: a recenter while a menu or intro is up re-anchors
+ * it in front of the new facing (otherwise it stays put and recenter looks inert). */
+static int    vr_menu_reanchor = 0;
 XrView *xr_views = NULL;
 Uint32 view_count = 0;
 
@@ -580,6 +594,15 @@ static void destroy_xr_resources(void)
         vr_menu_swapchain.swapchain   = XR_NULL_HANDLE;
         vr_menu_swapchain.images      = NULL;
         vr_menu_swapchain.image_count = 0;
+    }
+
+    /* Dedicated MP scoreboard swapchain */
+    if (vr_score_swapchain.swapchain) {
+        SDL_free(vr_score_swapchain.images);
+        if (pfn_xrDestroySwapchain) pfn_xrDestroySwapchain(vr_score_swapchain.swapchain);
+        vr_score_swapchain.swapchain   = XR_NULL_HANDLE;
+        vr_score_swapchain.images      = NULL;
+        vr_score_swapchain.image_count = 0;
     }
 
     if (xr_views) { SDL_free(xr_views); xr_views = NULL; }
@@ -1377,6 +1400,42 @@ static bool create_swapchains(void)
                 vr_menu_swapchain.image_count > 0 ? vr_menu_swapchain.images[0].image : 0);
     }
 
+    /* Dedicated 4:3 swapchain for the floating MP score-table quad — same setup as
+     * the menu swapchain (non-MSAA, alpha-capable format), presented as an
+     * alpha-blended overlay on top of the 3D world when the player is dead/showing
+     * scores. Matches the 1024x768 score FBO in avpview.c. */
+    if (vr_score_swapchain.swapchain == XR_NULL_HANDLE) {
+        XrSwapchainCreateInfo ssci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+        ssci.usageFlags  = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+        ssci.format      = chosen_fmt;
+        ssci.sampleCount = 1;
+        ssci.width       = 1024;
+        ssci.height      = 768;
+        ssci.faceCount   = 1;
+        ssci.arraySize   = 1;
+        ssci.mipCount    = 1;
+        result = pfn_xrCreateSwapchain(xr_session, &ssci, &vr_score_swapchain.swapchain);
+        if (XR_FAILED(result)) {
+            SDL_Log("XR: score xrCreateSwapchain failed: %d", (int)result);
+            return false;
+        }
+        vr_score_swapchain.size.width  = (int32_t)ssci.width;
+        vr_score_swapchain.size.height = (int32_t)ssci.height;
+        pfn_xrEnumerateSwapchainImages(vr_score_swapchain.swapchain, 0,
+                                       &vr_score_swapchain.image_count, NULL);
+        vr_score_swapchain.images = SDL_calloc(vr_score_swapchain.image_count,
+                                               sizeof(XrSwapchainImageOpenGLESKHR));
+        for (Uint32 j = 0; j < vr_score_swapchain.image_count; j++)
+            vr_score_swapchain.images[j].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+        pfn_xrEnumerateSwapchainImages(vr_score_swapchain.swapchain,
+                                       vr_score_swapchain.image_count,
+                                       &vr_score_swapchain.image_count,
+                                       (XrSwapchainImageBaseHeader*)vr_score_swapchain.images);
+        SDL_Log("XR: score swapchain: %dx%d, %u images (tex[0]=%u)",
+                ssci.width, ssci.height, vr_score_swapchain.image_count,
+                vr_score_swapchain.image_count > 0 ? vr_score_swapchain.images[0].image : 0);
+    }
+
     /* Init GLES quad pipeline + resources (once) */
     if (quad_program == 0) {
         if (!create_quad_gles_program())    return false;
@@ -1452,6 +1511,8 @@ static void handle_xr_events(void)
                 SDL_Log("XR reference space recentred (type %d) — recalibrating VR",
                         (int)rc->referenceSpaceType);
                 vr_recalibrate = 1;
+                vr_score_reanchor = 1; /* re-anchor the floating scoreboard in front */
+                vr_menu_reanchor  = 1; /* re-anchor the 2D menu/intro quad in front */
                 break;
             }
             default:
@@ -1817,8 +1878,10 @@ static void render_frame(void)
     XrCompositionLayerProjectionView *proj_views = NULL;
     XrCompositionLayerProjection layer = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
     XrCompositionLayerQuad quad_layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+    XrCompositionLayerQuad score_quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
     Uint32 layer_count = 0;
-    const XrCompositionLayerBaseHeader *layers[1] = {0};
+    /* [0] = 3D projection (or 2D menu quad); [1] = floating MP scoreboard overlay. */
+    const XrCompositionLayerBaseHeader *layers[2] = {0};
 
     if (frame_state.shouldRender && view_count > 0 && vr_swapchains != NULL) {
 
@@ -1827,6 +1890,19 @@ static void render_frame(void)
                      menu_quad_yaw = 0.0f;
         static int   menu_quad_ready = 0;
         if (!xr_2d_mode) menu_quad_ready = 0;
+        /* Recenter (Reset View) while a menu/intro is up: drop the anchor so the
+         * quad re-captures the current head facing on this frame and snaps in front
+         * of you, instead of staying where it was first opened. */
+        if (vr_menu_reanchor) { menu_quad_ready = 0; vr_menu_reanchor = 0; }
+
+        /* Body-lock anchor for the floating scoreboard: captured the first frame
+         * the board appears (mirrors menu_quad_ready) and held while it stays up,
+         * so you can look around it. Reset when it's hidden or on recenter. */
+        static float score_quad_cx = 0.0f, score_quad_cy = 1.6f, score_quad_cz = 0.0f,
+                     score_quad_yaw = 0.0f;
+        static int   score_quad_ready = 0;
+        if (!vr_scoreboard_visible || vr_score_reanchor) score_quad_ready = 0;
+        vr_score_reanchor = 0;
 
         if (xr_2d_mode) {
             /* Locate views for 2D menu */
@@ -2002,6 +2078,114 @@ static void render_frame(void)
             layer.views     = proj_views;
             layers[0]       = (XrCompositionLayerBaseHeader*)&layer;
             layer_count     = 1;
+
+            /* Floating MP scoreboard: composite the score table (rendered to
+             * vr_score_tex by AvpShowViewsVR) as a world-locked quad ON TOP of the
+             * 3D projection layer, so it stops being glued to the head. Body-locked
+             * to the heading captured when it appeared, so you can look around it. */
+            if (vr_scoreboard_visible && vr_score_quad_ready
+                && quad_program && quad_vao && menu_fbo_2d && vr_score_tex
+                && vr_score_swapchain.swapchain != XR_NULL_HANDLE) {
+
+                /* Capture head pos/yaw the first frame the board appears. */
+                if (!score_quad_ready && view_count >= 1) {
+                    float qw = xr_views[0].pose.orientation.w;
+                    float qx = xr_views[0].pose.orientation.x;
+                    float qy = xr_views[0].pose.orientation.y;
+                    float qz = xr_views[0].pose.orientation.z;
+                    float fx = -2.0f*(qx*qz + qw*qy);
+                    float fz =  2.0f*(qx*qx + qy*qy) - 1.0f;
+                    float len = SDL_sqrtf(fx*fx + fz*fz);
+                    if (len < 0.001f) { fx = 0.0f; fz = -1.0f; len = 1.0f; }
+                    fx /= len; fz /= len;
+                    score_quad_cx = (view_count >= 2)
+                        ? (xr_views[0].pose.position.x + xr_views[1].pose.position.x)*0.5f
+                        : xr_views[0].pose.position.x;
+                    score_quad_cy = (view_count >= 2)
+                        ? (xr_views[0].pose.position.y + xr_views[1].pose.position.y)*0.5f
+                        : xr_views[0].pose.position.y;
+                    score_quad_cz = (view_count >= 2)
+                        ? (xr_views[0].pose.position.z + xr_views[1].pose.position.z)*0.5f
+                        : xr_views[0].pose.position.z;
+                    score_quad_yaw = SDL_atan2f(fx, -fz);
+                    score_quad_ready = 1;
+                }
+
+                /* Straight copy vr_score_tex into a score swapchain image (blend OFF
+                 * so the premultiplied-alpha text — opaque glyphs, clear elsewhere —
+                 * is preserved for the compositor). Reuses menu_fbo_2d as scratch. */
+                VRSwapchain *q = &vr_score_swapchain;
+                Uint32 idx = vr_sc_acquire_wait(q);
+                if (idx != UINT32_MAX) {
+                    GLuint sc_tex = q->images[idx].image;
+                    glBindFramebuffer(GL_FRAMEBUFFER, menu_fbo_2d);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                           GL_TEXTURE_2D, sc_tex, 0);
+                    if (sc_tex != 0 &&
+                        glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+                        glViewport(0, 0, q->size.width, q->size.height);
+                        glDisable(GL_DEPTH_TEST);
+                        glDisable(GL_BLEND);
+                        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                        glClear(GL_COLOR_BUFFER_BIT);
+                        glUseProgram(quad_program);
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, vr_score_tex);
+                        glUniform1i(quad_u_tex, 0);
+                        /* Negative Y: the menu quad's UVs assume a top-down CPU surface,
+                         * but the score FBO is GL-rendered (bottom-left origin), so
+                         * without the flip the text comes out upside down. */
+                        Mat4 mvp = {{ 1.0f/QUAD_HALF_W, 0.0f, 0.0f, 0.0f,
+                                      0.0f, -1.0f/QUAD_HALF_H, 0.0f, 0.0f,
+                                      0.0f, 0.0f, 0.0f, 0.0f,
+                                      0.0f, 0.0f, 0.0f, 1.0f }};
+                        glUniformMatrix4fv(quad_u_mvp, 1, GL_FALSE, mvp.m);
+                        glBindVertexArray(quad_vao);
+                        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
+                        glBindVertexArray(0);
+                        glBindTexture(GL_TEXTURE_2D, 0);
+                        glUseProgram(0);
+                        glEnable(GL_DEPTH_TEST);
+                        /* Restore GL_BLEND: the game enables it once at init (main.c
+                         * InitialiseRenderer) and thereafter only changes blend FUNC,
+                         * assuming it stays enabled. RestoreGameShaderState does NOT
+                         * re-enable it, so leaving it off here (from the straight-copy
+                         * blit above) collapses every later translucent/additive pass —
+                         * world renders black (only bright halos survive), HUD and menu
+                         * highlights vanish — and persists across frames. */
+                        glEnable(GL_BLEND);
+                    }
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                           GL_TEXTURE_2D, 0, 0);
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    vr_sc_release(q);
+
+                    if (score_quad_ready) {
+                        float shy = score_quad_yaw * 0.5f;
+                        /* Premultiplied-alpha blend so the semi-transparent dark panel
+                         * (cleared to (0,0,0,SCORE_PANEL_ALPHA) in avpview.c) lets the
+                         * world show through, dimmed. */
+                        score_quad.layerFlags    = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+                        score_quad.space         = xr_local_space;
+                        score_quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+                        score_quad.subImage.swapchain          = q->swapchain;
+                        score_quad.subImage.imageRect.offset.x = 0;
+                        score_quad.subImage.imageRect.offset.y = 0;
+                        score_quad.subImage.imageRect.extent   = q->size;
+                        score_quad.subImage.imageArrayIndex    = 0;
+                        score_quad.pose.orientation.x = 0.0f;
+                        score_quad.pose.orientation.y = -SDL_sinf(shy);
+                        score_quad.pose.orientation.z = 0.0f;
+                        score_quad.pose.orientation.w =  SDL_cosf(shy);
+                        score_quad.pose.position.x = score_quad_cx + 2.0f * SDL_sinf(score_quad_yaw);
+                        score_quad.pose.position.y = score_quad_cy;
+                        score_quad.pose.position.z = score_quad_cz - 2.0f * SDL_cosf(score_quad_yaw);
+                        score_quad.size.width  = 1.6f;   /* metres (4:3) */
+                        score_quad.size.height = 1.2f;
+                        layers[layer_count++] = (XrCompositionLayerBaseHeader*)&score_quad;
+                    }
+                }
+            }
         }
     }
 

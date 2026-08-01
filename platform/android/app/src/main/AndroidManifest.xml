@@ -3,16 +3,26 @@
     xmlns:tools="http://schemas.android.com/tools"
     xmlns:horizonos="http://schemas.horizonos/sdk">
 
+    <!-- Horizon OS SDK floor. minSdkVersion=74 (OS v74+) excludes Quest 1, which is
+         EOL at ~v58 — on older OS (e.g. v50) the app launches but the runtime won't
+         grant immersive/focus, so you get the 3-dot loading spinner and dead
+         controllers. Commented out to drop the OS-version floor for Quest 1 support.
+         Restore (or set a value the target store requires) for Store submissions. -->
+    <!--
     <horizonos:uses-horizonos-sdk
         horizonos:minSdkVersion="74"
         horizonos:targetSdkVersion="83" />
+    -->
 
-    <!-- OpenGL ES 3.2 for Vulkan fallback on XR devices -->
-    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
 
-    <!-- Vulkan requirements -->
-    <uses-feature android:name="android.hardware.vulkan.level" android:required="true" android:version="1" />
-    <uses-feature android:name="android.hardware.vulkan.version" android:required="true" android:version="0x00401000" />
+    <!-- The engine renders with OpenGL ES 3.0 (#version 300 es shaders), so require
+         only 3.0 — requiring 3.2 needlessly excludes older GPUs/drivers (e.g. Quest 1). -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+
+    <!-- Vulkan is NOT used by this app (GLES-only renderer). Declared non-required so
+         devices without Vulkan 1.1 / hardware level 1 (e.g. Quest 1) aren't excluded. -->
+    <uses-feature android:name="android.hardware.vulkan.level" android:required="false" android:version="1" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:required="false" android:version="0x00401000" />
 
     <!-- VR Head Tracking (standard OpenXR requirement) -->
     <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />
@@ -66,8 +76,12 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
         <uses-native-library android:name="libopenxr.google.so" android:required="false" />
-        <!-- Required: Specifies which Quest devices are supported -->
-        <meta-data android:name="com.oculus.supportedDevices" android:value="quest|quest2|questpro|quest3|quest3s" />
+        <!-- Supported Quest devices. NOTE: the old Quest 1 (v50) VR runtime parses this
+             list and HARD-ABORTS on any device token it doesn't know ("Unknown device to
+             support: quest3" -> SIGABRT), and quest3/quest3s postdate that runtime. Listing
+             only tokens the oldest target runtime knows keeps Quest 1 from crashing;
+             sideloaded apps aren't gated by this list, so newer headsets still run it. -->
+        <meta-data android:name="com.oculus.supportedDevices" android:value="quest|quest2|questpro" />
         <meta-data android:name="com.oculus.openxr.application" android:value="true" />
         <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
         <!--<meta-data android:name="com.oculus.intent.category.2D" android:value="true" />-->

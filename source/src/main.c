@@ -927,7 +927,14 @@ static bool init_xr_instance(void)
     SDL_strlcpy(app_info.applicationName, "AvP",  XR_MAX_APPLICATION_NAME_SIZE);
     app_info.applicationVersion = 1;
     SDL_strlcpy(app_info.engineName, "SDL3", XR_MAX_ENGINE_NAME_SIZE);
-    app_info.apiVersion = XR_CURRENT_API_VERSION;
+    /* Request OpenXR 1.0, not XR_CURRENT_API_VERSION (1.1 in the bundled headers).
+     * Older runtimes support ONLY 1.0 and reject a 1.1 request outright:
+     * Quest 1 on OS v50 ships a 1.0-only runtime, so xrCreateInstance failed with
+     * XR_ERROR_API_VERSION_UNSUPPORTED and the app fell back to no-XR (black screen +
+     * 3-dot compositor spinner, dead controllers). This app only uses core 1.0 plus
+     * KHR/FB extensions that exist in 1.0, and 1.1 runtimes accept a 1.0 request, so
+     * this works on both old and new headsets. */
+    app_info.apiVersion = XR_MAKE_VERSION(1, 0, 0);
 
     XrInstanceCreateInfo ci = { XR_TYPE_INSTANCE_CREATE_INFO };
     ci.next                     = &android_info;

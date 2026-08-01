@@ -1730,6 +1730,14 @@ void AvpShowViewsVR(void)
         }
     }
 
+    /* When the player dies, the game's death view-drop collapses game_eye_to_floor
+     * (and hence vr_y_scale), so the formula below would sink the VR camera to
+     * floor level — where you see through the floor to its underside. Detect death
+     * so the per-eye Y can be clamped to sit just above the floor instead. */
+    PLAYER_STATUS *vr_death_ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+    int vr_view_is_dead = (vr_death_ps && !vr_death_ps->IsAlive && !MultiplayerObservedPlayer);
+    #define VR_DEATH_MIN_HEAD_HEIGHT (GAME_UNITS_PER_METRE / 10) /* ~10 cm above the floor */
+
     for (int eye = 0; eye < (int)view_count; eye++) {
 
         /* X/Z: room-scale delta relative to where we started (ref_head_x/z).
@@ -1754,6 +1762,11 @@ void AvpShowViewsVR(void)
             + (int)(phys_dx * vr_y_scale);
         Global_VDB_Ptr->VDB_World.vy = Player->ObWorld.vy
             - (int)(xr_views[eye].pose.position.y * vr_y_scale);
+        /* Dead: keep the head ~10 cm above the feet/floor (smaller vy = higher up)
+         * so the collapsed death-drop scale can't sink the view through the floor. */
+        if (vr_view_is_dead &&
+            Player->ObWorld.vy - Global_VDB_Ptr->VDB_World.vy < VR_DEATH_MIN_HEAD_HEIGHT)
+            Global_VDB_Ptr->VDB_World.vy = Player->ObWorld.vy - VR_DEATH_MIN_HEAD_HEIGHT;
         Global_VDB_Ptr->VDB_World.vz = base_world.vz
             - (int)(phys_dz * vr_y_scale);
 

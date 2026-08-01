@@ -3,7 +3,7 @@
 > [!TIP]
 > Check the new 0.5 update on releases page. List of fixes and features added on there. Aliens wall walking still broken though.
 
-This is a fork of [atsb/NakedAvP](https://github.com/atsb/NakedAVP) to use OpenXR for VR headsets like the Meta Quest. Confirmed to work with Quest 1, Quest 2 and Quest 3 running 2.4 OS. 
+This is a fork of [atsb/NakedAvP](https://github.com/atsb/NakedAVP) to use OpenXR for VR headsets like the Meta Quest. Confirmed to work with Quest 1 (v50 OS), Quest 2 and Quest 3 running v2.x OS. 
 
 > [!NOTE]
 > Now also runs on Windows as well just like the original game (flat). You can multiplay on a local LAN against others including Quest users!! Linux and Mac coming soon.

@@ -1,9 +1,9 @@
 # Aliens Versus Predator: VR
 
 > [!TIP]
-> Check the new 0.4 update on releases page. List of fixes and features added on there. Aliens wall walking still broken though.
+> Check the new 0.5 update on releases page. List of fixes and features added on there. Aliens wall walking still broken though.
 
-This is a fork of [atsb/NakedAvP](https://github.com/atsb/NakedAVP) to use OpenXR for VR headets like the Meta Quest. Confimed to work with Quest 2 and Quest 3 running 2.4 OS. 
+This is a fork of [atsb/NakedAvP](https://github.com/atsb/NakedAVP) to use OpenXR for VR headsets like the Meta Quest. Confirmed to work with Quest 1, Quest 2 and Quest 3 running 2.4 OS. 
 
 > [!NOTE]
 > Now also runs on Windows as well just like the original game (flat). You can multiplay on a local LAN against others including Quest users!! Linux and Mac coming soon.
@@ -41,7 +41,7 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/Ixnr
 
 ![Screenshot of apk location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/sidequest_installed.png)
 
-7. On the headset, run the Aliens Versus Predator:VR in Unknown Sources. This will crash out as the assets havent been added yet, this is to set the folders and their permissions in place. 
+7. On the headset, run the Aliens Versus Predator:VR in Unknown Sources. This will crash out as the assets haven't been added yet, this is normal and sets the folders and their permissions in place. 
 8. Now still in SideQuest, go to "Manage files on the headset".
 9. Navigate to "sdcard/Android/data/com.bassquake.avpvr/files".
 10. Copy all the game assets into that files folder. The layout should be like so on your device:
@@ -79,11 +79,11 @@ If you have Manual Reload on, almost touch controllers close together to trigger
 I will probably add ability to customise all these.
 
 ## Extra features
-- Can choose different framerate in Video/Video Options, runs fine in 120fps mode!
+- Can choose different frame rate in Video/Video Options, runs fine in 120fps mode!
 - Can turn on/off the cross-hair in Video/Video Options.
-- Framerate counter can be toggled in Video/Video Options.
+- Frame rate counter can be toggled in Video/Video Options.
 - Antialiasing options added for MSAA in Video/Video Options.
-- Apparently works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack! Edit: Seems theres an issue with the hud and crosshair for Marine with the Redux Mod. Not sure if can fix.
+- Apparently works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack! Edit: Seems there’s an issue with the HUD and crosshair for Marine with the Redux Mod. Not sure if can fix.
 - Cheat modes can be toggled now for those faint of heart!
 
 ## To do
@@ -97,6 +97,8 @@ I will probably add ability to customise all these.
 - ~~Add cheat modes.~~ Added.
 - ~~Add ability to adjust HUD.~~ Added.
 - ~~Add Manual Reload option.~~ Added.
+- ~~Add Quest 1 compatibility.~~ Added.
+- ~~Add recalibrate option to right long press Meta button.~~ Added.
 - To add correct wall walking for Aliens on Quest. Works fine on Windows. 
 - Add option for left handed users.
 - Add ability to customise controller key mapping.

@@ -46,6 +46,14 @@ if (ANDROID)
     # Tell CMake where to find the SDL3 Android headers and binaries
     # Usually you'd use add_subdirectory(extern/SDL3) here
     add_definitions(-DANDROID)
+    # Non-VR "phone" build variant: the Gradle `phone` product flavor passes
+    # -DAVP_DISABLE_XR=ON, which makes main.c skip OpenXR init entirely and use the
+    # flat (windowed) render path + SDL_GL_SwapWindow. The Quest `quest` flavor leaves
+    # it unset, so the VR path is unchanged.
+    if (AVP_DISABLE_XR)
+        add_definitions(-DAVP_DISABLE_XR)
+        message(STATUS "AVP: OpenXR disabled — building non-VR phone variant")
+    endif()
     # Android uses a specific log library for console output
     find_library(log-lib log)
     set(lib_path "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/${ANDROID_ABI}")
@@ -143,37 +151,37 @@ include_directories(
 
 add_library(avcodec SHARED IMPORTED)
 set_target_properties(avcodec PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/arm64-v8a/libavcodec.so"
+    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/${ANDROID_ABI}/libavcodec.so"
 )
 
 add_library(avdevice SHARED IMPORTED)
 set_target_properties(avdevice PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/arm64-v8a/libavdevice.so"
+    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/${ANDROID_ABI}/libavdevice.so"
 )
 
 add_library(avfilter SHARED IMPORTED)
 set_target_properties(avfilter PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/arm64-v8a/libavfilter.so"
+    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/${ANDROID_ABI}/libavfilter.so"
 )
 
 add_library(avformat SHARED IMPORTED)
 set_target_properties(avformat PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/arm64-v8a/libavformat.so"
+    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/${ANDROID_ABI}/libavformat.so"
 )
 
 add_library(avutil SHARED IMPORTED)
 set_target_properties(avutil PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/arm64-v8a/libavutil.so"
+    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/${ANDROID_ABI}/libavutil.so"
 )
 
 add_library(swresample SHARED IMPORTED)
 set_target_properties(swresample PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/arm64-v8a/libswresample.so"
+    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/${ANDROID_ABI}/libswresample.so"
 )
 
 add_library(swscale SHARED IMPORTED)
 set_target_properties(swscale PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/arm64-v8a/libswscale.so"
+    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../platform/android/app/src/main/jniLibs/${ANDROID_ABI}/libswscale.so"
 )
 
 #target_link_libraries(ffmpeg_jni

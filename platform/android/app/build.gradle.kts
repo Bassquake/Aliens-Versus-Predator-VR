@@ -49,12 +49,14 @@ android {
                 abiFilters.addAll(listOf("arm64-v8a"))
             }
         }
-        // MAKE SEPARATE 32bit and 64 BIT APKS
+        // MAKE SEPARATE 32bit and 64 BIT APKS. Both ABIs are listed here, but each
+        // flavor's externalNativeBuild.abiFilters decides which it actually builds:
+        // quest = arm64-v8a only (from defaultConfig); mobile also builds armeabi-v7a.
         splits {
             abi {
                 isEnable = true
                 reset()
-                include("arm64-v8a")
+                include("arm64-v8a", "armeabi-v7a")
                 isUniversalApk = false
             }
         }
@@ -62,6 +64,34 @@ android {
     // IGNORE "Meeting Google Play requirements" because we're using TargetSdk 24
     lint {
         disable += "ExpiredTargetSdkVersion"
+    }
+    // Two device variants:
+    //   quest — VR build. Uses src/main/AndroidManifest.xml (immersive HMD) and the
+    //           OpenXR render path. Unchanged from before flavors existed.
+    //   mobile — standard phone/tablet build. Overrides the manifest via src/mobile (no
+    //            VR immersive declarations) and passes -DAVP_DISABLE_XR=ON so OpenXR init
+    //            is compiled out and the flat windowed render path is used. Its own
+    //            applicationId (com.bassquake.mobile.avpvr) so it can't clash with the
+    //            Quest package. (namespace stays com.bassquake.avpvr — that's the code
+    //            package for R/BuildConfig and the .MainActivity class, independent of
+    //            the installed applicationId.)
+    flavorDimensions += "device"
+    productFlavors {
+        create("quest") {
+            dimension = "device"
+        }
+        create("mobile") {
+            dimension = "device"
+            applicationId = "com.bassquake.mobile.avpvr"
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DAVP_DISABLE_XR=ON"
+                    // arm64-v8a comes from defaultConfig; add 32-bit ARM for older
+                    // phones. Both are packaged as separate per-ABI APKs (splits).
+                    abiFilters += "armeabi-v7a"
+                }
+            }
+        }
     }
     buildTypes {
         release {
@@ -130,7 +160,9 @@ android {
                 // Use the output name (e.g., "arm64-v8a", "x86", or "universal")
                 // to ensure the task name is unique even if there are multiple APKs
                 val outputName = output.name.capitalize()
-                val targetFileName = "avpvr-$versionName-${output.name}.apk"
+                // Include the flavor (quest/phone) so the two variants' APKs don't
+                // collide on the same filename in build/android.
+                val targetFileName = "avpvr-${variant.flavorName}-$versionName-${output.name}.apk"
 
                 // 1. Rename the file in the default build folder
                 output.outputFileName = targetFileName

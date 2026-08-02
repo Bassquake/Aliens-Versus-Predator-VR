@@ -1,32 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    MOBILE (non-VR) flavor manifest overlay.
+
+    The base manifest (src/main/AndroidManifest.xml) is the Quest/VR one. The manifest
+    merger overlays this file on top of it for the `mobile` flavor, stripping the bits
+    that would make the app VR-only or unlaunchable as a normal handset app:
+      - remove the hard VR feature requirements (headtracking / OpenXR) so it installs
+        and runs on ordinary phones;
+      - remove the Oculus-specific metadata + the OpenXR loader native lib;
+      - replace MainActivity's launch categories so it opens as a normal 2D app instead
+        of an immersive HMD app.
+    OpenXR is also compiled out for this flavor via -DAVP_DISABLE_XR (build.gradle.kts),
+    so the engine uses the flat windowed render path.
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <application
-        android:name=".InstallAssets"
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.AvPVR"
-        tools:targetApi="31">
-        <activity android:name=".MainActivity"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout"
+    <!-- Hard VR requirements: drop them so the app is compatible with normal phones. -->
+    <uses-feature android:name="android.hardware.vr.headtracking" tools:node="remove" />
+    <uses-feature android:name="com.oculus.feature.OPENXR" tools:node="remove" />
+    <uses-feature android:name="com.oculus.feature.PASSTHROUGH" tools:node="remove" />
+    <uses-feature android:name="oculus.software.handtracking" tools:node="remove" />
+
+    <application>
+        <!-- Oculus/OpenXR-only runtime hints, meaningless on a phone. -->
+        <uses-native-library android:name="libopenxr.google.so" tools:node="remove" />
+        <meta-data android:name="com.oculus.supportedDevices" tools:node="remove" />
+        <meta-data android:name="com.oculus.openxr.application" tools:node="remove" />
+        <meta-data android:name="com.oculus.vr.focusaware" tools:node="remove" />
+        <meta-data android:name="com.oculus.handtracking.version" tools:node="remove" />
+        <meta-data android:name="com.oculus.handtracking.frequency" tools:node="remove" />
+
+        <!-- Replace the immersive-HMD activity with a plain launcher activity. -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
             android:exported="true"
-            android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+            android:alwaysRetainTaskState="true"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:excludeFromRecents="false"
+            tools:ignore="NonResizeableActivity"
+            android:resizeableActivity="false"
+            tools:node="replace">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <layout
-                android:defaultHeight="600dp"
-                android:defaultWidth="800dp" />
         </activity>
     </application>
-
 </manifest>
-    <!--android:hardwareAccelerated="false"
-    android:installLocation="preferExternal"-->

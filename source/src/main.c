@@ -3580,6 +3580,8 @@ static int SetOGLVideoMode(int Width, int Height)
         
         /* ---- Native GLES OpenXR initialisation ---- */
 #ifdef __ANDROID__
+#ifndef AVP_DISABLE_XR   /* phone (non-VR) build: never touch OpenXR; xr_enabled stays
+                           false, so the loop uses AvpShowViews() + SDL_GL_SwapWindow */
         if (!xr_enabled) {
             /* Quest's VR shell launches us with a plain MAIN+LAUNCHER intent —
              * the com.oculus.intent.category.VR category is NOT propagated to
@@ -3605,7 +3607,10 @@ static int SetOGLVideoMode(int Width, int Height)
             SDL_Log("XR: GLES native path active");
         }
         xr_init_done:;
-#endif
+#else
+        SDL_Log("XR: disabled at build time (phone/non-VR variant) — flat render path");
+#endif /* AVP_DISABLE_XR */
+#endif /* __ANDROID__ */
         /* ---- end OpenXR init ---- */
         
     }

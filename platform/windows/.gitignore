@@ -9,5 +9,5 @@
 !Resource.rc
 !resource.h
 !Avp_32x32_8bit.ico
-!x86/
-!x64/
+!/x86/
+!/x64/

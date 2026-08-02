@@ -1,7 +1,11 @@
-# Ignore everything in this directory
-/.vs/
-/avp.dir/
-/[Xx]64/
-/[Ww]in32/
-# Except this file
+# This folder holds the committed Windows SOURCE (Resource.rc / resource.h /
+# Avp_32x32_8bit.ico) plus CMake-generated per-arch build trees (x64/, x86/, ...).
+# The old .gitignore only ignored a few build subdirs, so a stray configure into
+# THIS folder committed avp.sln/*.vcxproj/cmake_install.cmake/Resource.aps and left
+# three overlapping solutions. Fix: ignore everything, then re-include only the
+# source. Generated solution/project files can never be committed again.
+*
 !.gitignore
+!Resource.rc
+!resource.h
+!Avp_32x32_8bit.ico

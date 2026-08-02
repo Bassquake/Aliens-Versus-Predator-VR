@@ -575,6 +575,14 @@ elseif (WIN32)
     else()
         message(STATUS "Target is 32-bit")
         set(AVP_ARCH x86)
+        # The bundled FFmpeg import libs (extern/FFmpeg/lib/x86) are MinGW-built and
+        # carry no SAFESEH data, so a 32-bit MSVC link fails with LNK2026 "module
+        # unsafe for SAFESEH image" -> LNK1281 "Unable to generate SAFESEH image".
+        # Disable SAFESEH for the x86 build only (x64 has no SAFESEH concept, so this
+        # never applies there). Set here so it survives a CMake regenerate.
+        if(MSVC)
+            target_link_options(avp PRIVATE /SAFESEH:NO)
+        endif()
     endif()
     
     install (TARGETS avp DESTINATION .)

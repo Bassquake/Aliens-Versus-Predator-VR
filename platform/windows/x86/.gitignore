@@ -4,3 +4,7 @@
 # avp.dir/, Release/, etc.). Regenerate them locally with CMake.
 *
 !.gitignore
+!*.vcxproj
+!*.filters
+!*.user
+!*.sln

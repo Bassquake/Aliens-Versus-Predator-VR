@@ -423,7 +423,12 @@ LIST(APPEND source src/main.c)
 ##SET_SOURCE_FILES_PROPERTIES(${source} PROPERTIES LANGUAGE CXX)
 
 if(WIN32)
-    list(APPEND AVP_SOURCES ../platform/windows/Resource.rc)
+    # Attach the Windows resource script (app icon + version info) to the actual
+    # target source list. It was appended to AVP_SOURCES — a variable nothing uses —
+    # so ADD_EXECUTABLE(avp ${source}) never compiled it and NEITHER the x64 nor x86
+    # exe got the icon/version. Appending to `source` (before the target below) fixes
+    # both architectures, since they share this CMakeLists.
+    list(APPEND source ../platform/windows/Resource.rc)
 endif()
 
 # auto-include directories with source files

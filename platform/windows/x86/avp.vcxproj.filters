@@ -669,6 +669,11 @@
     <CustomBuild Include="K:\Coding\Aliens-Versus-Predator-VR\source\CMakeLists.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="K:\Coding\Aliens-Versus-Predator-VR\platform\windows\Resource.rc">
+      <Filter>Source Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
     <Filter Include="Source Files">
       <UniqueIdentifier>{1EDFE6C9-1522-3F92-A3B2-87FA80B84E3F}</UniqueIdentifier>
     </Filter>

@@ -164,7 +164,12 @@ typedef struct
 
 
 
-#define USER_PROFILES_PATH "User_Profiles/"
+/* Lowercase on purpose: this directory is created inside the game data folder, which
+   is all-lowercase by rule, and on a case-sensitive filesystem the mixed-case form was
+   unstable — OpenGameFile and CreateGameDirectory both retry with a force-lowercased
+   path when the exact-case attempt fails, so you got "User_Profiles" or "user_profiles"
+   depending on which happened to exist first. */
+#define USER_PROFILES_PATH "user_profiles/"
 #define USER_PROFILES_WILDCARD_NAME "*.prf"
 #define USER_PROFILES_SUFFIX ".prf"
 

@@ -59,7 +59,7 @@ IDI_ICON1               ICON                    "Avp_32x32_8bit.ico"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,5,0,0
+ FILEVERSION 0,6,0,0
  PRODUCTVERSION 1,0,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
@@ -77,7 +77,7 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Bassquake"
             VALUE "FileDescription", "Aliens versus Predator Classic for Windows ported from NakedAvP to VR."
-            VALUE "FileVersion", "0.5.0.0"
+            VALUE "FileVersion", "0.6.0.0"
             VALUE "InternalName", "avp.exe"
             VALUE "LegalCopyright", "Copyright (C) 2026"
             VALUE "OriginalFilename", "avp.exe"

@@ -21,7 +21,9 @@ extern void SetDefaultMultiplayerConfig();
 extern char MP_SessionName[];
 extern char MP_Config_Description[];
 
-#define MP_CONFIG_DIR "MPConfig/"
+/* Lowercase for the same reason as USER_PROFILES_PATH — created inside the all-lowercase
+   game data folder, and the shipped assets/mpconfig/ is lowercase already. */
+#define MP_CONFIG_DIR "mpconfig/"
 #define MP_CONFIG_WILDCARD "*.cfg"
 
 #define SKIRMISH_CONFIG_WILDCARD "*.skirmish_cfg"
@@ -422,7 +424,7 @@ void DeleteMultiplayerConfigurationByIndex(int index)
 }
 
 
-#define IP_ADDRESS_DIR "IP_Address/"
+#define IP_ADDRESS_DIR "ip_address/"
 #define IP_ADDRESS_WILDCARD "*.IP Address"
 
 static List<char*> IPAddFilenameList;

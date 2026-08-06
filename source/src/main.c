@@ -4411,8 +4411,11 @@ static const struct option getopt_long_options[] = {
 };
 #endif
 
+/* Printed by --help on every platform now, so no "Linux" label (same reason as
+   AvPVersionString in version.c). Keep in step with BOTH parsers below — the getopt
+   one and the manual MSVC one. */
 static const char *usage_string =
-        "Aliens vs Predator Linux - http://www.icculus.org/avp/\n"
+        "Aliens vs Predator - http://www.icculus.org/avp/\n"
         "Based on Rebellion Developments AvP Gold source\n"
         "      [-h | --help]           Display this help message\n"
         "      [-v | --version]        Display the game version\n"
@@ -4421,8 +4424,9 @@ static const char *usage_string =
         "      [-s | --nosound]        Do not access the soundcard\n"
         "      [-c | --nocdrom]        Do not access the CD-ROM\n"
         "      [-j | --nojoy]          Do not access the joystick\n"
+        "      [-d | --debug]          Enable the debugging/cheat console commands\n"
         "      [-p | --datapath] [x]   Look at [x] for game files\n"
-        "      [-g | --withgl] [x]     Use [x] instead of /usr/lib/libGL.so.1 for OpenGL\n"
+        "      [-g | --withgl] [x]     Accepted and ignored (legacy dlopen-libGL option)\n"
 ;
 
 int main(int argc, char *argv[])
@@ -4482,7 +4486,17 @@ int main(int argc, char *argv[])
        support on Windows. Accept -debug, -d and --debug for the debug switch. */
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
-        if (!strcmp(a, "-f") || !strcmp(a, "--fullscreen")) {
+        if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
+            /* Informational switches exit before SDL/InitGameDirectories, matching the
+               getopt path above, so the game never opens a window for them. */
+            printf("%s", usage_string);
+            exit(EXIT_SUCCESS);
+        } else if (!strcmp(a, "-v") || !strcmp(a, "--version")) {
+            printf("%s", AvPVersionString);
+            exit(EXIT_SUCCESS);
+        } else if ((!strcmp(a, "-g") || !strcmp(a, "--withgl")) && (i + 1 < argc)) {
+            opengl_library = argv[++i];
+        } else if (!strcmp(a, "-f") || !strcmp(a, "--fullscreen")) {
             WantFullscreen = 1;
         } else if (!strcmp(a, "-w") || !strcmp(a, "--windowed")) {
             WantFullscreen = 0;

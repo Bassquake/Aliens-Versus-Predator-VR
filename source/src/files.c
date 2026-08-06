@@ -785,21 +785,33 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 		exit(EXIT_FAILURE);
 	}
 
-#ifdef _WIN32
-	/* Put the .avp profile/save folder next to the exe (gamedir), not in the
-	   current directory. homedir falls back to "." on Windows (no $HOME), and the
-	   CWD under the VS debugger is the configured working directory — one level
-	   above the exe's config subfolder — which put .avp a folder up. */
+	/* Writable game state lives alongside the game data, NOT in a hidden per-user
+	   folder. local_dir is what FILETYPE_CONFIG resolves against (OpenGameFile skips
+	   global_dir entirely for CONFIG), so pointing it at gamedir puts everything the
+	   game writes in with the assets:
+
+	       <gamedir>/user_profiles/<name>.prf
+	       <gamedir>/config.cfg
+	       <gamedir>/mpconfig/ , <gamedir>/ip_address/
+
+	   This replaces the old per-platform hidden folders — <gamedir>/.avp on Windows,
+	   $HOME/.avp on Linux/macOS, and internal-storage /.avpvr on Android. The Android
+	   case was the worst of them: profiles went to /data/data/<pkg>/, nowhere near the
+	   external files dir the assets are pushed to, so they were invisible over ADB.
+
+	   Note this assumes gamedir is writable. That holds for every layout this repo
+	   ships — build/windows/<arch>/Release, build/linux/<arch>, and the Android
+	   external files dir — but a system-wide install into Program Files or
+	   /usr/local/games would not be writable, and settings would silently fail to
+	   save. Reinstate a homedir fallback here if that ever becomes a supported
+	   install mode. */
 	{
-		char *newlocal = (char *)malloc(strlen(gamedir) + 8);
+		char *newlocal = strdup(gamedir);
 		if (newlocal) {
-			strcpy(newlocal, gamedir);
-			strcat(newlocal, "/.avp");
 			free(localdir);
 			localdir = newlocal;
 		}
 	}
-#endif
 
 	SetGameDirectories(localdir, gamedir);
 	

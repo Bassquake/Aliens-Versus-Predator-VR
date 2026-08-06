@@ -27,7 +27,7 @@ Build/
 *.lo
 
 # Shared objects (inc. Windows DLLs)
-*.dylib
+#*.dylib
 
 # Executables
 *.exe

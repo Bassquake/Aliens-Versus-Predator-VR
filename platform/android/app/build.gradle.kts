@@ -1,3 +1,4 @@
+import com.android.build.api.variant.FilterConfiguration
 import com.android.build.gradle.internal.api.ApkVariantOutputImpl
 import java.io.FileInputStream
 import java.util.Properties
@@ -30,13 +31,12 @@ android {
     ndkVersion = "27.3.13750724"
 
     defaultConfig {
-        applicationId = "com.bassquake.avpvr"
+        // No applicationId here on purpose — every flavor sets its own (see below), so a
+        // value at this level would be dead config that looks authoritative.
         minSdk = 24
         targetSdk = 32
-        versionCode = 5
-        versionName = "0.5"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 6
+        versionName = "0.6"
 
         externalNativeBuild {
             cmake {
@@ -49,9 +49,21 @@ android {
                 abiFilters.addAll(listOf("arm64-v8a"))
             }
         }
-        // MAKE SEPARATE 32bit and 64 BIT APKS. Both ABIs are listed here, but each
-        // flavor's externalNativeBuild.abiFilters decides which it actually builds:
-        // quest = arm64-v8a only (from defaultConfig); mobile also builds armeabi-v7a.
+        // MAKE SEPARATE 32bit and 64 BIT APKS.
+        //
+        // This list is GLOBAL — `splits` is an android {} block, not a defaultConfig
+        // one, so Kotlin resolves it to the outer receiver and it applies to every
+        // variant. It is also STATIC: AGP emits an APK for each ABI listed here whether
+        // or not that ABI has any native libraries in the variant (verified — moving the
+        // armeabi-v7a prebuilts out of src/main did not change the output list).
+        //
+        // externalNativeBuild.abiFilters below does NOT narrow it either; that only
+        // decides what CMake compiles. Nor can ndk.abiFilters be used to narrow it —
+        // AGP hard-fails with "Conflicting configuration: ... in ndk abiFilters cannot
+        // be present when splits abi filters are set".
+        //
+        // So the quest flavor's unwanted armeabi-v7a APK is switched off by output, in
+        // the androidComponents block below.
         splits {
             abi {
                 isEnable = true
@@ -67,22 +79,37 @@ android {
     }
     // Two device variants:
     //   quest — VR build. Uses src/main/AndroidManifest.xml (immersive HMD) and the
-    //           OpenXR render path. Unchanged from before flavors existed.
+    //           OpenXR render path. applicationId com.bassquake.quest.avpvr.
     //   mobile — standard phone/tablet build. Overrides the manifest via src/mobile (no
     //            VR immersive declarations) and passes -DAVP_DISABLE_XR=ON so OpenXR init
-    //            is compiled out and the flat windowed render path is used. Its own
-    //            applicationId (com.bassquake.mobile.avpvr) so it can't clash with the
-    //            Quest package. (namespace stays com.bassquake.avpvr — that's the code
-    //            package for R/BuildConfig and the .MainActivity class, independent of
-    //            the installed applicationId.)
+    //            is compiled out and the flat windowed render path is used.
+    //            applicationId com.bassquake.android.avpvr.
+    //
+    // Each flavor sets its own applicationId, so the two install side by side and
+    // defaultConfig deliberately sets none. The applicationId is also the external-files
+    // path, so assets sideload to
+    //   /sdcard/Android/data/<applicationId>/files/
+    // — a different directory per flavor.
+    //
+    // The `namespace` (com.bassquake.avpvr, set at the top) is SHARED and deliberately
+    // left alone: it is the code package for R/BuildConfig and for resolving the
+    // manifest's relative ".MainActivity" / ".InstallAssets", and both Kotlin sources
+    // declare `package com.bassquake.avpvr`. It also cannot be set per flavor —
+    // ProductFlavor has no such property, so writing `namespace = ...` inside a flavor
+    // block silently resolves against the outer android {} receiver and changes it
+    // GLOBALLY (the same implicit-receiver trap as `splits` above), which would break
+    // ".MainActivity" resolution in both flavors at launch.
     flavorDimensions += "device"
     productFlavors {
         create("quest") {
             dimension = "device"
+            applicationId = "com.bassquake.quest.avpvr"
+            // arm64-v8a only — enforced by the androidComponents block below. Every
+            // Quest headset is 64-bit ARM, so there is no 32-bit device to serve.
         }
         create("mobile") {
             dimension = "device"
-            applicationId = "com.bassquake.mobile.avpvr"
+            applicationId = "com.bassquake.android.avpvr"
             externalNativeBuild {
                 cmake {
                     arguments += "-DAVP_DISABLE_XR=ON"
@@ -111,7 +138,8 @@ android {
         jvmTarget = "11"
     }
     // Assets are NOT bundled — users sideload game files via ADB:
-    //   adb push assets/ /sdcard/Android/data/com.bassquake.avpvr/files/
+    //   adb push assets/ /sdcard/Android/data/com.bassquake.quest.avpvr/files/   (quest)
+    //   adb push assets/ /sdcard/Android/data/com.bassquake.android.avpvr/files/ (mobile)
     externalNativeBuild {
         cmake {
             // SOURCE PATH
@@ -157,12 +185,14 @@ android {
         variant.outputs
             .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
             .forEach { output ->
-                // Use the output name (e.g., "arm64-v8a", "x86", or "universal")
-                // to ensure the task name is unique even if there are multiple APKs
+                // Use the output name to ensure the task name is unique even if there
+                // are multiple APKs.
                 val outputName = output.name.capitalize()
-                // Include the flavor (quest/phone) so the two variants' APKs don't
-                // collide on the same filename in build/android.
-                val targetFileName = "avpvr-${variant.flavorName}-$versionName-${output.name}.apk"
+                // output.name already carries flavor + ABI + build type
+                // ("quest-arm64-v8a-release"), so the two flavors cannot collide in
+                // build/android and prefixing variant.flavorName as well would just
+                // stutter it: avpvr-quest-0.5-quest-arm64-v8a-release.apk.
+                val targetFileName = "avpvr-$versionName-${output.name}.apk"
 
                 // 1. Rename the file in the default build folder
                 output.outputFileName = targetFileName
@@ -186,15 +216,37 @@ android {
     }
 }
 
+// Drop the armeabi-v7a APK from the quest flavor.
+//
+// splits.abi is global and static, so questRelease/questDebug would otherwise each
+// emit a 32-bit APK alongside the 64-bit one. That APK is not merely redundant, it is
+// broken: externalNativeBuild.abiFilters builds libavpvr.so for arm64-v8a only, so the
+// v7a APK shipped ~28 MB of prebuilt SDL3/FFmpeg/OpenAL/OpenXR .so files with no game
+// library at all, and installing it gave an instant crash.
+//
+// The new Variant API is the only lever that works here — it can switch off a single
+// output, which neither ndk.abiFilters (conflicts with splits) nor the source-set
+// layout (splits ignore what libs exist) can do. The mobile flavor is untouched and
+// still produces both APKs.
+androidComponents {
+    onVariants(selector().withFlavor("device" to "quest")) { variant ->
+        variant.outputs.forEach { output ->
+            val abi = output.filters
+                .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
+                ?.identifier
+            if (abi != null && abi != "arm64-v8a") {
+                output.enabled.set(false)
+            }
+        }
+    }
+}
+
     dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.constraintlayout)
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
     //Add Bink and Smacker playback
     //implementation(files("libs/ffmpeg.aar"))
     //implementation("com.arthenica:smart-exception-java:0.2.1")

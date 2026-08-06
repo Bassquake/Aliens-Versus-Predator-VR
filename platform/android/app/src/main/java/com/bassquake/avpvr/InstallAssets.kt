@@ -11,8 +11,10 @@ class InstallAssets : Application() {
         cacheDir.mkdirs()
 
         // Ensure the external files directory exists so the engine can write to it.
-        // Game assets must be placed here manually via ADB:
-        //   adb push assets/ /sdcard/Android/data/com.bassquake.avpvr/files/
+        // Game assets must be placed here manually via ADB. The directory is named after
+        // the flavor's applicationId, not this file's package:
+        //   quest:  adb push assets/ /sdcard/Android/data/com.bassquake.quest.avpvr/files/
+        //   mobile: adb push assets/ /sdcard/Android/data/com.bassquake.android.avpvr/files/
         getExternalFilesDir(null)?.mkdirs()
     }
 }

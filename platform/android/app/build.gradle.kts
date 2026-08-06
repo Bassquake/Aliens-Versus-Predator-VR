@@ -80,10 +80,14 @@ android {
     // Two device variants:
     //   quest — VR build. Uses src/main/AndroidManifest.xml (immersive HMD) and the
     //           OpenXR render path. applicationId com.bassquake.quest.avpvr.
-    //   mobile — standard phone/tablet build. Overrides the manifest via src/mobile (no
+    //   android — standard phone/tablet build. Overrides the manifest via src/android (no
     //            VR immersive declarations) and passes -DAVP_DISABLE_XR=ON so OpenXR init
     //            is compiled out and the flat windowed render path is used.
     //            applicationId com.bassquake.android.avpvr.
+    //
+    // The flavor name is part of every APK filename (avpvr-<ver>-<flavor>-<abi>-<type>.apk)
+    // and of the Gradle task names (assembleAndroidRelease / assembleQuestRelease), so it
+    // must match the source-set folder under src/.
     //
     // Each flavor sets its own applicationId, so the two install side by side and
     // defaultConfig deliberately sets none. The applicationId is also the external-files
@@ -107,7 +111,7 @@ android {
             // arm64-v8a only — enforced by the androidComponents block below. Every
             // Quest headset is 64-bit ARM, so there is no 32-bit device to serve.
         }
-        create("mobile") {
+        create("android") {
             dimension = "device"
             applicationId = "com.bassquake.android.avpvr"
             externalNativeBuild {
@@ -139,7 +143,7 @@ android {
     }
     // Assets are NOT bundled — users sideload game files via ADB:
     //   adb push assets/ /sdcard/Android/data/com.bassquake.quest.avpvr/files/   (quest)
-    //   adb push assets/ /sdcard/Android/data/com.bassquake.android.avpvr/files/ (mobile)
+    //   adb push assets/ /sdcard/Android/data/com.bassquake.android.avpvr/files/ (android)
     externalNativeBuild {
         cmake {
             // SOURCE PATH
@@ -160,7 +164,7 @@ android {
         create("quest") {
             dimension = "device"
         }
-        create("mobile") {
+        create("android") {
             dimension = "device"
         }
     }*/
@@ -226,7 +230,7 @@ android {
 //
 // The new Variant API is the only lever that works here — it can switch off a single
 // output, which neither ndk.abiFilters (conflicts with splits) nor the source-set
-// layout (splits ignore what libs exist) can do. The mobile flavor is untouched and
+// layout (splits ignore what libs exist) can do. The android flavor is untouched and
 // still produces both APKs.
 androidComponents {
     onVariants(selector().withFlavor("device" to "quest")) { variant ->

@@ -1,4 +1,4 @@
-# Aliens Versus Predator: VR
+# Aliens Versus Predator: VR and non-VR
 
 > [!TIP]
 > Check the new 0.6 update on releases page. Mainly releases of the flat version for Android devices like phones and TVs, Windows and Linux so they can all multiplay! Aliens wall walking still broken though.

@@ -1,7 +1,7 @@
 # Aliens Versus Predator: VR and non-VR
 
 > [!TIP]
-> Check the new 0.6 update on releases page. Mainly releases of the flat version for Android devices like phones and TVs, Windows and Linux so they can all multiplay! Aliens wall walking still broken though.
+> Check the new 0.6 update on releases page. **You will need to reupload the asset files into the new app name folder in Sidequest. Any progress made in earlier builds will be lost!** Mainly releases of the flat version for Android devices like phones and TVs, Windows and Linux so they can all multiplay! Aliens wall walking still broken though.
 
 This is a fork of [atsb/NakedAvP](https://github.com/atsb/NakedAVP) to use OpenXR for VR headsets like the Meta Quest. Confirmed to work with Quest 1 (v50 OS), Quest 2 and Quest 3 running v2.x OS. 
 

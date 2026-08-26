@@ -18,6 +18,25 @@
     #include <khronos/openxr/openxr.h>
     #include <khronos/openxr/openxr_platform.h>
 	#include <SDL3/SDL_openxr.h>
+#elif defined(AVP_PCVR_XLIB)
+    /* Linux PCVR (SteamVR, Monado, or any desktop OpenXR runtime), desktop-GL-
+     * backed. The loader (libopenxr_loader.so) finds the active runtime through
+     * the openxr/1/active_runtime.json manifests under /etc/xdg and ~/.config.
+     *
+     * NOTE the deliberately missing XR_USE_PLATFORM_XLIB. The Linux binding
+     * struct is XrGraphicsBindingOpenGLXlibKHR, which needs Display/GLXFBConfig
+     * and therefore <X11/Xlib.h> — and Xlib defines Bool, Status, None, Window,
+     * Screen and Cursor, all of which collide with identifiers in the game
+     * headers below. Everything X-shaped lives in xr_linux_glx.c instead, and
+     * this file sees the binding only as an opaque next-chain pointer. Without
+     * a platform macro the header still gives us XrSwapchainImageOpenGLKHR,
+     * XrGraphicsRequirementsOpenGLKHR and the requirements entry point, which is
+     * all the shared code touches. */
+    #include <dlfcn.h>
+    #define XR_USE_GRAPHICS_API_OPENGL
+    #include <khronos/openxr/openxr.h>
+    #include <khronos/openxr/openxr_platform.h>
+    #include "xr_linux_glx.h"
 #elif defined(AVP_PCVR)
     /* Windows PCVR (SteamVR or any desktop OpenXR runtime), desktop-GL-backed.
      * The loader (openxr_loader.dll) finds the active runtime via the registry.
@@ -928,6 +947,28 @@ static bool init_xr_instance(void)
     } else {
         pfn_xrGetInstanceProcAddr = (PFN_xrGetInstanceProcAddr)dlsym(xr_loader_handle, "xrGetInstanceProcAddr");
     }
+#elif defined(AVP_PCVR_XLIB) /* Linux PCVR: dlopen the loader staged next to the
+       * binary, falling back to a system-wide one. The bundled copy is staged
+       * under its SONAME (libopenxr_loader.so.1) as well as the bare name, and
+       * that is the name asked for here so the same call also finds a distro
+       * package. Prefixing SDL_GetBasePath() makes the bundled copy win even
+       * where the exe's rpath does not cover a dlopen. */
+    static void *xr_loader_handle = NULL;
+    if (!xr_loader_handle) {
+        const char *base = SDL_GetBasePath();
+        if (base) {
+            char path[1024];
+            SDL_snprintf(path, sizeof(path), "%slibopenxr_loader.so.1", base);
+            xr_loader_handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+        }
+        if (!xr_loader_handle)
+            xr_loader_handle = dlopen("libopenxr_loader.so.1", RTLD_NOW | RTLD_LOCAL);
+    }
+    if (xr_loader_handle)
+        pfn_xrGetInstanceProcAddr = (PFN_xrGetInstanceProcAddr)
+            dlsym(xr_loader_handle, "xrGetInstanceProcAddr");
+    else
+        SDL_Log("XR: libopenxr_loader.so.1 not found (%s)", dlerror());
 #else /* AVP_PCVR: load openxr_loader.dll (copied next to the exe by the build).
        * The Khronos loader resolves the active runtime — SteamVR when it is the
        * system OpenXR runtime — via the registry. Loaded dynamically rather than
@@ -1176,7 +1217,8 @@ static bool init_xr_session(void)
     gfx_binding.display = egl_disp;
     gfx_binding.config  = egl_cfg;
     gfx_binding.context = egl_ctx;
-#else /* AVP_PCVR: bind the SDL-created WGL context. The spec REQUIRES the
+    const void *gfx_next = &gfx_binding;
+#else /* AVP_PCVR (both Win32/WGL and Linux/GLX): the spec REQUIRES the
        * graphics-requirements call before xrCreateSession — skipping it fails
        * with XR_ERROR_GRAPHICS_REQUIREMENTS_CALL_MISSING. */
     if (pfn_xrGetOpenGLGraphicsRequirementsKHR) {
@@ -1192,6 +1234,14 @@ static bool init_xr_session(void)
         return false;
     }
 
+#ifdef AVP_PCVR_XLIB
+    /* Built in xr_linux_glx.c from the GLX context SDL made current on this
+     * thread — see the header block at the top for why the Xlib types are kept
+     * out of this file. */
+    const void *gfx_next = AvpXrGlxBinding();
+    if (!gfx_next)
+        return false;
+#else /* AVP_PCVR_WIN32 */
     /* SDL exposes no WGL handles directly, but the context it created is
      * current on this thread, so the wglGetCurrent* pair returns exactly it. */
     XrGraphicsBindingOpenGLWin32KHR gfx_binding = { XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR };
@@ -1202,11 +1252,13 @@ static bool init_xr_session(void)
         SDL_Log("XR: no current WGL context — cannot create session");
         return false;
     }
+    const void *gfx_next = &gfx_binding;
+#endif
 #endif
 
     SDL_Log("XR: Creating session...");
     XrSessionCreateInfo session_info = { XR_TYPE_SESSION_CREATE_INFO };
-    session_info.next     = &gfx_binding;
+    session_info.next     = gfx_next;
     session_info.systemId = xr_system_id;
     result = pfn_xrCreateSession(xr_instance, &session_info, &xr_session);
     SDL_Log("XR: xrCreateSession result=%d session=%p", (int)result, (void*)xr_session);
@@ -3309,6 +3361,21 @@ int InitSDL()
 {
     SDL_Log("SDL version: %d.%d.%d", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION);
     SDL_Log("SDL GPU drivers: %s", SDL_GetCurrentVideoDriver());
+
+#ifdef AVP_PCVR_XLIB
+    /* XR_KHR_opengl_enable has no usable Wayland binding — openxr_platform.h
+       declares XrGraphicsBindingOpenGLWaylandKHR, but no runtime implements it,
+       and SteamVR's Linux OpenXR is GLX-only. Pin SDL to x11 so there IS a GLX
+       context to hand xrCreateSession; under a Wayland session this goes through
+       XWayland, which works. Left alone when SDL_VIDEODRIVER is already set, so
+       forcing another backend to test one stays possible. Must precede
+       SDL_Init(SDL_INIT_VIDEO) — the driver is chosen there. */
+    if (!SDL_getenv("SDL_VIDEODRIVER")) {
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+        SDL_Log("XR: pinned SDL to the x11 video driver (OpenXR GLX binding)");
+    }
+#endif
+
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "SDL Init failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);

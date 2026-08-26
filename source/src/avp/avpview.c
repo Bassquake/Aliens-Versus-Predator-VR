@@ -7,7 +7,14 @@
 #include <EGL/egl.h>
 #define XR_USE_PLATFORM_ANDROID
 #define XR_USE_GRAPHICS_API_OPENGL_ES
-#else /* AVP_PCVR: desktop GL — entry points beyond 1.1 come from oglfunc.h.
+#elif defined(AVP_PCVR_XLIB)
+/* Linux PCVR: desktop GL, same as Win32 below, but no platform macro. This file
+ * only needs XrSwapchainImageOpenGLKHR, which XR_USE_GRAPHICS_API_OPENGL alone
+ * provides; XR_USE_PLATFORM_XLIB would drag in Xlib and GLX purely for a binding
+ * struct that lives in xr_linux_glx.c. */
+#define XR_USE_GRAPHICS_API_OPENGL
+#include "oglfunc.h"
+#else /* AVP_PCVR_WIN32: desktop GL — entry points beyond 1.1 come from oglfunc.h.
        * Full windows.h + unknwn.h: openxr_platform.h's MSFT extension structs
        * reference IUnknown. */
 #include <windows.h>

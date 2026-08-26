@@ -1,0 +1,6 @@
+# Ignore everything in this directory
+*
+# Except this file
+!.gitignore
+!lowercase.ps1
+!put_game_files_here.txt

@@ -138,7 +138,12 @@ void SoundSys_Management(void)
 
 	}
 	CheckCDVolume();
-	
+	/* Recycles the CD music stream's OpenAL buffers. Must run every frame, and
+	   from here specifically: the frontend, the loading screens and the game
+	   loop all call SoundSys_Management(), so the queue keeps being serviced
+	   wherever music can be playing. */
+	CDDA_Management();
+
 	PlatUpdatePlayer();
 	if (ShowDebuggingText.Sounds)
 	{

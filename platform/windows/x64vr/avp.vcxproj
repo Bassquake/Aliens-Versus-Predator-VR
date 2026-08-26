@@ -102,12 +102,12 @@
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SupportJustMyCode></SupportJustMyCode>
       <UseFullPaths>false</UseFullPaths>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;AVP_XR;AVP_PCVR;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;AVP_XR;AVP_PCVR;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
@@ -195,14 +195,14 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <SupportJustMyCode></SupportJustMyCode>
       <UseFullPaths>false</UseFullPaths>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <DebugInformationFormat>
       </DebugInformationFormat>
       <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
@@ -290,14 +290,14 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <SupportJustMyCode></SupportJustMyCode>
       <UseFullPaths>false</UseFullPaths>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;CMAKE_INTDIR="MinSizeRel"</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR="MinSizeRel"</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <DebugInformationFormat>
       </DebugInformationFormat>
       <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
@@ -386,12 +386,12 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <SupportJustMyCode></SupportJustMyCode>
       <UseFullPaths>false</UseFullPaths>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;CMAKE_INTDIR="RelWithDebInfo"</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR="RelWithDebInfo"</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>

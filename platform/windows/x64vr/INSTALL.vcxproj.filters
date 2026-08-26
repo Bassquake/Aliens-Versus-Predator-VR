@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="K:\Coding\Aliens-Versus-Predator-VR\platform\windows\x64vr\CMakeFiles\3b68a91f69b4eab0da263b18cc154ad1\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{6D611219-D8CC-3629-841E-A99709DBB533}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -232,6 +232,7 @@ float FSR_RenderScale(void)
 
 int   VR_IsIn3DMode(void)           { return 0; }
 int   VR_SessionActive(void)        { return 0; }
+int   VR_HeadsetActive(void)        { return 0; }
 int   VR_IsBatterySaverActive(void) { return 0; }
 float VR_GetTargetHz(void)          { return 60.0f; }
 #endif /* !AVP_XR */
@@ -451,6 +452,9 @@ int xr_grip_right_valid = 0;
 int xr_trigger_right_pressed = 0;       /* 1 while right trigger is held */
 int xr_grip_right_squeeze_pressed = 0; /* 1 while right grip is squeezed */
 int xr_a_button_pressed                = 0; /* 1 while right A button is held */
+/* 1 on the right A button's press edge, in BOTH 2D and 3D mode. Drives the
+   death-screen restart on PCVR, where A is the only button that restarts. */
+int xr_a_button_restart_edge           = 0;
 int xr_left_thumbstick_click_pressed   = 0; /* 1 while left stick is clicked */
 int xr_b_button_pressed                     = 0; /* 1 while right B button is held */
 int xr_right_thumbstick_click_pressed        = 0; /* 1 on right stick up edge (next weapon) */
@@ -1695,11 +1699,14 @@ static void handle_xr_events(void)
                         break;
                     }
                     case XR_SESSION_STATE_STOPPING:
+                        SDL_Log("XR: session STOPPING - ending session (app keeps running)");
                         pfn_xrEndSession(xr_session);
                         xr_session_running = false;
                         break;
                     case XR_SESSION_STATE_EXITING:
                     case XR_SESSION_STATE_LOSS_PENDING:
+                        SDL_Log("EXIT: XR session state %d (EXITING/LOSS_PENDING) - quitting",
+                                (int)state_event->state);
                         xr_should_quit = true;
                         break;
                     default:
@@ -1708,6 +1715,7 @@ static void handle_xr_events(void)
                 break;
             }
             case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING:
+                SDL_Log("EXIT: XR instance loss pending - quitting");
                 xr_should_quit = true;
                 break;
             case XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING: {
@@ -1916,6 +1924,19 @@ int VR_IsIn3DMode(void)
 int VR_SessionActive(void)
 {
     return xr_enabled && xr_session_running;
+}
+
+/* "Are we rendering to a headset at all", as opposed to VR_SessionActive()'s
+   "is the headset presenting right now". Deliberately does NOT test
+   xr_session_running: this answers a question asked once during startup, before
+   the runtime has moved the session to READY, and it must not flip afterwards.
+   Use it for one-shot setup that depends on the display being an HMD (see the
+   gamma bias in gammacontrol.cpp); use VR_SessionActive() for per-frame
+   decisions. False on the non-VR Android phone flavor, where XR init is skipped
+   entirely (AVP_DISABLE_XR), and on a PCVR exe running flat. */
+int VR_HeadsetActive(void)
+{
+    return xr_enabled ? 1 : 0;
 }
 
 void VR_Set2DViewport(void)
@@ -2619,15 +2640,33 @@ int axes, balls, hats;
                 xr_left_squeeze_gameplay_pressed = lsstate.currentState ? 1 : 0;
         }
 
-        /* A button → operate (gameplay only). */
-        xr_a_button_pressed = 0;
-        if (!xr_2d_mode && xr_a_button_action && pfn_xrGetActionStateBoolean) {
-            XrActionStateGetInfo aget = { XR_TYPE_ACTION_STATE_GET_INFO };
-            aget.action = xr_a_button_action;
-            XrActionStateBoolean astate = { XR_TYPE_ACTION_STATE_BOOLEAN };
-            if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &aget, &astate))
-                    && astate.isActive)
-                xr_a_button_pressed = astate.currentState ? 1 : 0;
+        /* A button → operate (gameplay only). Read the raw state ONCE here and
+         * derive both signals from it: xr_a_button_pressed keeps its
+         * gameplay-only meaning, while xr_a_button_restart_edge is a press edge
+         * that also fires in 2D mode. The death screen renders as a 2D quad
+         * (xr_2d_mode == true), so a gameplay-gated signal can never see the
+         * press that restarts the level. */
+        {
+            int a_raw = 0;
+            if (xr_a_button_action && pfn_xrGetActionStateBoolean) {
+                XrActionStateGetInfo aget = { XR_TYPE_ACTION_STATE_GET_INFO };
+                aget.action = xr_a_button_action;
+                XrActionStateBoolean astate = { XR_TYPE_ACTION_STATE_BOOLEAN };
+                if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &aget, &astate))
+                        && astate.isActive)
+                    a_raw = astate.currentState ? 1 : 0;
+            }
+            xr_a_button_pressed = xr_2d_mode ? 0 : a_raw;
+
+            /* Edge, not level: the A press that confirms "restart" is usually
+             * still held while the level reloads, and a level-triggered restart
+             * would then fire again the moment the player died next. Consumed by
+             * CorpseMovement (pmove.c). */
+            {
+                static int a_restart_prev = 0;
+                xr_a_button_restart_edge = (a_raw && !a_restart_prev) ? 1 : 0;
+                a_restart_prev = a_raw;
+            }
         }
 
         /* Left thumbstick click → crouch (gameplay only). */
@@ -2761,16 +2800,29 @@ int axes, balls, hats;
             {
                 static float x_hold_secs = 0.0f;
                 static int   x_stage     = 0;   /* 0 = none yet, 1 = log fired, 2 = pause fired */
+                /* Only a press that BEGAN in gameplay may drive the stages below.
+                 * Without this, an X still held on the way out of a menu starts a
+                 * fresh hold the instant 3D resumes, and ~1s later re-opens the very
+                 * menu it just dismissed: confirm "Resume Game" with X and keep
+                 * holding, or press X on the death screen to restart and keep
+                 * holding, and the pause menu reappears on its own. (Zeroing
+                 * x_hold_secs in the menu branch is not enough — the accumulator
+                 * only needs x_cur, never a rising edge.) It also stopped a
+                 * carried-over hold from firing a spurious taunt on release. This
+                 * is the mirror of xr_x_pause_latch, which guards the other
+                 * direction: gameplay hold -> menu. */
+                static int   x_hold_armed = 0;
                 const float  X_LOG_HOLD_SECS   = 0.5f;
                 const float  X_PAUSE_HOLD_SECS = 1.0f;
 
                 if (xr_2d_mode) {
                     /* Menus: X is select (KEY_CR); no hold tracking here. */
-                    x_hold_secs = 0.0f;
-                    x_stage     = 0;
+                    x_hold_secs  = 0.0f;
+                    x_stage      = 0;
+                    x_hold_armed = 0;
                 } else {
-                    if (x_cur && !x_prev) { x_hold_secs = 0.0f; x_stage = 0; }
-                    if (x_cur) {
+                    if (x_cur && !x_prev) { x_hold_secs = 0.0f; x_stage = 0; x_hold_armed = 1; }
+                    if (x_cur && x_hold_armed) {
                         extern int RealFrameTime;
                         x_hold_secs += (float)RealFrameTime / 65536.0f;
                         if (x_stage < 1 && x_hold_secs >= X_LOG_HOLD_SECS) {
@@ -2784,6 +2836,7 @@ int axes, balls, hats;
                              * AvP_TriggerInGameMenus reads
                              * DebouncedKeyboardInput[FixedInputConfig.PauseGame],
                              * which is KEY_ESCAPE (usr_io.c). */
+                            SDL_Log("INPUT: X held %.2fs - opening the pause menu", x_hold_secs);
                             KeyboardInput[KEY_ESCAPE] = 1;
                             DebouncedKeyboardInput[KEY_ESCAPE] = 1;
                             x_stage = 2;
@@ -2792,11 +2845,11 @@ int axes, balls, hats;
                              * confirm the highlighted entry on its first frame. */
                             xr_x_pause_latch = 1;
                         }
-                    } else if (x_prev && x_stage == 0) {
+                    } else if (x_prev && x_stage == 0 && x_hold_armed) {
                         xr_x_button_gameplay_pressed = 1;   /* short tap → taunt */
                     }
                 }
-                if (!x_cur) xr_x_pause_latch = 0;
+                if (!x_cur) { xr_x_pause_latch = 0; x_hold_armed = 0; }
             }
 #else
             if (!xr_2d_mode && x_cur && !x_prev)
@@ -3615,6 +3668,7 @@ static bool SDLCALL SDLEventFilter(void* userData, SDL_Event* event) {
     
     switch (event->type) {
         case SDL_EVENT_TERMINATING:
+            SDL_Log("EXIT: SDL_EVENT_TERMINATING - leaving the main loop");
             AvP.MainLoopRunning = 0; /* TODO */
             break;
     }
@@ -4403,9 +4457,17 @@ void CheckForWindowsMessages()
 #endif
                 break;
             case SDL_EVENT_QUIT:
+                SDL_Log("EXIT: SDL_EVENT_QUIT received - terminating");
                 AvP.MainLoopRunning = 0; /* TODO */
-                exit(0); //TODO
+#ifdef AVP_XR
+                /* End the XR session before the process goes away. Exiting with a
+                   live session leaves the compositor holding one it can never get
+                   a frame from — the same reason the normal exit path calls this
+                   (see destroy_xr_resources). This used to be a bare exit(0). */
+                destroy_xr_resources();
+#endif
                 SDL_StopTextInput(window);
+                exit(0); //TODO
                 break;
 #ifdef __ANDROID__
             case SDL_EVENT_GAMEPAD_ADDED:
@@ -4747,6 +4809,14 @@ static const char *usage_string =
 
 int main(int argc, char *argv[])
 {
+    /* Unbuffer the diagnostic streams. Redirecting to a file — the documented way
+       to capture a log — makes stdout fully buffered, so a hard crash discards up
+       to 4 KB of the most recent output: exactly the lines naming where it died.
+       Costs nothing at these volumes and makes a truncated log mean "it stopped
+       here" rather than "the buffer was lost". */
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+
     //NEEDED?
     //SDL_GLContext g_MainGLContext = NULL;
     //g_MainGLContext = SDL_GL_CreateContext(window);
@@ -4973,7 +5043,10 @@ int main(int argc, char *argv[])
 #endif
         while(AvP.MainLoopRunning) {
 #ifdef AVP_XR
-            if (xr_should_quit) break;
+            if (xr_should_quit) {
+                SDL_Log("EXIT: xr_should_quit set - leaving the game loop");
+                break;
+            }
 #endif
             CheckForWindowsMessages();
             
@@ -5152,23 +5225,47 @@ int main(int argc, char *argv[])
                     AvP.GameMode = I_GM_Playing;
                     break;
                 default:
+                    SDL_Log("EXIT: unexpected AvP.GameMode = %d", AvP.GameMode);
                     fprintf(stderr, "AvP.MainLoopRunning: gamemode = %d\n", AvP.GameMode);
                     exit(EXIT_FAILURE);
             }
-            
+
             if (AvP.RestartLevel) {
                 AvP.RestartLevel = 0;
                 AvP.LevelCompleted = 0;
-                
+
                 FixCheatModesInUserProfile(UserProfilePtr);
-                
+
+                /* Bracketed because a restart is the one place a long, XR-silent
+                   gap opens mid-session: if the app disappears here, the log shows
+                   which side of RestartLevel it went. */
+#ifdef AVP_XR
+                SDL_Log("RESTART: RestartLevel() begin (xr_enabled=%d session_running=%d 2d_mode=%d)",
+                        (int)xr_enabled, (int)xr_session_running, (int)xr_2d_mode);
+#else
+                SDL_Log("RESTART: RestartLevel() begin");
+#endif
                 RestartLevel();
+                SDL_Log("RESTART: RestartLevel() done (Player=%p sb=%p)",
+                        (void*)Player,
+                        (void*)(Player ? Player->ObStrategyBlock : NULL));
             }
         }
+        /* Catch-all: the level loop has ended and we are heading back to the
+           frontend. MainLoopRunning==0 means something cleared it — the EXIT:
+           lines above name which site — while a nonzero value means we left via
+           a break instead. Logged unconditionally so no silent exit escapes. */
+#ifdef AVP_XR
+        SDL_Log("EXIT: level loop ended (MainLoopRunning=%d xr_should_quit=%d LevelCompleted=%d)",
+                (int)AvP.MainLoopRunning, (int)xr_should_quit, (int)AvP.LevelCompleted);
+#else
+        SDL_Log("EXIT: level loop ended (MainLoopRunning=%d LevelCompleted=%d)",
+                (int)AvP.MainLoopRunning, (int)AvP.LevelCompleted);
+#endif
 #ifdef AVP_XR
         xr_2d_mode = true;    // back to menus
 #endif
-        
+
         AvP.LevelCompleted = thisLevelHasBeenCompleted;
         
         FixCheatModesInUserProfile(UserProfilePtr);

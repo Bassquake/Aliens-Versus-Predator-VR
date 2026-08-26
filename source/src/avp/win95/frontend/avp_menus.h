@@ -362,4 +362,21 @@ void RenderBriefingText(int centreY, int brightness);
 void GetFilenameForSaveSlot(int i, unsigned char *filenamePtr);
 void ScanSaveSlots(void);
 
+/* "This build actually drives a headset."
+ *
+ * AVP_XR is defined for EVERY Android build, including the non-VR `android`
+ * (phone/tablet) flavor, which additionally sets AVP_DISABLE_XR to compile
+ * OpenXR init out. So AVP_XR alone means "Quest OR phone OR PCVR", which is the
+ * wrong question for anything controller- or headset-shaped in the frontend:
+ * gating on it hands the phone VR-only UI it can neither use nor dismiss.
+ *
+ * Use this for menu rows that only make sense in a headset, for the
+ * controller-driven on-screen keyboard, and for VR-worded help strings. Use its
+ * inverse for anything needing a mouse/keyboard/gamepad. Note the *system*
+ * on-screen keyboard (Platform_SetTextInputActive) is NOT one of these — a phone
+ * needs that just as much as a Quest, so it stays on AVP_XR. */
+#if defined(AVP_XR) && !defined(AVP_DISABLE_XR)
+#define AVP_MENU_VR 1
+#endif
+
 #endif

@@ -10,6 +10,9 @@
 #include "avp_menus.h"
 #include "avp_userprofile.h"
 
+/* AVP_MENU_VR ("this build actually drives a headset") comes from avp_menus.h,
+   included above — it is shared with avp_menus.c. */
+
 #include "gammacontrol.h"
 #include "bh_types.h"
 #include "pldnet.h"
@@ -283,10 +286,18 @@ static AVPMENU_ELEMENT AvPMenu_InGameAVOptions[] =
 	 *  - FSR is bypassed whenever an XR session is presenting (see
 	 *    ThisFramesRenderingHasBegun), so it would be dead in the headset too.
 	 * PCVR therefore offers none of the three rather than dead controls; use
-	 * SteamVR's own refresh-rate and per-app render-resolution settings. */
+	 * SteamVR's own refresh-rate and per-app render-resolution settings.
+	 *  - the non-VR Android "android" (phone/tablet) flavor gets none of them
+	 *    either: it sets AVP_DISABLE_XR, so OpenXR init is compiled out and both
+	 *    VR options are inert. Note this HAS to nest inside the __ANDROID__
+	 *    branch rather than chain onto it — falling through to the #elif would
+	 *    hand the phone the FSR slider, and FSR's whole implementation is
+	 *    #ifndef __ANDROID__, so that would just be a different dead control. */
 #if defined(__ANDROID__)
+  #if !defined(AVP_DISABLE_XR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE},  {3}, {&VRRefreshRateIndex},  {TEXTSTRING_VR_REFRESH_72},	TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
+  #endif
 #elif !defined(AVP_PCVR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FSR},              {4}, {&FSRQualityIndex},     {TEXTSTRING_AVOPTIONS_FSR_OFF}},
 #endif
@@ -313,10 +324,15 @@ static AVPMENU_ELEMENT AvPMenu_MainMenuAVOptions[] =
 	 *  - FSR is bypassed whenever an XR session is presenting (see
 	 *    ThisFramesRenderingHasBegun), so it would be dead in the headset too.
 	 * PCVR therefore offers none of the three rather than dead controls; use
-	 * SteamVR's own refresh-rate and per-app render-resolution settings. */
+	 * SteamVR's own refresh-rate and per-app render-resolution settings.
+	 *  - the non-VR Android "android" (phone/tablet) flavor gets none of them
+	 *    either — see the matching comment on the main-menu AV options above,
+	 *    including why the AVP_DISABLE_XR test nests instead of chaining. */
 #if defined(__ANDROID__)
+  #if !defined(AVP_DISABLE_XR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE},  {3}, {&VRRefreshRateIndex},  {TEXTSTRING_VR_REFRESH_72},	TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
+  #endif
 #elif !defined(AVP_PCVR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FSR},              {4}, {&FSRQualityIndex},     {TEXTSTRING_AVOPTIONS_FSR_OFF}},
 #endif
@@ -332,8 +348,10 @@ static AVPMENU_ELEMENT AvPMenu_UserProfileSelect[] =
 };
 static AVPMENU_ELEMENT AvPMenu_UserProfileEnterName[] =
 {
-#ifdef AVP_XR
-	/* VR: no keyboard — guide the player through the controller name/continue flow. */
+#ifdef AVP_MENU_VR
+	/* Headset only: no physical keyboard, and the help text names controller
+	   buttons ("Press X or A button..."), so it must not reach the phone flavor —
+	   which types on the Android system keyboard and has no X or A. */
 	{AVPMENU_ELEMENT_TEXTFIELD, 	{TEXTSTRING_BLANK}, {MAX_SIZE_OF_USERS_NAME},	{NULL}, {0}, TEXTSTRING_USERPROFILE_HELP_VR},
 	{AVPMENU_ELEMENT_GOTOMENU, 		{TEXTSTRING_CONTINUE},	{AVPMENU_MAIN}, {0}, {0}, TEXTSTRING_USERPROFILE_HELP_VR},
 #else
@@ -714,12 +732,15 @@ static AVPMENU_ELEMENT AvPMenu_InGame[] =
 	{AVPMENU_ELEMENT_GOTOMENU, {TEXTSTRING_LOADGAME},						{AVPMENU_LOADGAME}},
 #endif
 	{AVPMENU_ELEMENT_RESTARTGAME,{TEXTSTRING_INGAMEMENU_RESTARTMISSION},		{0}},
-	/* Controller Configuration holds only VR turn/comfort options — VR (Android) only. */
-	#ifdef AVP_XR
+	/* Controller Configuration holds ONLY headset options (turn mode, snap angle,
+	 * smooth turn, vignette, plus HUD inset and the two-hand manual-reload gesture
+	 * — every one of them read solely by the VR eye pass in avpview.c). Gated on
+	 * AVP_MENU_VR, not AVP_XR: on the non-VR phone flavor every row would be inert. */
+	#ifdef AVP_MENU_VR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG}},
 	#endif
-	/* Mouse / joystick / key configuration hidden in VR (Android). */
-	#ifndef AVP_XR
+	/* Mouse / joystick / key configuration hidden only in a real headset. */
+	#ifndef AVP_MENU_VR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MOUSECONTROLS_TITLE},		{AVPMENU_CONTROLS}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_JOYSTICKCONTROLS_TITLE},		{AVPMENU_JOYSTICKCONTROLS}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MARINEKEYCONTROLS_TITLE}, 		{AVPMENU_MARINEKEYCONFIG}},
@@ -731,12 +752,15 @@ static AVPMENU_ELEMENT AvPMenu_InGame[] =
 static AVPMENU_ELEMENT AvPMenu_InNetGame[] =
 {
 	{AVPMENU_ELEMENT_RESUMEGAME,{TEXTSTRING_INGAMEMENU_RESUMEGAME},			{0}},
-	/* Controller Configuration holds only VR turn/comfort options — VR (Android) only. */
-	#ifdef AVP_XR
+	/* Controller Configuration holds ONLY headset options (turn mode, snap angle,
+	 * smooth turn, vignette, plus HUD inset and the two-hand manual-reload gesture
+	 * — every one of them read solely by the VR eye pass in avpview.c). Gated on
+	 * AVP_MENU_VR, not AVP_XR: on the non-VR phone flavor every row would be inert. */
+	#ifdef AVP_MENU_VR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG}},
 	#endif
-	/* Mouse / joystick / key configuration hidden in VR (Android). */
-	#ifndef AVP_XR
+	/* Mouse / joystick / key configuration hidden only in a real headset. */
+	#ifndef AVP_MENU_VR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MOUSECONTROLS_TITLE},		{AVPMENU_CONTROLS}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_JOYSTICKCONTROLS_TITLE},		{AVPMENU_JOYSTICKCONTROLS}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MARINEKEYCONTROLS_TITLE}, 		{AVPMENU_MARINEKEYCONFIG}},
@@ -757,13 +781,16 @@ static AVPMENU_ELEMENT AvPMenu_KeyConfig[NUMBER_OF_PREDATOR_INPUTS+2+1+1];
 
 static AVPMENU_ELEMENT AvPMenu_Options[] =
 {
-	/* Controller Configuration holds only VR turn/comfort options — VR (Android) only. */
-	#ifdef AVP_XR
+	/* Controller Configuration holds ONLY headset options — see the in-game menu
+	 * above. Gated on AVP_MENU_VR so the non-VR phone flavor does not get it. */
+	#ifdef AVP_MENU_VR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
 	#endif
-	/* Mouse / joystick / per-species key configuration are hidden in VR (Android),
-	 * where input comes from the VR controllers via Controller Configuration above. */
-	#ifndef AVP_XR
+	/* Mouse / joystick / per-species key configuration are hidden only in a real
+	 * headset, where input comes from the VR controllers via Controller
+	 * Configuration above. The phone flavor keeps them — it uses conventional
+	 * input and would otherwise have no control configuration at all. */
+	#ifndef AVP_MENU_VR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MOUSECONTROLS_TITLE},		{AVPMENU_CONTROLS},	{0},	{0},	TEXTSTRING_MOUSECONTROLS_TITLE_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_JOYSTICKCONTROLS_TITLE},		{AVPMENU_JOYSTICKCONTROLS},	{0},	{0},	TEXTSTRING_JOYSTICKCONTROLS_TITLE_HELP},
 	#if !(MARINE_DEMO||ALIEN_DEMO)
@@ -775,7 +802,7 @@ static AVPMENU_ELEMENT AvPMenu_Options[] =
 	#if !(PREDATOR_DEMO||MARINE_DEMO)
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENKEYCONTROLS_TITLE}, 		{AVPMENU_ALIENKEYCONFIG},	{0},	{0},	TEXTSTRING_ALIENKEYCONTROLS_TITLE_HELP},
 	#endif
-	#endif /* !AVP_XR */
+	#endif /* !AVP_MENU_VR */
 	{AVPMENU_ELEMENT_ENDOFMENU}
 };
 
@@ -1063,46 +1090,71 @@ extern void MakeSelectSessionMenu(void)
 }
 
 
+/* Retarget the single species key-config row in one in-game menu.
+ *
+ * Finds the row instead of indexing it. The old code hardcoded
+ * AvPMenu_InGame[7] / AvPMenu_InNetGame[4], which were correct back when
+ * "Controller Configuration" was in both menus on every platform. Putting that
+ * row behind #ifdef AVP_XR shifted the desktop layout down by one and left the
+ * indices pointing at the row below — AV Options — so the flat desktop build
+ * overwrote its own "AV Options" entry with a second copy of the key-config row
+ * (verified by counting the preprocessed layout: the key row is 6, not 7, and 3,
+ * not 4). Scanning for whichever key-config menu the row currently targets is
+ * drift-proof: the layout can gain or lose rows per platform and this still
+ * finds it, or cleanly does nothing when the row is absent. */
+static void RetargetSpeciesKeyConfigRow(AVPMENU_ELEMENT *menu,
+                                        enum TEXTSTRING_ID title,
+                                        int targetMenu)
+{
+	AVPMENU_ELEMENT *e;
+
+	for (e = menu; e->ElementID != AVPMENU_ELEMENT_ENDOFMENU; e++)
+	{
+		if (e->ElementID != AVPMENU_ELEMENT_GOTOMENU) continue;
+
+		if (e->b.MenuToGoTo == AVPMENU_MARINEKEYCONFIG
+		 || e->b.MenuToGoTo == AVPMENU_PREDATORKEYCONFIG
+		 || e->b.MenuToGoTo == AVPMENU_ALIENKEYCONFIG)
+		{
+			e->a.TextDescription = title;
+			e->b.MenuToGoTo      = targetMenu;
+			return;
+		}
+	}
+}
+
 extern void MakeInGameMenu(void)
 {
-#ifndef AVP_XR
+	/* Must match the guard on the key-config rows themselves (AVP_MENU_VR), not
+	   AVP_XR — the phone flavor now carries those rows and needs them retargeted. */
+#ifndef AVP_MENU_VR
 	/* KJL 14:51:28 06/11/98 - set the only available key config to be that of the player's
 	cyrrent character */
 	/*Adjust both variants of the menu -Richard*/
-	/* Indices match the in-game menu layouts: the species key-config row sits just
-	 * below "Controller Configuration". In VR (Android) the key-config rows are
-	 * removed entirely, so there is nothing to set here — skipping also avoids
-	 * overwriting the (now lower-indexed) Abort Play / AV Options entries. */
+	/* In VR the key-config rows are not in the menu at all, so there is nothing to
+	 * retarget — the helper would simply find no match, but skipping is clearer. */
+	enum TEXTSTRING_ID title;
+	int targetMenu;
+
 	switch (AvP.PlayerType)
 	{
-		case I_Marine:
-		{
-			AvPMenu_InGame[7].a.TextDescription = TEXTSTRING_MARINEKEYCONTROLS_TITLE;
-			AvPMenu_InGame[7].b.MenuToGoTo = AVPMENU_MARINEKEYCONFIG;
-
-			AvPMenu_InNetGame[4].a.TextDescription = TEXTSTRING_MARINEKEYCONTROLS_TITLE;
-			AvPMenu_InNetGame[4].b.MenuToGoTo = AVPMENU_MARINEKEYCONFIG;
-			break;
-		}
 		case I_Predator:
-		{
-			AvPMenu_InGame[7].a.TextDescription = TEXTSTRING_PREDATORKEYCONTROLS_TITLE;
-			AvPMenu_InGame[7].b.MenuToGoTo = AVPMENU_PREDATORKEYCONFIG;
-
-			AvPMenu_InNetGame[4].a.TextDescription = TEXTSTRING_PREDATORKEYCONTROLS_TITLE;
-			AvPMenu_InNetGame[4].b.MenuToGoTo = AVPMENU_PREDATORKEYCONFIG;
+			title = TEXTSTRING_PREDATORKEYCONTROLS_TITLE;
+			targetMenu = AVPMENU_PREDATORKEYCONFIG;
 			break;
-		}
 		case I_Alien:
-		{
-			AvPMenu_InGame[7].a.TextDescription = TEXTSTRING_ALIENKEYCONTROLS_TITLE;
-			AvPMenu_InGame[7].b.MenuToGoTo = AVPMENU_ALIENKEYCONFIG;
-
-			AvPMenu_InNetGame[4].a.TextDescription = TEXTSTRING_ALIENKEYCONTROLS_TITLE;
-			AvPMenu_InNetGame[4].b.MenuToGoTo = AVPMENU_ALIENKEYCONFIG;
+			title = TEXTSTRING_ALIENKEYCONTROLS_TITLE;
+			targetMenu = AVPMENU_ALIENKEYCONFIG;
 			break;
-		}
+		case I_Marine:
+		default:
+			title = TEXTSTRING_MARINEKEYCONTROLS_TITLE;
+			targetMenu = AVPMENU_MARINEKEYCONFIG;
+			break;
 	}
+
+	RetargetSpeciesKeyConfigRow(AvPMenu_InGame,    title, targetMenu);
+	RetargetSpeciesKeyConfigRow(AvPMenu_InNetGame, title, targetMenu);
 #endif
 }
 

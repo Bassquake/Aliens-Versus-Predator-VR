@@ -840,9 +840,25 @@ void DoFailedLevelStatisticsScreen(void)
 	D3D_FadeDownScreen(deathFadeLevel,0);
 	DoStatisticsScreen(0);
 	
-	if (!deathFadeLevel) 
+	if (!deathFadeLevel)
 	{
+#ifdef AVP_XR
+		/* Every VR build — Quest and PCVR — names the button, because only A
+		   restarts there (pmove.c); the generic "press any key" would be wrong.
+		   Hardcoded rather than added to language.txt: that file is a game asset,
+		   not part of this repo, so a new string there would not reach anyone's
+		   install. Keyed off the live session, so a PCVR exe running flat and the
+		   non-VR Android phone flavor both fall back to the translated string —
+		   they really do take any key. */
+		extern int VR_SessionActive(void);
+		static char press_a_to_restart[] = "Press A button to restart";
+		RenderStringCentred(VR_SessionActive()
+		                        ? press_a_to_restart
+		                        : GetTextString(TEXTSTRING_MULTIPLAYER_PRESSKEYTORESTARTGAME),
+		                    ScreenDescriptorBlock.SDB_Width/2,ScreenDescriptorBlock.SDB_Height-20,0xffffffff);
+#else
 		RenderStringCentred(GetTextString(TEXTSTRING_MULTIPLAYER_PRESSKEYTORESTARTGAME),ScreenDescriptorBlock.SDB_Width/2,ScreenDescriptorBlock.SDB_Height-20,0xffffffff);
+#endif
 	}
 
 }

@@ -1,5 +1,7 @@
 /* inits the system and controls environment and player loading */
 
+#include <SDL3/SDL.h>   /* SDL_Log for the null-VDB warning in RestartLevel */
+
 #include "3dc.h"
 #include "module.h"
 #include "stratdef.h"
@@ -495,16 +497,16 @@ void RestartLevel()
 {
 	//get the cd to start again at the beginning of the play list.
 	ResetCDPlayForLevel();
-	
+
 	CleanUpPheromoneSystem();
 	// now deallocate the module vis array
 	DeallocateModuleVisArrays();
-	
-	/* destroy the VDB list */	
+
+	/* destroy the VDB list */
 	InitialiseVDBs();
-	InitialiseTxAnimBlocks(); 
-	
-	
+	InitialiseTxAnimBlocks();
+
+
 	// deallocate strategy and display blocks
 	{
 		int i ;
@@ -522,7 +524,7 @@ void RestartLevel()
 
 	//stop all sound
 	SoundSys_StopAll();
-	
+
 	//reset the displayblock for modules to 0
 	{
 		int i=2;
@@ -543,20 +545,20 @@ void RestartLevel()
 //	InitHUD();
 	
 	ProcessSystemObjects();
-	
+
 	create_strategies_from_list ();
 	AssignAllSBNames();
-	
+
 	SetupVision();
 	InitObjectVisibilities();
 	InitPheromoneSystem();
 	InitHive();
 	InitSquad();
-	
+
 	/* KJL 14:22:41 17/11/98 - reset HUD data, such as where the crosshair is,
 	whether the Alien jaw is on-screen, and so on */
 	ReInitHUD();
-	
+
 	InitialiseParticleSystem();
 	InitialiseSfxBlocks();
 	InitialiseLightElementSystem();
@@ -570,7 +572,7 @@ void RestartLevel()
 
 	CurrentGameStats_Initialise();
 	MessageHistory_Initialise();
-	
+
 	if(AvP.Network!=I_No_Network)
 	{
 		TeleportNetPlayerToAStartingPosition(Player->ObStrategyBlock,1);
@@ -579,7 +581,26 @@ void RestartLevel()
 	{
 		//make sure the visibilities are up to date
 		extern VIEWDESCRIPTORBLOCK* Global_VDB_Ptr;
-		Global_VDB_Ptr->VDB_World = Player->ObWorld;
+
+		/* Global_VDB_Ptr is NOT guaranteed non-null here. It is only ever set by
+		   the render path (AvpShowViews -> ActiveVDBList[0]), and the frontend's
+		   display-mode setup deliberately clears it to 0. InitialiseVDBs() above
+		   has also just returned every VDB to the free list. Dereferencing it blind
+		   faults the process, which on PCVR reads as the game vanishing into
+		   SteamVR Home rather than as a crash. Skip the update instead — the
+		   world position is re-derived from the player on the next rendered frame
+		   anyway. */
+		if (Global_VDB_Ptr && Player)
+		{
+			Global_VDB_Ptr->VDB_World = Player->ObWorld;
+		}
+		else
+		{
+			/* Kept: this fires only when the pointers really are null, which is the
+			   anomaly the guard exists for — not per-restart noise. */
+			SDL_Log("RESTART: Global_VDB_Ptr update SKIPPED (VDB=%p Player=%p)",
+			        (void*)Global_VDB_Ptr, (void*)Player);
+		}
 		AllNewModuleHandler();
 		DoObjectVisibilities();
 	}

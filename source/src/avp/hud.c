@@ -9,6 +9,8 @@
 	HUD. MarineWeaponHud contains he various information needed
 	to copy Weapon data into the HUD
 */
+#include <SDL3/SDL.h>   /* SDL_Log for the level-exit trace below */
+
 #include "3dc.h"
 #include "module.h"
 #include "inline.h"
@@ -637,11 +639,12 @@ void DoCompletedLevelStatisticsScreen(void)
 	extern int DebouncedGotAnyKey;
 	extern unsigned char DebouncedKeyboardInput[];
 	if (DebouncedKeyboardInput[KEY_ESCAPE])
-	{	
+	{
 		AvP.RestartLevel = 1;
 	}
 	else if (DebouncedGotAnyKey)
 	{
+		SDL_Log("EXIT: completed-level stats screen took a key - leaving the level");
 		AvP.MainLoopRunning = 0;
 	}
 	D3D_FadeDownScreen(0,0);

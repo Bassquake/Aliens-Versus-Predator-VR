@@ -11,6 +11,11 @@
 #include <libswscale/swscale.h>
 #include <SDL3/SDL.h>
 
+/* tolower() in fmv_open_file's path-lowering loop. Was included only inside the
+   __ANDROID__ block below, so every desktop build compiled that call with an
+   implicit declaration. */
+#include <ctype.h>
+
 #include "3dc.h"
 #include "module.h"
 #include "inline.h"
@@ -28,7 +33,6 @@ extern void OGL_RegenerateMipmaps(void);
 
 #ifdef __ANDROID__
 #include "files.h"
-#include <ctype.h>
 #include <android/log.h>
 #define FMV_LOG(...) __android_log_print(ANDROID_LOG_DEBUG, "FMV", __VA_ARGS__)
 /* system.h defines 'debug' as a macro (→ 0/1); undef it so avcodec.h's
@@ -42,7 +46,9 @@ extern void OGL_RegenerateMipmaps(void);
 #endif
 
 #ifndef __ANDROID__
-/* Desktop FMV is stubbed; the debug log macro is Android-only, so no-op it. */
+/* Only the LOGGING is Android-only (it goes through __android_log_print), so
+   no-op it here. Desktop FMV itself is fully live — the same FFmpeg decode path
+   runs on every platform. */
 #define FMV_LOG(...) ((void)0)
 #endif
 
@@ -1347,90 +1353,31 @@ extern void InitialiseTriggeredFMVs(void)
 	int i = NumberOfFMVTextures;
 	while (i--) {
 		if (FMVTexture[i].IsTriggeredPlotFMV) {
-			
-			// Check if any active FFmpeg resources exist
+			/* Only a texture that was actually opened has a message slot to clear. */
 			if (FMVTexture[i].fmv_fmt_ctx || FMVTexture[i].fmv_codec_ctx) {
 				FMVTexture[i].MessageNumber = 0;
 			}
-			
-			// 1. Free Video Decoder Context
-			if (FMVTexture[i].fmv_codec_ctx) {
-				AVCodecContext *codec_ctx = (AVCodecContext *)FMVTexture[i].fmv_codec_ctx;
-				avcodec_free_context(&codec_ctx);
-				FMVTexture[i].fmv_codec_ctx = NULL;
-			}
-			
-			// 2. Free Audio Decoder Context (if applicable)
-			if (FMVTexture[i].fmv_audio_codec_ctx) {
-				AVCodecContext *audio_codec_ctx = (AVCodecContext *)FMVTexture[i].fmv_audio_codec_ctx;
-				avcodec_free_context(&audio_codec_ctx);
-				FMVTexture[i].fmv_audio_codec_ctx = NULL;
-			}
-			
-			// 3. Close Demuxer / Input Container
-			if (FMVTexture[i].fmv_fmt_ctx) {
-				AVFormatContext *fmt_ctx = (AVFormatContext *)FMVTexture[i].fmv_fmt_ctx;
-				avformat_close_input(&fmt_ctx);
-				FMVTexture[i].fmv_fmt_ctx = NULL;
-			}
-			
-			// 4. Free Scaling / Color Conversion Context
-			if (FMVTexture[i].fmv_sws_ctx) {
-				SwsContext *sws_ctx = (SwsContext *)FMVTexture[i].fmv_sws_ctx;
-				sws_freeContext(sws_ctx);
-				FMVTexture[i].fmv_sws_ctx = NULL;
-			}
-			
-			// 5. Free Struct Buffers (Frames and Packets)
-			if (FMVTexture[i].fmv_frame) {
-				AVFrame *frame = (AVFrame *)FMVTexture[i].fmv_frame;
-				av_frame_free(&frame);
-				FMVTexture[i].fmv_frame = NULL;
-			}
-			if (FMVTexture[i].fmv_audio_frame) {
-				AVFrame *audio_frame = (AVFrame *)FMVTexture[i].fmv_audio_frame;
-				av_frame_free(&audio_frame);
-				FMVTexture[i].fmv_audio_frame = NULL;
-			}
-			if (FMVTexture[i].fmv_packet) {
-				AVPacket *packet = (AVPacket *)FMVTexture[i].fmv_packet;
-				av_packet_free(&packet);
-				FMVTexture[i].fmv_packet = NULL;
-			}
-			
-			// 6. Free Custom IO layers if you used avio_alloc_context
-			if (FMVTexture[i].fmv_avio_ctx) {
-				AVIOContext *avio_ctx = (AVIOContext *)FMVTexture[i].fmv_avio_ctx;
-				// Important: Only av_freep the internal buffer if FFmpeg didn't take ownership
-				av_freep(&avio_ctx->buffer);
-				avio_context_free(&avio_ctx);
-				FMVTexture[i].fmv_avio_ctx = NULL;
-			}
-			if (FMVTexture[i].fmv_avio_buf) {
-				// If it wasn't freed via avio_context_free above
-				av_freep(&FMVTexture[i].fmv_avio_buf);
-			}
-			
-			// 7. Close underlying file handle if opened manually via standard I/O
-			if (FMVTexture[i].fmv_file) {
-				fclose((FILE *)FMVTexture[i].fmv_file);
-				FMVTexture[i].fmv_file = NULL;
-			}
-			
-			// 8. Free SDL Audio Streams (if initialized)
-			if (FMVTexture[i].fmv_sdl_audio) {
-				// SDL3: SDL_DestroyAudioStream((SDL_AudioStream*)FMVTexture[i].fmv_sdl_audio);
-				// SDL2: SDL_FreeAudioStream((SDL_AudioStream*)FMVTexture[i].fmv_sdl_audio);
-				FMVTexture[i].fmv_sdl_audio = NULL;
-			}
-			
-			// Reset primitive states safely
-			FMVTexture[i].fmv_active            = 0;
-			FMVTexture[i].fmv_stream_idx        = -1;
-			FMVTexture[i].fmv_audio_stream_idx  = -1;
-			FMVTexture[i].fmv_frame_number      = 0;
-			FMVTexture[i].fmv_frame_duration_ms = 0;
-			FMVTexture[i].fmv_next_frame_ms     = 0;
+
+			/* This used to hand-roll the whole teardown, duplicating
+			   fmv_close_decoder() step for step — and the copy had drifted:
+
+			     - It DOUBLE FREED the AVIO buffer. fmv_avio_buf holds the very
+			       pointer given to avio_alloc_context, which is what
+			       av_freep(&avio_ctx->buffer) has just released; freeing
+			       fmv_avio_buf afterwards corrupted the heap and crashed the
+			       process a moment later. Every other site in this file (the
+			       fmv_open_file error paths, fmv_close_decoder) frees the buffer
+			       once via avio_ctx->buffer and merely NULLs fmv_avio_buf, which
+			       is the correct pattern.
+			     - It leaked the SDL audio stream, only NULLing fmv_sdl_audio
+			       instead of calling SDL_DestroyAudioStream.
+			     - On Android it left fmv_al_stream open.
+
+			   The crash was load-bearing on where you died: this only runs for
+			   triggered plot FMVs, so it needed one to have been opened, which is
+			   why some restarts survived and others did not. Calling the shared
+			   teardown removes the duplication that allowed the drift. */
+			fmv_close_decoder(&FMVTexture[i]);
 		}
 	}
 }
@@ -1480,11 +1427,16 @@ void SetupFMVTexture(FMVTEXTURE *ftPtr)
 		ftPtr->RGBBuf = &ftPtr->PalettedBuf[128*128];
 	}
 
-#ifdef __ANDROID__
+	/* -1 is the "no stream" sentinel every other site uses (fmv_close_decoder sets
+	   it, fmv_open_file overwrites it with the real index). The rest of the fmv_*
+	   fields want zero, which the global FMVTexture array already gives them, but
+	   these two do not — left at 0 they name stream 0. Set on every platform: the
+	   guard that used to be here dated from when only Android opened these
+	   decoders, and desktop was silently starting them at 0. Nothing reads either
+	   field without checking fmv_active first, so this was latent rather than
+	   live, but the sentinel should not differ by platform. */
 	ftPtr->fmv_stream_idx       = -1;
 	ftPtr->fmv_audio_stream_idx = -1;
-	/* All other fmv_* fields are zero-initialised in the global FMVTexture array */
-#endif
 }
 // Originally in d3d_render.cpp
 void UpdateFMVTexture(FMVTEXTURE *ftPtr)
@@ -1595,9 +1547,15 @@ void ReleaseFMVTexture(FMVTEXTURE *ftPtr)
 {
 	ftPtr->MessageNumber = 0;
 
-#ifdef __ANDROID__
+	/* Not #ifdef __ANDROID__ any more. StartTriggerPlotFMV calls fmv_open_file on
+	   EVERY platform (its Android-only variant is dead code inside a #if 0), so
+	   the guard leaked a whole decoder per texture on desktop every time a level
+	   was left: AVFormatContext, both AVCodecContexts, the SwsContext, the frames
+	   and packet, the AVIOContext and its buffer, the FILE*, and the SDL audio
+	   stream. fmv_close_decoder is safe to call unconditionally — it null-checks
+	   every field, keeps its own __ANDROID__ guard for the OpenAL stream, and the
+	   fmv_open_file error paths already call it on desktop. */
 	fmv_close_decoder(ftPtr);
-#endif
 
 	if (ftPtr->PalettedBuf != NULL)
 	{

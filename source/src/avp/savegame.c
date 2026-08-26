@@ -1,3 +1,5 @@
+#include <SDL3/SDL.h>   /* SDL_Log for the level-exit trace below */
+
 #include "3dc.h"
 
 #include "inline.h"
@@ -490,6 +492,7 @@ void SaveGame()
 	   to save first, drop out of the game loop so we return to the main menu. */
 	if (abortToMainMenu)
 	{
+		SDL_Log("EXIT: save-then-abort chose to leave the level");
 		AvP.MainLoopRunning = FALSE;
 	}
 }
@@ -567,6 +570,7 @@ void LoadSavedGame()
 	///make sure we're on the right level etc.
 	if(!ValidateLevelForLoadGameRequest(save_slot))
 	{
+		SDL_Log("EXIT: load-game slot is for another level - leaving the level");
 		AvP.MainLoopRunning = FALSE;
 		return;
 	}

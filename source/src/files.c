@@ -669,21 +669,50 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 	/*
 	0. $AVP_DATA
 	1. argv['d']
-	2. executable path from argv[0]
-	3. realpath of executable path from argv[0]
-	4. $PATH
-	5. current directory
-	6. macOS - Application Support directory
+	2. the executable's own directory, from SDL
+	3. executable path from argv[0]
+	4. realpath of executable path from argv[0]
+	5. $PATH
+	6. current directory
+	7. macOS - Application Support directory
 	*/
 #if !defined __APPLE__
 	/* 1. $AVP_DATA */
 	gamedir = getenv("AVP_DATA");
-	
+
 	if (gamedir == NULL)
 		gamedir = argv_datapath;
-	
+
 	if (gamedir == NULL) {
-		/* 2. executable path from argv[0] */
+		/* 2. The executable's own directory, asked of the OS rather than parsed
+		   out of argv[0] (GetModuleFileNameW on Windows). This is launch-method
+		   independent, which the argv[0] parsing below is NOT: a shell invocation
+		   that names the exe without a path — plain `avp_x64vr.exe > log.txt` in
+		   cmd, which is exactly how you capture a log — hands us "avp_x64vr.exe"
+		   with no directory part to strip. That left the FILENAME being treated as
+		   the data directory and the game dying with "Unable to find the AvP
+		   gamedata. The directory last examined was: avp_x64vr.exe", while the
+		   same build launched from Explorer (full path in argv[0]) worked.
+
+		   The argv[0] steps are kept below as a fallback, and $AVP_DATA / -d still
+		   win over this, so an explicit data path is still honoured. */
+		const char *base = SDL_GetBasePath();
+		if (base) {
+			strncpy(tmppath, base, PATH_MAX - 1);
+			tmppath[PATH_MAX - 1] = 0;
+			/* SDL hands back a trailing separator; check_game_directory joins with
+			   one of its own, so strip it rather than build "dir//file". */
+			len = strlen(tmppath);
+			while (len > 1 && (tmppath[len - 1] == '/' || tmppath[len - 1] == '\\'))
+				tmppath[--len] = 0;
+
+			if (check_game_directory(tmppath))
+				gamedir = tmppath;
+		}
+	}
+
+	if (gamedir == NULL) {
+		/* 3. executable path from argv[0] */
 		tmp = strdup(argv0);
 		
 		if (tmp == NULL) {
@@ -717,8 +746,8 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 	}
 	
 	if (gamedir == NULL) {
-		/* 3. realpath of executable path from argv[0] */
-		
+		/* 4. realpath of executable path from argv[0] */
+
 		assert(tmp != NULL);
 
 #ifdef _WIN32
@@ -732,24 +761,31 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 	}
 
 	if (gamedir == NULL) {
-		/* 4. $PATH */
+		/* 5. $PATH. Entries are separated by ';' on Windows and ':' elsewhere —
+		   splitting a Windows PATH on ':' cuts every entry at its drive letter and
+		   tests nonsense like "C" as a game directory. */
+#ifdef _WIN32
+		static const char path_sep[] = ";";
+#else
+		static const char path_sep[] = ":";
+#endif
 		path = getenv("PATH");
 		if (path) {
 			while (*path) {
-				len = strcspn(path, ":");
-				
+				len = strcspn(path, path_sep);
+
 				copylen = min_no_const(len, PATH_MAX-1);
-				
+
 				strncpy(tmppath, path, copylen);
 				tmppath[copylen] = 0;
-				
+
 				if (check_game_directory(tmppath)) {
 					gamedir = tmppath;
 					break;
 				}
-				
+
 				path += len;
-				path += strspn(path, ":");
+				path += strspn(path, path_sep);
 			}
 		}
 	}
@@ -764,12 +800,12 @@ void InitGameDirectories(char *argv0, char* argv_datapath)
 #endif
 	
 	if (gamedir == NULL) {
-		/* 5. current directory */
+		/* 6. current directory */
 		gamedir = tmp;
 	}
-	
+
 #elif defined __APPLE__
-	/* 6. Application Support directory */
+	/* 7. Application Support directory */
         gamedir = I_GetUserDir();
 #endif
 

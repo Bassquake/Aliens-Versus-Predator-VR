@@ -8,6 +8,10 @@ extern "C"
 #include "inline.h"
 #include "gammacontrol.h"
 
+/* main.c. Non-VR builds get a stub returning 0, so this links everywhere. The
+   whole file is already inside an extern "C" block, so no linkage spec here. */
+extern int VR_HeadsetActive(void);
+
 static int ActualGammaSetting;
 int RequestedGammaSetting;
 
@@ -33,15 +37,28 @@ void UpdateGammaSettings(void)
 	   (brightest) and 2.5 (darkest). */
 	int g = RequestedGammaSetting;
 
-#ifdef __ANDROID__
 	/* The VR headset display renders noticeably darker than the flat-screen
 	   build, crushing shadow detail: the same slider value looks roughly a
 	   quarter of the range darker in the headset (flat-screen at ~25% matches VR
 	   at ~50%). Bias the gamma brighter on VR by that amount so mid-slider lifts
 	   the shadows to match the flat-screen look. Still fully adjustable — the
-	   slider can go darker or brighter from there. */
-	g += 64;
-#endif
+	   slider can go darker or brighter from there.
+
+	   Runtime test, not #ifdef __ANDROID__. The condition is "the display is a
+	   headset", which that guard got wrong in both directions: PCVR headsets
+	   never got the compensation, and the non-VR Android phone flavor
+	   (AVP_DISABLE_XR) got it despite rendering to a flat screen. A PCVR exe
+	   running flat with no runtime is likewise excluded.
+
+	   VR_HeadsetActive() rather than VR_SessionActive(): gamma is computed once
+	   from InitialiseGammaSettings, right after SetOGLVideoMode, and the early-out
+	   above means it is not recomputed unless the slider moves. XR init has
+	   finished by then (xr_enabled set) but the session is not RUNNING yet, so
+	   VR_SessionActive() would still be false and the bias would never apply. */
+	if (VR_HeadsetActive())
+	{
+		g += 64;
+	}
 
 	float exponent = powf(2.0f, (float)(128 - g) / 96.0f);
 

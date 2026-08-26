@@ -1426,7 +1426,32 @@ static void CorpseMovement(STRATEGYBLOCK *sbPtr)
 			deathFadeLevel = 0;
 			/* KJL 15:44:10 03/11/97 - game over, quit main loop */
 			/* restart level instead -Richard*/
+#ifdef AVP_XR
+			/* Any VR build with a live headset session — Quest and PCVR alike: A
+			   alone restarts, not "any key". Every other controller button does
+			   something the moment the level comes back (on PCVR X in particular
+			   starts the taunt/log/pause hold), so a restart bound to "any key"
+			   meant whichever button you used was still down as gameplay resumed
+			   and immediately did its gameplay job. A is the confirm button
+			   everywhere else in VR, so it is the natural one, and the on-screen
+			   prompt names it (game_statistics.c).
+
+			   DebouncedGotAnyKey is deliberately NOT accepted while the session is
+			   live: the VR menu path sets it for X as well as A (X is also
+			   "select" on a 2D quad, which is what the death screen is), so
+			   honouring it here would let X restart after all.
+
+			   The runtime VR_SessionActive() test is what makes this safe to gate
+			   on AVP_XR rather than a headset-only macro. With no live session we
+			   are either a PCVR exe running flat or the non-VR Android phone
+			   flavor — both keyboard/touch driven, where "press any key" is still
+			   right — and both take the DebouncedGotAnyKey branch. */
+			extern int xr_a_button_restart_edge;
+			extern int VR_SessionActive(void);
+			if (VR_SessionActive() ? xr_a_button_restart_edge : DebouncedGotAnyKey)
+#else
 		  	if (DebouncedGotAnyKey)
+#endif
 			{
 			  	AvP.RestartLevel = 1;
 			}

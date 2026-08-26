@@ -1,5 +1,7 @@
 /* KJL 16:23:20 10/25/96 - I'm moved all the weapon stuff to the newly created weapon.c,
 so player.c is looking a bit bare at the moment. */
+#include <SDL3/SDL.h>   /* SDL_Log for the level-exit trace below */
+
 #include "3dc.h"
 #include "module.h"
 #include "inline.h"
@@ -488,6 +490,7 @@ void MaintainPlayer(void)
 		if(playerStatusPtr->Mvt_InputRequests.Flags.Rqst_PauseGame)
 		{
 			// go to start menu
+			SDL_Log("EXIT: single-player Rqst_PauseGame - leaving the level");
 			AvP.MainLoopRunning = 0;
 		}
 		#endif

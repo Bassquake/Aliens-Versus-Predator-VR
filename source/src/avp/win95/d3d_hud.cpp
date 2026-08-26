@@ -321,7 +321,7 @@ void LoadCommonTextures(void)
 
 }
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 extern "C" {
 	int VR_IsIn3DMode(void);
 	extern VIEWDESCRIPTORBLOCK *Global_VDB_Ptr;
@@ -343,7 +343,7 @@ void D3D_BLTMotionTrackerToHUD(int scanLineSize)
 
 	{
 		int yaw = Player->ObEuler.EulerY;
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* In VR the body doesn't turn with the head, so the tracker dish graphic never
 		 * spins to match where the player looks. Use the view yaw (head + snap turn)
 		 * instead - same source as the blip rotation so dish and blips stay aligned.

@@ -115,7 +115,7 @@ static DISPLAYBLOCK* CreateGrapplingHook(void)
 		TransposeMatrixCH(&GrapplingHook.Orientation);
 		dynPtr->OrientMat = GrapplingHook.Orientation;
 
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* In VR, fire from and along the right (weapon) controller rather than the
 		 * head/view direction. Mirrors the flare/grenade path in pmove.c: the aim
 		 * direction is row 2 of the raw grip matrix, but the launch velocity is

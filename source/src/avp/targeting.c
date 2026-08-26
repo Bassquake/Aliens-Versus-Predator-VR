@@ -162,7 +162,7 @@ void CalculateWhereGunIsPointing(TEMPLATE_WEAPON_DATA *twPtr, PLAYER_WEAPON_DATA
     RotateVector(&GunMuzzleDirectionInWS,&matrix);
 	Normalise(&GunMuzzleDirectionInWS);
 
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 	/* VR smartgun auto-aim: in flat play the smartgun swings its barrel onto the
 	 * locked target; in VR the player aims with the controller, so instead redirect
 	 * the fire ray straight at the locked target's chest whenever the smartgun has a

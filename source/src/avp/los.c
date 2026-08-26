@@ -143,7 +143,7 @@ int CameraCanSeeThisPosition_WithIgnore(DISPLAYBLOCK *ignoredObjectPtr,VECTORCH 
 	   using Global_VDB_Ptr->VDB_World causes the LOS result to differ between
 	   eyes — halos appear in one eye but not the other.  Use the pre-IPD camera
 	   position (same height/pos as non-VR) so both eyes get an identical result. */
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 	viewVector = vr_is_rendering ? vr_base_world : Global_VDB_Ptr->VDB_World;
 	#else
 	viewVector = Global_VDB_Ptr->VDB_World;

@@ -144,7 +144,7 @@ static void KeyboardEntryQueue_StartProcessing(void);
 /* Show/hide the system on-screen keyboard for menu text entry (defined in main.c). */
 extern void Platform_SetTextInputActive(int active);
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* VR controller-driven on-screen keyboard (defined further down). */
 static void OnScreenKeyboard_HandleInput(void);
 static void OnScreenKeyboard_Render(void);
@@ -855,7 +855,7 @@ extern void AvP_UpdateMenus(void)
 			break;
 		}
 	}
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* Draw the VR on-screen keyboard over the menu while a field is being edited. */
 	if (AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber)
 		OnScreenKeyboard_Render();
@@ -2045,7 +2045,7 @@ static void RenderHelpString()
 	AVPMENU_ELEMENT *elementPtr = &AvPMenus.MenuElements[AvPMenus.CurrentlySelectedElement];
 	enum TEXTSTRING_ID helpString = elementPtr->HelpString;
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* VR: the profile-select help depends on which slot is highlighted —
 	 * the blank "New Profile" slot (UserProfileNumber 0) needs the name+continue
 	 * instructions; an existing profile just needs the continue prompt. */
@@ -2122,7 +2122,7 @@ static void GenerateRandomName(char* dest, size_t maxLength)
 	dest[maxLength - 1] = '\0';
 }
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* ================= VR on-screen keyboard ==================================
  * In VR there is no physical keyboard, so menu text / number fields (profile
  * name, multiplayer IP + details) are typed with the controller: the thumbstick
@@ -2281,7 +2281,7 @@ static void OnScreenKeyboard_Render(void)
 		startY + (OSK_NUM_CHAR_ROWS + 1) * rowH + 4, ONE_FIXED,
 		AVPMENUFORMAT_CENTREJUSTIFIED, ONE_FIXED, ONE_FIXED, ONE_FIXED);
 }
-#endif /* __ANDROID__ */
+#endif /* AVP_XR */
 
 static void ActUponUsersInput(void)
 {
@@ -2296,7 +2296,7 @@ static void ActUponUsersInput(void)
 		BackspaceTimer=0;
 	}
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* Quest/Android: raise the system on-screen keyboard while a menu text or
 	   number field is being edited (name entry, multiplayer IP/details, etc.),
 	   and dismiss it otherwise. There is no physical keyboard on the headset, so

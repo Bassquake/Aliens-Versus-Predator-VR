@@ -89,6 +89,15 @@ PFNGLUNIFORM1IPROC                pfn_glUniform1i;
 PFNGLUNIFORM2FPROC                pfn_glUniform2f;
 PFNGLUSEPROGRAMPROC               pfn_glUseProgram;
 PFNGLVERTEXATTRIBPOINTERPROC      pfn_glVertexAttribPointer;
+PFNGLDELETEPROGRAMPROC            pfn_glDeleteProgram;
+PFNGLGENVERTEXARRAYSPROC          pfn_glGenVertexArrays;
+PFNGLDELETEVERTEXARRAYSPROC       pfn_glDeleteVertexArrays;
+PFNGLDELETEBUFFERSPROC            pfn_glDeleteBuffers;
+PFNGLUNIFORM1FPROC                pfn_glUniform1f;
+PFNGLUNIFORMMATRIX4FVPROC         pfn_glUniformMatrix4fv;
+PFNGLCHECKFRAMEBUFFERSTATUSPROC   pfn_glCheckFramebufferStatus;
+PFNGLBLITFRAMEBUFFERPROC          pfn_glBlitFramebuffer;
+PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC pfn_glRenderbufferStorageMultisample;
 #endif /* !__ANDROID__ */
 
 static void dummyfunc()
@@ -220,6 +229,15 @@ void load_ogl_functions(int mode)
 		LOAD_GL_EXT(PFNGLUNIFORM2FPROC,                glUniform2f);
 		LOAD_GL_EXT(PFNGLUSEPROGRAMPROC,               glUseProgram);
 		LOAD_GL_EXT(PFNGLVERTEXATTRIBPOINTERPROC,      glVertexAttribPointer);
+		LOAD_GL_EXT(PFNGLDELETEPROGRAMPROC,            glDeleteProgram);
+		LOAD_GL_EXT(PFNGLGENVERTEXARRAYSPROC,          glGenVertexArrays);
+		LOAD_GL_EXT(PFNGLDELETEVERTEXARRAYSPROC,       glDeleteVertexArrays);
+		LOAD_GL_EXT(PFNGLDELETEBUFFERSPROC,            glDeleteBuffers);
+		LOAD_GL_EXT(PFNGLUNIFORM1FPROC,                glUniform1f);
+		LOAD_GL_EXT(PFNGLUNIFORMMATRIX4FVPROC,         glUniformMatrix4fv);
+		LOAD_GL_EXT(PFNGLCHECKFRAMEBUFFERSTATUSPROC,   glCheckFramebufferStatus);
+		LOAD_GL_EXT(PFNGLBLITFRAMEBUFFERPROC,          glBlitFramebuffer);
+		LOAD_GL_EXT(PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC, glRenderbufferStorageMultisample);
 		#undef LOAD_GL_EXT
 	}
 #endif /* !__ANDROID__ */

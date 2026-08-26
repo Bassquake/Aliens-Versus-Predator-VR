@@ -1,18 +1,33 @@
-#ifdef __ANDROID__
+#ifdef AVP_XR
 #include <stdbool.h>
 #include <stdint.h>
+#ifdef __ANDROID__
 #include <jni.h>
 #include <GLES3/gl3.h>
 #include <EGL/egl.h>
 #define XR_USE_PLATFORM_ANDROID
 #define XR_USE_GRAPHICS_API_OPENGL_ES
+#else /* AVP_PCVR: desktop GL — entry points beyond 1.1 come from oglfunc.h.
+       * Full windows.h + unknwn.h: openxr_platform.h's MSFT extension structs
+       * reference IUnknown. */
+#include <windows.h>
+#include <unknwn.h>
+#define XR_USE_PLATFORM_WIN32
+#define XR_USE_GRAPHICS_API_OPENGL
+#include "oglfunc.h"
+#endif
 #include <khronos/openxr/openxr.h>
 #include <khronos/openxr/openxr_platform.h>
 
-/* Mirror of VRSwapchain from main.c — keep in sync */
+/* Mirror of VRSwapchain from main.c — keep in sync (the GL and GLES image
+ * structs share one layout; only the type tag differs). */
 typedef struct {
     XrSwapchain                   swapchain;
+#ifdef __ANDROID__
     XrSwapchainImageOpenGLESKHR  *images;
+#else
+    XrSwapchainImageOpenGLKHR    *images;
+#endif
     uint32_t                       image_count;
     XrExtent2Di                    size;
 } VRSwapchain;
@@ -76,8 +91,10 @@ extern void    XR_Haptic_Right(float amplitude, float duration_ms);
 MATRIXCH vr_listener_mat;
 int      vr_listener_mat_valid = 0;
 
+#ifdef AVP_XR
 #ifdef __ANDROID__
 #include <GLES3/gl3.h>
+#endif
 #include <SDL3/SDL.h>
 
 /* Per-eye FBO resources — color attachment is the XR swapchain texture (attached per frame) */
@@ -172,7 +189,7 @@ int vr_recalibrate = 1;
 /* Game-logic camera position before per-eye IPD offset — used for LOS checks in VR. */
 VECTORCH vr_base_world = {0, 0, 0};
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* Game-space controller hand poses — updated each frame before the per-eye render loop.
  * Read by weapons.c to drive weapon/hand position from controller tracking. */
 VECTORCH vr_right_hand_world = {0, 0, 0};
@@ -336,7 +353,7 @@ void VR_AfterObjects(void)
     glDepthMask(GL_TRUE);
 }
 
-#endif /* __ANDROID__ */
+#endif /* AVP_XR */
 
 /* KJL 13:59:05 04/19/97 - avpview.c
  *
@@ -1353,13 +1370,13 @@ extern void AlienBiteAttackHasHappened(void)
 	AlienTeethOffset = 0;
 }
 
-#ifndef __ANDROID__
+#ifndef AVP_XR
 /* Desktop is mono — MaintainHUD still reads this, so define the single-view
    index. (On VR it's defined below and toggled per eye.) */
 int vr_eye_index = 0;
 #endif
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 
 int vr_eye_index = 0; /* 0 = first/left eye, 1 = second/right; read by MaintainHUD */
 
@@ -2572,4 +2589,4 @@ void AvpShowViewsVR(void)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
 }
-#endif /* __ANDROID__ */
+#endif /* AVP_XR */

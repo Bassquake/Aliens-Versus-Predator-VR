@@ -165,7 +165,7 @@ extern PARTICLE_DESC ParticleDescription[];
 extern void InitialiseParticleSystem(void);
 extern void MakeParticle(VECTORCH *positionPtr, VECTORCH *velocityPtr, enum PARTICLE_ID particleID);
 extern void HandleParticleSystem(void);
-#ifdef __ANDROID__
+#ifdef AVP_XR
 extern void RenderParticlesOnly(void);
 #endif
 void RenderAllParticlesFurtherAwayThan(int zThreshold);

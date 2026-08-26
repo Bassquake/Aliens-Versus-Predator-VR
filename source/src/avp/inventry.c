@@ -1735,7 +1735,7 @@ void Recall_Disc(void) {
 	PLAYER_STATUS *playerStatusPtr= (PLAYER_STATUS *) (Player->ObStrategyBlock->SBdataptr);
     GLOBALASSERT(playerStatusPtr);
 
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 	/* Pulse the left controller (where the recall-disc squeeze lives) on each
 	 * successful recall — fired alongside the disc-recovered sound below. */
 	extern void XR_Haptic_Left(float amplitude, float duration_ms);
@@ -1819,7 +1819,7 @@ void Recall_Disc(void) {
 					NewOnScreenMessage("RECALLED DISC");
 					#endif
 					Sound_Play(SID_PREDATOR_DISK_RECOVERED,"h");
-					#ifdef __ANDROID__
+					#ifdef AVP_XR
 					XR_Haptic_Left(0.6f, 80.0f);
 					#endif
 					AutoSwapToDisc_OutOfSequence();
@@ -1843,7 +1843,7 @@ void Recall_Disc(void) {
 					NewOnScreenMessage("RECALLED DISC");
 					#endif
 					Sound_Play(SID_PREDATOR_DISK_RECOVERED,"h");
-					#ifdef __ANDROID__
+					#ifdef AVP_XR
 					XR_Haptic_Left(0.6f, 80.0f);
 					#endif
 					AutoSwapToDisc_OutOfSequence();
@@ -1860,7 +1860,7 @@ void Recall_Disc(void) {
 				
 					Sound_Stop(bbPtr->soundHandle);
 					Sound_Play(SID_PREDATOR_DISK_RECOVERED,"h");
-					#ifdef __ANDROID__
+					#ifdef AVP_XR
 					XR_Haptic_Left(0.6f, 80.0f);
 					#endif
 

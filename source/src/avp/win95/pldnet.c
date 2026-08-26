@@ -2266,7 +2266,7 @@ void AddNetMsg_PlayerState(STRATEGYBLOCK *sbPtr)
 
 		/* NB we can fit +-4194303 into 23 bits */
 		int netPosX = dynPtr->Position.vx, netPosZ = dynPtr->Position.vz;
-#ifdef __ANDROID__
+#ifdef AVP_XR
 		/* Add the VR head-centre room-scale offset so remote players see physical
 		   room-scale walking, not just joystick locomotion (the local game position
 		   only moves by joystick; room-scale is a view offset - see AvpShowViewsVR). */
@@ -2285,7 +2285,7 @@ void AddNetMsg_PlayerState(STRATEGYBLOCK *sbPtr)
 		else if(dynPtr->Position.vy > 4100000) messagePtr->yPos = 4100000;
 		else messagePtr->yPos = dynPtr->Position.vy;
 		messagePtr->yOrient = (dynPtr->OrientEuler.EulerY>>NET_EULERSCALESHIFT);
-#ifdef __ANDROID__
+#ifdef AVP_XR
 		/* In VR the body yaw (OrientEuler.EulerY) does not turn with the head or
 		   snap-turn (turning is view-only), so it would broadcast a fixed facing.
 		   Send the actual VR world heading instead - HMD + snap, the same source
@@ -8407,7 +8407,7 @@ static MARINE_SEQUENCE GetMyMarineSequence(void)
 		/* Actually not moving - overruled! */
 		playerIsMoving=0;
 	}
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* Room-scale physical walking counts as moving too, so the ghost plays a walk
 	   cycle for physical movement (which changes neither the game Position nor the
 	   movement input flags that drive this animation). */
@@ -8564,7 +8564,7 @@ static ALIEN_SEQUENCE GetMyAlienSequence(void)
 		/* Actually not moving - overruled! */
 		playerIsMoving=0;
 	}
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* Room-scale physical walking counts as moving too, so the ghost plays a walk
 	   cycle for physical movement (which changes neither the game Position nor the
 	   movement input flags that drive this animation). */
@@ -8808,7 +8808,7 @@ static PREDATOR_SEQUENCE GetMyPredatorSequence(void)
 		/* Actually not moving - overruled! */
 		playerIsMoving=0;
 	}
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* Room-scale physical walking counts as moving too, so the ghost plays a walk
 	   cycle for physical movement (which changes neither the game Position nor the
 	   movement input flags that drive this animation). */
@@ -9603,7 +9603,7 @@ void RenderPlayersImageInMirror(void)
 		DISPLAYBLOCK *dPtr = &PlayersMirrorImage;
 		dPtr->ObWorld = PlayersMirrorDynBlock.Position;
 		dPtr->ObMat = PlayersMirrorDynBlock.OrientMat;
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		if (vr_is_rendering && VR_IsIn3DMode()) {
 			/* OrientEuler doesn't track HMD rotation in VR; build a
 			 * yaw-only ObMat from the HMD horizontal heading instead. */
@@ -11348,7 +11348,7 @@ void DoMultiplayerSpecificHud()
 
 	if(scoreVisible)
 	{
-#ifdef __ANDROID__
+#ifdef AVP_XR
 		/* VR: the score table is drawn once into a world-locked floating quad by
 		   AvpShowViewsVR (it reads vr_scoreboard_visible and re-runs
 		   DoMultiplayerEndGameScreen into an offscreen surface), so it isn't glued

@@ -197,7 +197,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 	}
 
 	if (stringID == TEXTSTRING_MAINMENU_SUBTITLE)
-#ifdef __ANDROID__
+#ifdef AVP_XR
 		return "VR Edition";
 #else
 		return "Classic 2000";

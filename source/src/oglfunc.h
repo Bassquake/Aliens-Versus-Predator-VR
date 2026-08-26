@@ -158,6 +158,18 @@ extern PFNGLUNIFORM1IPROC                pfn_glUniform1i;
 extern PFNGLUNIFORM2FPROC                pfn_glUniform2f;
 extern PFNGLUSEPROGRAMPROC               pfn_glUseProgram;
 extern PFNGLVERTEXATTRIBPOINTERPROC      pfn_glVertexAttribPointer;
+/* Additional entry points used by the OpenXR (PCVR) render path in main.c /
+ * avpview.c. Loaded alongside the rest in load_ogl_functions; on the flat
+ * desktop build they are loaded but unused. */
+extern PFNGLDELETEPROGRAMPROC            pfn_glDeleteProgram;
+extern PFNGLGENVERTEXARRAYSPROC          pfn_glGenVertexArrays;
+extern PFNGLDELETEVERTEXARRAYSPROC       pfn_glDeleteVertexArrays;
+extern PFNGLDELETEBUFFERSPROC            pfn_glDeleteBuffers;
+extern PFNGLUNIFORM1FPROC                pfn_glUniform1f;
+extern PFNGLUNIFORMMATRIX4FVPROC         pfn_glUniformMatrix4fv;
+extern PFNGLCHECKFRAMEBUFFERSTATUSPROC   pfn_glCheckFramebufferStatus;
+extern PFNGLBLITFRAMEBUFFERPROC          pfn_glBlitFramebuffer;
+extern PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC pfn_glRenderbufferStorageMultisample;
 
 #define glActiveTexture            pfn_glActiveTexture
 #define glAttachShader             pfn_glAttachShader
@@ -194,6 +206,15 @@ extern PFNGLVERTEXATTRIBPOINTERPROC      pfn_glVertexAttribPointer;
 #define glUniform2f                pfn_glUniform2f
 #define glUseProgram               pfn_glUseProgram
 #define glVertexAttribPointer      pfn_glVertexAttribPointer
+#define glDeleteProgram            pfn_glDeleteProgram
+#define glGenVertexArrays          pfn_glGenVertexArrays
+#define glDeleteVertexArrays       pfn_glDeleteVertexArrays
+#define glDeleteBuffers            pfn_glDeleteBuffers
+#define glUniform1f                pfn_glUniform1f
+#define glUniformMatrix4fv         pfn_glUniformMatrix4fv
+#define glCheckFramebufferStatus   pfn_glCheckFramebufferStatus
+#define glBlitFramebuffer          pfn_glBlitFramebuffer
+#define glRenderbufferStorageMultisample pfn_glRenderbufferStorageMultisample
 #endif /* !__ANDROID__ */
 
 #endif

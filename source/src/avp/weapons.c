@@ -282,13 +282,13 @@ static void StateDependentMovement(PLAYER_STATUS *playerStatusPtr, PLAYER_WEAPON
 /* Random idle "cocking"/fidget animations look wrong on a controller-held weapon
    in VR, so they are suppressed while in VR 3D mode. Flat-screen (and the VR 2D
    menu view) keep them. Gates the fidget triggers in the weapon idle handlers. */
-#ifdef __ANDROID__
+#ifdef AVP_XR
 static int IdleFidgetAllowed(void) { return !VR_IsIn3DMode(); }
 #else
 static int IdleFidgetAllowed(void) { return 1; }
 #endif
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* Position PlayersWeapon at the VR controller transform (identical offsets +
    barrel-fix the renderer uses) so muzzle-derived fire - flechettes,
    flamethrower, etc. - originates at the visible nozzle instead of the stale
@@ -795,7 +795,7 @@ void UpdateWeaponStateMachine(void)
     	{
         	int timeOutRate = twPtr->TimeOutRateForState[weaponPtr->CurrentState];
 
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			/* In VR, weapon changes feel sluggish. Speed up only the weapon-change
 			   phases (swap out/in, ready/unready) by draining their timeout faster,
 			   so firing and reload timings are left untouched. */
@@ -6180,7 +6180,7 @@ void Cudgel_Strike(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
    uses InitHModelSequence directly to avoid the tween-handoff bug that made the
    sequence inherit the fast tween rate), ONE_FIXED = the animation's real speed
    (~0.5s). Bump above ONE_FIXED for a weightier/slower swing. */
-#ifdef __ANDROID__
+#ifdef AVP_XR
 #define PRED_WRISTBLADE_SLOWDOWN ((ONE_FIXED*5)/4)   /* 1.25x - a little weight, tune here */
 #else
 #define PRED_WRISTBLADE_SLOWDOWN (ONE_FIXED)         /* native speed on flat-screen */
@@ -6191,7 +6191,7 @@ void Cudgel_Strike(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
    the wind-up take a deliberate fixed time paces the whole secondary - a quick
    tap barely charges, holding builds up - instead of it firing almost instantly.
    Absolute duration (>0) in fixed-point seconds; -1 = original native duration. */
-#ifdef __ANDROID__
+#ifdef AVP_XR
 #define PRED_WRISTBLADE_WINDUP_TIME (ONE_FIXED/2)    /* ~0.5s to fully wind up in VR - tune here */
 #else
 #define PRED_WRISTBLADE_WINDUP_TIME (-1)             /* native duration on flat-screen */
@@ -6519,7 +6519,7 @@ int PlayerFireFlameThrower(PLAYER_WEAPON_DATA *weaponPtr) {
 	TEMPLATE_WEAPON_DATA *twPtr=&TemplateWeapon[weaponPtr->WeaponIDNumber];
    	int oldAmmoCount;
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* In VR, fire from the controller-rendered nozzle, not the stale game-logic
 	   pose, so the flame lines up with the visible muzzle as you move. */
 	VR_PositionPlayerWeaponAtController(weaponPtr->WeaponIDNumber);
@@ -11174,7 +11174,7 @@ int PlayerFirePredPistolFlechettes(PLAYER_WEAPON_DATA *weaponPtr) {
 	
 	/* Another cheap copy of the flamethrower function. */
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* In VR, fire from the controller-rendered nozzle rather than the stale
 	   game-logic pose, so the flechettes line up with the visible muzzle. */
 	VR_PositionPlayerWeaponAtController(weaponPtr->WeaponIDNumber);

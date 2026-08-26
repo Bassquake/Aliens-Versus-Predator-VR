@@ -963,12 +963,18 @@ void ThisFramesRenderingHasBegun()
 {
 	CheckFilteringModeIsCorrect(FILTERING_BILINEAR_ON);
 	RestoreGameShaderState();
-#ifdef __ANDROID__
-	VR_Set2DViewport();
-#else
+#ifdef AVP_XR
+	VR_Set2DViewport(); /* no-op unless an XR session is presenting in 2D mode */
+#endif
+#ifndef __ANDROID__
 	/* Desktop: when FSR is enabled, redirect the in-game frame into the low-res
-	   render target. No-op (native rendering) when FSR is off. */
-	FSR_BeginFrame();
+	   render target. No-op (native rendering) when FSR is off. On PCVR, stand
+	   down while the headset owns the frame — FSR would hijack the eye pass. */
+	{
+		extern int VR_SessionActive(void);
+		if (!VR_SessionActive())
+			FSR_BeginFrame();
+	}
 #endif
 }
 

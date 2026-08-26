@@ -36,7 +36,7 @@ extern void ShowMultiplayerScores(void);
 
 
 extern int NormalFrameTime;
-#ifdef __ANDROID__
+#ifdef AVP_XR
 extern int xr_a_button_pressed;
 extern int xr_left_thumbstick_click_pressed;
 extern int xr_b_button_pressed;
@@ -828,7 +828,7 @@ extern unsigned char DebouncedKeyboardInput[];
 extern int GotJoystick;
 extern int GotMouse;
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* Called once at startup on Android to configure left-stick locomotion.
    Y axis = forward/backward, X axis = strafe (not turn). */
 void VR_InitJoystickConfig(void)
@@ -959,7 +959,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 		if(KeyboardInput[primaryInput->Crouch]
 		 ||KeyboardInput[secondaryInput->Crouch]
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		 ||xr_left_thumbstick_click_pressed
 		#endif
 		)
@@ -967,7 +967,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		
 		if(KeyboardInput[primaryInput->Jump]
 		 ||KeyboardInput[secondaryInput->Jump]
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		 ||xr_b_button_pressed
 		#endif
 		)
@@ -975,7 +975,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 		if(KeyboardInput[primaryInput->Operate]
 		 ||KeyboardInput[secondaryInput->Operate]
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		 ||xr_a_button_pressed
 		#endif
 		)
@@ -989,7 +989,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			{
 				if(KeyboardInput[primaryInput->d.ImageIntensifier]
 				 ||KeyboardInput[secondaryInput->d.ImageIntensifier]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_y_button_gameplay_pressed
 				#endif
 				)
@@ -997,7 +997,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 				if(DebouncedKeyboardInput[primaryInput->e.ThrowFlare]
 				 ||DebouncedKeyboardInput[secondaryInput->e.ThrowFlare]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_left_trigger_pressed
 				#endif
 				)
@@ -1006,7 +1006,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#if !(MARINE_DEMO||DEATHMATCH_DEMO)
 				if(KeyboardInput[primaryInput->f.Jetpack]
 				 ||KeyboardInput[secondaryInput->f.Jetpack]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 /* Left trigger only engages the jetpack if the marine has one. */
 				 ||(xr_left_trigger_gameplay_pressed && playerStatusPtr->JetpackEnabled)
 				#endif
@@ -1018,7 +1018,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				
 				if(KeyboardInput[primaryInput->g.MarineTaunt]
 				 ||KeyboardInput[secondaryInput->g.MarineTaunt]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_x_button_gameplay_pressed
 				#endif
 				)
@@ -1026,7 +1026,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				
 				if(DebouncedKeyboardInput[primaryInput->h.Marine_MessageHistory]
 				 ||DebouncedKeyboardInput[secondaryInput->h.Marine_MessageHistory]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_menu_button_msg_history_edge
 				#endif
 				)
@@ -1055,7 +1055,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				 * DoPlayerCloakingSystem handles one toggle per press. */
 				if(KeyboardInput[primaryInput->d.Cloak]
 				 ||KeyboardInput[secondaryInput->d.Cloak]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_left_trigger_pressed
 				#endif
 				)
@@ -1067,7 +1067,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				 * debounce, but the tap signal is already a single one-frame pulse. */
 				if(DebouncedKeyboardInput[primaryInput->e.CycleVisionMode]
 				 ||DebouncedKeyboardInput[secondaryInput->e.CycleVisionMode]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_y_button_gameplay_tap
 				#endif
 				)
@@ -1076,14 +1076,14 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#if !(PREDATOR_DEMO||DEATHMATCH_DEMO)
 				if(DebouncedKeyboardInput[primaryInput->h.GrapplingHook]
 				 ||DebouncedKeyboardInput[secondaryInput->h.GrapplingHook]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 /* Left trigger only fires the hook if the predator has one. */
 				 ||(xr_left_trigger_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
 				#endif
 				)
 				{
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_GrapplingHook = 1;
-					#ifdef __ANDROID__
+					#ifdef AVP_XR
 					/* Confirm the fire with a single pulse on the press edge. */
 					if(xr_left_trigger_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
 						XR_Haptic_Left(0.6f, 80.0f);
@@ -1101,7 +1101,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				{
 					if (CameraZoomLevel>0) CameraZoomLevel--;
 				}
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				/* Hold Y for >0.5s → step the zoom in; once past max zoom it wraps
 				 * back to normal (no zoom). One step per hold. */
 				if (xr_y_button_gameplay_long_edge)
@@ -1115,7 +1115,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				
 				if(KeyboardInput[primaryInput->j.PredatorTaunt]
 				 ||KeyboardInput[secondaryInput->j.PredatorTaunt]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_x_button_gameplay_pressed
 				#endif
 				)
@@ -1123,7 +1123,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 				if(KeyboardInput[primaryInput->i.RecallDisc]
 				 ||KeyboardInput[secondaryInput->i.RecallDisc]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_left_squeeze_gameplay_pressed
 				#endif
 				)
@@ -1131,7 +1131,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 					
 				if(DebouncedKeyboardInput[primaryInput->k.Predator_MessageHistory]
 				 ||DebouncedKeyboardInput[secondaryInput->k.Predator_MessageHistory]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_menu_button_msg_history_edge
 				#endif
 				)
@@ -1156,7 +1156,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			{
 				if(KeyboardInput[primaryInput->a.AlternateVision]
 				 ||KeyboardInput[secondaryInput->a.AlternateVision]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_y_button_gameplay_pressed
 				#endif
 				)
@@ -1164,7 +1164,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 				if(KeyboardInput[primaryInput->b.Taunt]
 				 ||KeyboardInput[secondaryInput->b.Taunt]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_x_button_gameplay_pressed
 				#endif
 				)
@@ -1172,7 +1172,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 	
 				if(DebouncedKeyboardInput[primaryInput->c.Alien_MessageHistory]
 				 ||DebouncedKeyboardInput[secondaryInput->c.Alien_MessageHistory]
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				 ||xr_menu_button_msg_history_edge
 				#endif
 				)
@@ -1224,7 +1224,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 			if(KeyboardInput[primaryInput->a.NextWeapon]
 			 ||KeyboardInput[secondaryInput->a.NextWeapon]
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			 ||xr_right_thumbstick_click_pressed
 			#endif
 			)
@@ -1232,7 +1232,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			
 			if(KeyboardInput[primaryInput->b.PreviousWeapon]
 			 ||KeyboardInput[secondaryInput->b.PreviousWeapon]
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			 ||xr_right_thumbstick_down_pressed
 			#endif
 			)
@@ -1487,7 +1487,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		extern JOYINFOEX JoystickData;
 		extern JOYCAPS JoystickCaps;
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 		/* Always enforce VR locomotion layout regardless of menu settings:
 		   Y axis = forward/back, X axis = strafe (never turn). */
 		JoystickControlMethods.JoystickVAxisIsMovement = 1;

@@ -18,6 +18,19 @@
     #include <khronos/openxr/openxr.h>
     #include <khronos/openxr/openxr_platform.h>
 	#include <SDL3/SDL_openxr.h>
+#elif defined(AVP_PCVR)
+    /* Windows PCVR (SteamVR or any desktop OpenXR runtime), desktop-GL-backed.
+     * The loader (openxr_loader.dll) finds the active runtime via the registry.
+     * windows.h supplies HDC/HGLRC for XrGraphicsBindingOpenGLWin32KHR;
+     * wglGetCurrentDC/-Context come from opengl32 (already linked). Included
+     * WITHOUT WIN32_LEAN_AND_MEAN: this file needs JOYINFOEX (mmsystem) and
+     * openxr_platform.h's MSFT extension structs need IUnknown (COM). */
+    #include <windows.h>
+    #include <unknwn.h>
+    #define XR_USE_PLATFORM_WIN32
+    #define XR_USE_GRAPHICS_API_OPENGL
+    #include <khronos/openxr/openxr.h>
+    #include <khronos/openxr/openxr_platform.h>
 #endif
 
 #include "oglfunc.h"
@@ -158,11 +171,12 @@ static const char * gamedatapath = NULL;
 
 /* ** */
 
-#ifndef __ANDROID__
+#ifndef AVP_XR
 /* -----------------------------------------------------------------------
  * Desktop (non-VR) definitions for the VR / upscaling config + query
- * symbols. On the VR build these live inside the Android OpenXR block below;
- * on desktop OpenXR isn't compiled, so the frontend menus, user profile, HUD
+ * symbols. On the VR builds (Quest and PCVR — AVP_XR) these live inside the
+ * OpenXR block below; on the flat desktop build OpenXR isn't compiled, so the
+ * frontend menus, user profile, HUD
  * and renderer (which reference them unconditionally) would fail to link.
  *   - The VR comfort/turn/refresh options are inert on desktop (no headset).
  *   - MSAA and FSR are real desktop settings (FSR is a desktop-only spatial
@@ -198,11 +212,12 @@ float FSR_RenderScale(void)
 }
 
 int   VR_IsIn3DMode(void)           { return 0; }
+int   VR_SessionActive(void)        { return 0; }
 int   VR_IsBatterySaverActive(void) { return 0; }
 float VR_GetTargetHz(void)          { return 60.0f; }
-#endif /* !__ANDROID__ */
+#endif /* !AVP_XR */
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* ========================================================================
  * OpenXR Setup Begin
  * ======================================================================== */
@@ -210,6 +225,17 @@ float VR_GetTargetHz(void)          { return 60.0f; }
 #define CHECK_CREATE(var, thing) { if (!(var)) { SDL_Log("Failed to create %s: %s", thing, SDL_GetError()); return false; } }
 #define XR_CHECK(result, msg) do { if (XR_FAILED(result)) { SDL_Log("OpenXR Error: %s (result=%d)", msg, (int)(result)); return false; } } while(0)
 #define XR_CHECK_QUIT(result, msg) do { if (XR_FAILED(result)) { SDL_Log("OpenXR Error: %s (result=%d)", msg, (int)(result)); quit(2); return; } } while(0)
+
+/* Graphics-API-specific swapchain image struct + type tag. The GLES and GL
+ * variants have an identical layout ({type, next, uint32 image}); only the
+ * structure-type enum differs, so one alias keeps the rest of the code shared. */
+#ifdef __ANDROID__
+typedef XrSwapchainImageOpenGLESKHR AvpXrSwapchainImage;
+#define AVP_XR_TYPE_SWAPCHAIN_IMAGE XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR
+#else /* AVP_PCVR */
+typedef XrSwapchainImageOpenGLKHR   AvpXrSwapchainImage;
+#define AVP_XR_TYPE_SWAPCHAIN_IMAGE XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR
+#endif
 
 /* ========================================================================
  * Math Types and Functions
@@ -351,11 +377,19 @@ static PFN_xrCreateSession  pfn_xrCreateSession  = NULL;
 static PFN_xrCreateSwapchain pfn_xrCreateSwapchain = NULL;
 static PFN_xrDestroySwapchain pfn_xrDestroySwapchain = NULL;
 static PFN_xrEnumerateSwapchainFormats pfn_xrEnumerateSwapchainFormats = NULL;
+#ifdef __ANDROID__
 typedef XrResult (XRAPI_PTR *PFN_xrGetOpenGLESGraphicsRequirementsKHR)(
     XrInstance instance, XrSystemId systemId, XrGraphicsRequirementsOpenGLESKHR *graphicsRequirements);
 static PFN_xrGetOpenGLESGraphicsRequirementsKHR pfn_xrGetOpenGLESGraphicsRequirementsKHR = NULL;
+#else /* AVP_PCVR: desktop-GL requirements call (mandatory before xrCreateSession) */
+static PFN_xrGetOpenGLGraphicsRequirementsKHR pfn_xrGetOpenGLGraphicsRequirementsKHR = NULL;
+#endif
 static PFN_xrRequestDisplayRefreshRateFB pfn_xrRequestDisplayRefreshRateFB = NULL;
 static PFN_xrGetDisplayRefreshRateFB pfn_xrGetDisplayRefreshRateFB = NULL;
+/* Set at instance creation: whether XR_FB_display_refresh_rate was actually
+ * enabled (Quest yes; SteamVR exposes no such extension, so the refresh-rate
+ * option is inert there and its pfn_ pointers stay NULL). */
+static bool xr_has_refresh_rate_ext = false;
 
 /* ========================================================================
  * Global XR State
@@ -414,6 +448,11 @@ int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger 
 int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squeeze is held (Predator recall disc) */
 static float xr_left_stick_x = 0.0f;
 static float xr_left_stick_y = 0.0f;
+#ifdef AVP_PCVR
+/* 1 while X is still held after its long-press opened the pause menu, so that
+ * carried-over hold cannot also confirm a menu entry. Cleared on release. */
+static int xr_x_pause_latch = 0;
+#endif
 
 /* HMD horizontal heading for locomotion (ONE_FIXED = 65536 scale).
  * Updated each frame from xr_views[0] pose, used by pmove.c to rotate
@@ -494,10 +533,10 @@ static bool xr_should_quit = false;
 static bool xr_2d_mode = true;  /* true = show flat game on quad, false = 3D game manages XR */
 static XrTime xr_predicted_display_time = 0;
 
-/* Swapchain state — GLES images as OpenXR texture IDs */
+/* Swapchain state — GL/GLES images as OpenXR texture IDs */
 typedef struct {
     XrSwapchain                   swapchain;
-    XrSwapchainImageOpenGLESKHR  *images;     /* array of GLES texture handles */
+    AvpXrSwapchainImage          *images;     /* array of GL(ES) texture handles */
     Uint32                         image_count;
     XrExtent2Di                    size;
 } VRSwapchain;
@@ -635,8 +674,17 @@ static void quit(int rc)
  * GLES Shader and Quad Pipeline
  * ======================================================================== */
 
+/* GLSL version line: ES 3.0 on Quest, desktop GLSL 3.30 on PCVR. The shader
+ * bodies are identical (in/out, layout(location), texture()); desktop GLSL
+ * 1.30+ accepts the ES "precision" statements as no-ops. */
+#ifdef __ANDROID__
+#define AVP_XR_GLSL_VERSION "#version 300 es\n"
+#else
+#define AVP_XR_GLSL_VERSION "#version 330\n"
+#endif
+
 static const char *quad_vs_src =
-    "#version 300 es\n"
+    AVP_XR_GLSL_VERSION
     "layout(location = 0) in vec3 aPos;\n"
     "layout(location = 1) in vec2 aUV;\n"
     "uniform mat4 uMVP;\n"
@@ -647,7 +695,7 @@ static const char *quad_vs_src =
     "}\n";
 
 static const char *quad_fs_src =
-    "#version 300 es\n"
+    AVP_XR_GLSL_VERSION
     "precision mediump float;\n"
     "in vec2 vUV;\n"
     "uniform sampler2D uTex;\n"
@@ -709,7 +757,7 @@ static bool create_quad_gles_program(void)
  * ======================================================================== */
 
 static const char *vignette_vs_src =
-    "#version 300 es\n"
+    AVP_XR_GLSL_VERSION
     "out vec2 vPos;\n"
     "void main() {\n"
     "    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
@@ -718,7 +766,7 @@ static const char *vignette_vs_src =
     "}\n";
 
 static const char *vignette_fs_src =
-    "#version 300 es\n"
+    AVP_XR_GLSL_VERSION
     "precision mediump float;\n"
     "in vec2 vPos;\n"
     "uniform float uFade;\n"   /* overall opacity 0..1 */
@@ -844,12 +892,22 @@ static bool load_xr_functions(void)
     XR_LOAD(xrDestroySwapchain);
     XR_LOAD(xrEnumerateSwapchainFormats);
     /* Extensions — not fatal if missing */
+#ifdef __ANDROID__
     pfn_xrGetInstanceProcAddr(xr_instance, "xrGetOpenGLESGraphicsRequirementsKHR",
         (PFN_xrVoidFunction*)&pfn_xrGetOpenGLESGraphicsRequirementsKHR);
-    pfn_xrGetInstanceProcAddr(xr_instance, "xrRequestDisplayRefreshRateFB",
-        (PFN_xrVoidFunction*)&pfn_xrRequestDisplayRefreshRateFB);
-    pfn_xrGetInstanceProcAddr(xr_instance, "xrGetDisplayRefreshRateFB",
-        (PFN_xrVoidFunction*)&pfn_xrGetDisplayRefreshRateFB);
+#else /* AVP_PCVR */
+    pfn_xrGetInstanceProcAddr(xr_instance, "xrGetOpenGLGraphicsRequirementsKHR",
+        (PFN_xrVoidFunction*)&pfn_xrGetOpenGLGraphicsRequirementsKHR);
+#endif
+    /* Only look these up when the extension was actually enabled — a runtime
+     * without XR_FB_display_refresh_rate (SteamVR) fails the lookup anyway,
+     * but skipping it keeps the log clean and the intent explicit. */
+    if (xr_has_refresh_rate_ext) {
+        pfn_xrGetInstanceProcAddr(xr_instance, "xrRequestDisplayRefreshRateFB",
+            (PFN_xrVoidFunction*)&pfn_xrRequestDisplayRefreshRateFB);
+        pfn_xrGetInstanceProcAddr(xr_instance, "xrGetDisplayRefreshRateFB",
+            (PFN_xrVoidFunction*)&pfn_xrGetDisplayRefreshRateFB);
+    }
 
 #undef XR_LOAD
 
@@ -860,6 +918,7 @@ static bool load_xr_functions(void)
 static bool init_xr_instance(void)
 {
     /* Get xrGetInstanceProcAddr from the OpenXR loader */
+#ifdef __ANDROID__
     static void *xr_loader_handle = NULL;
     if (!xr_loader_handle)
         xr_loader_handle = dlopen("libopenxr_loader.so", RTLD_NOW | RTLD_LOCAL);
@@ -869,11 +928,25 @@ static bool init_xr_instance(void)
     } else {
         pfn_xrGetInstanceProcAddr = (PFN_xrGetInstanceProcAddr)dlsym(xr_loader_handle, "xrGetInstanceProcAddr");
     }
+#else /* AVP_PCVR: load openxr_loader.dll (copied next to the exe by the build).
+       * The Khronos loader resolves the active runtime — SteamVR when it is the
+       * system OpenXR runtime — via the registry. Loaded dynamically rather than
+       * import-linked so a machine with no VR runtime just falls back to flat. */
+    static HMODULE xr_loader_handle = NULL;
+    if (!xr_loader_handle)
+        xr_loader_handle = LoadLibraryA("openxr_loader.dll");
+    if (xr_loader_handle)
+        pfn_xrGetInstanceProcAddr = (PFN_xrGetInstanceProcAddr)
+            (void*)GetProcAddress(xr_loader_handle, "xrGetInstanceProcAddr");
+    else
+        SDL_Log("XR: openxr_loader.dll not found next to the exe");
+#endif
     if (!pfn_xrGetInstanceProcAddr) {
         SDL_Log("XR: no xrGetInstanceProcAddr");
         return false;
     }
 
+#ifdef __ANDROID__
     /* Android requires xrInitializeLoaderKHR before xrCreateInstance */
     {
         PFN_xrInitializeLoaderKHR pfn_xrInitializeLoaderKHR = NULL;
@@ -899,6 +972,7 @@ static bool init_xr_instance(void)
             SDL_Log("XR: xrInitializeLoaderKHR not found — proceeding anyway");
         }
     }
+#endif /* __ANDROID__ */
 
     /* xrCreateInstance is available with null handle */
     pfn_xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrCreateInstance",
@@ -908,6 +982,7 @@ static bool init_xr_instance(void)
         return false;
     }
 
+#ifdef __ANDROID__
     JNIEnv *env = (JNIEnv*)SDL_GetAndroidJNIEnv();
     JavaVM *vm   = NULL;
     (*env)->GetJavaVM(env, &vm);
@@ -922,6 +997,44 @@ static bool init_xr_instance(void)
         XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME,
         XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME,
     };
+    Uint32 extension_count = 3;
+    xr_has_refresh_rate_ext = true; /* always present on Quest */
+#else /* AVP_PCVR */
+    /* Requesting an extension the runtime doesn't have FAILS xrCreateInstance,
+     * so build the list from what the runtime actually offers. Only
+     * XR_KHR_opengl_enable is mandatory; XR_FB_display_refresh_rate is a Quest
+     * nicety that SteamVR doesn't expose. */
+    const char *extensions[2];
+    Uint32 extension_count = 0;
+    xr_has_refresh_rate_ext = false;
+    {
+        PFN_xrEnumerateInstanceExtensionProperties pfn_xrEnumerateInstanceExtensionProperties = NULL;
+        pfn_xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrEnumerateInstanceExtensionProperties",
+            (PFN_xrVoidFunction*)&pfn_xrEnumerateInstanceExtensionProperties);
+        bool have_opengl_ext = false;
+        if (pfn_xrEnumerateInstanceExtensionProperties) {
+            Uint32 avail = 0;
+            pfn_xrEnumerateInstanceExtensionProperties(NULL, 0, &avail, NULL);
+            XrExtensionProperties *props = SDL_calloc(avail, sizeof(XrExtensionProperties));
+            for (Uint32 i = 0; i < avail; i++) props[i].type = XR_TYPE_EXTENSION_PROPERTIES;
+            pfn_xrEnumerateInstanceExtensionProperties(NULL, avail, &avail, props);
+            for (Uint32 i = 0; i < avail; i++) {
+                if (!strcmp(props[i].extensionName, XR_KHR_OPENGL_ENABLE_EXTENSION_NAME))
+                    have_opengl_ext = true;
+                else if (!strcmp(props[i].extensionName, XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME))
+                    xr_has_refresh_rate_ext = true;
+            }
+            SDL_free(props);
+        }
+        if (!have_opengl_ext) {
+            SDL_Log("XR: runtime does not support XR_KHR_opengl_enable — cannot render");
+            return false;
+        }
+        extensions[extension_count++] = XR_KHR_OPENGL_ENABLE_EXTENSION_NAME;
+        if (xr_has_refresh_rate_ext)
+            extensions[extension_count++] = XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME;
+    }
+#endif
 
     XrApplicationInfo app_info = {0};
     SDL_strlcpy(app_info.applicationName, "AvP",  XR_MAX_APPLICATION_NAME_SIZE);
@@ -937,10 +1050,12 @@ static bool init_xr_instance(void)
     app_info.apiVersion = XR_MAKE_VERSION(1, 0, 0);
 
     XrInstanceCreateInfo ci = { XR_TYPE_INSTANCE_CREATE_INFO };
+#ifdef __ANDROID__
     ci.next                     = &android_info;
+#endif
     ci.createFlags              = 0;
     ci.applicationInfo          = app_info;
-    ci.enabledExtensionCount    = 3;
+    ci.enabledExtensionCount    = extension_count;
     ci.enabledExtensionNames    = extensions;
 
     XrResult result = pfn_xrCreateInstance(&ci, &xr_instance);
@@ -1015,6 +1130,7 @@ static bool init_xr_session(void)
 {
     XrResult result;
 
+#ifdef __ANDROID__
     /* GLES requirements check — required before session creation */
     if (pfn_xrGetOpenGLESGraphicsRequirementsKHR) {
         XrGraphicsRequirementsOpenGLESKHR gfx_reqs = { XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR };
@@ -1060,8 +1176,35 @@ static bool init_xr_session(void)
     gfx_binding.display = egl_disp;
     gfx_binding.config  = egl_cfg;
     gfx_binding.context = egl_ctx;
+#else /* AVP_PCVR: bind the SDL-created WGL context. The spec REQUIRES the
+       * graphics-requirements call before xrCreateSession — skipping it fails
+       * with XR_ERROR_GRAPHICS_REQUIREMENTS_CALL_MISSING. */
+    if (pfn_xrGetOpenGLGraphicsRequirementsKHR) {
+        XrGraphicsRequirementsOpenGLKHR gfx_reqs = { XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR };
+        pfn_xrGetOpenGLGraphicsRequirementsKHR(xr_instance, xr_system_id, &gfx_reqs);
+        SDL_Log("XR: GL %d.%d – %d.%d required",
+            XR_VERSION_MAJOR(gfx_reqs.minApiVersionSupported),
+            XR_VERSION_MINOR(gfx_reqs.minApiVersionSupported),
+            XR_VERSION_MAJOR(gfx_reqs.maxApiVersionSupported),
+            XR_VERSION_MINOR(gfx_reqs.maxApiVersionSupported));
+    } else {
+        SDL_Log("XR: xrGetOpenGLGraphicsRequirementsKHR missing");
+        return false;
+    }
 
-    SDL_Log("XR: Creating GLES session...");
+    /* SDL exposes no WGL handles directly, but the context it created is
+     * current on this thread, so the wglGetCurrent* pair returns exactly it. */
+    XrGraphicsBindingOpenGLWin32KHR gfx_binding = { XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR };
+    gfx_binding.hDC   = wglGetCurrentDC();
+    gfx_binding.hGLRC = wglGetCurrentContext();
+    SDL_Log("XR: WGL hDC=%p hGLRC=%p", (void*)gfx_binding.hDC, (void*)gfx_binding.hGLRC);
+    if (!gfx_binding.hDC || !gfx_binding.hGLRC) {
+        SDL_Log("XR: no current WGL context — cannot create session");
+        return false;
+    }
+#endif
+
+    SDL_Log("XR: Creating session...");
     XrSessionCreateInfo session_info = { XR_TYPE_SESSION_CREATE_INFO };
     session_info.next     = &gfx_binding;
     session_info.systemId = xr_system_id;
@@ -1296,11 +1439,20 @@ static bool create_swapchains(void)
     #define GL_SRGB8_ALPHA8_FMT 0x8C43LL
 
     /* Extension check — must happen while our GLES context is current */
+#ifdef __ANDROID__
     {
         const char *exts = (const char *)glGetString(GL_EXTENSIONS);
         has_srgb_write_control = exts && strstr(exts, "GL_EXT_sRGB_write_control");
         SDL_Log("XR: GL_EXT_sRGB_write_control=%d", (int)has_srgb_write_control);
     }
+#else
+    /* Desktop GL has sRGB write control in core: linear→sRGB conversion on
+     * writes to sRGB framebuffers only happens while GL_FRAMEBUFFER_SRGB is
+     * enabled (default DISABLED — exactly the pass-through we want, and the
+     * same enum value 0x8DB9 the EXT path toggles). So the sRGB swapchain
+     * strategy works unconditionally here. */
+    has_srgb_write_control = true;
+#endif
 
     Uint32 fmt_count = 0;
     pfn_xrEnumerateSwapchainFormats(xr_session, 0, &fmt_count, NULL);
@@ -1360,9 +1512,9 @@ static bool create_swapchains(void)
         pfn_xrEnumerateSwapchainImages(vr_swapchains[i].swapchain, 0,
                                        &vr_swapchains[i].image_count, NULL);
         vr_swapchains[i].images = SDL_calloc(vr_swapchains[i].image_count,
-                                              sizeof(XrSwapchainImageOpenGLESKHR));
+                                              sizeof(AvpXrSwapchainImage));
         for (Uint32 j = 0; j < vr_swapchains[i].image_count; j++)
-            vr_swapchains[i].images[j].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+            vr_swapchains[i].images[j].type = AVP_XR_TYPE_SWAPCHAIN_IMAGE;
         pfn_xrEnumerateSwapchainImages(vr_swapchains[i].swapchain,
                                        vr_swapchains[i].image_count,
                                        &vr_swapchains[i].image_count,
@@ -1395,9 +1547,9 @@ static bool create_swapchains(void)
         pfn_xrEnumerateSwapchainImages(vr_menu_swapchain.swapchain, 0,
                                        &vr_menu_swapchain.image_count, NULL);
         vr_menu_swapchain.images = SDL_calloc(vr_menu_swapchain.image_count,
-                                              sizeof(XrSwapchainImageOpenGLESKHR));
+                                              sizeof(AvpXrSwapchainImage));
         for (Uint32 j = 0; j < vr_menu_swapchain.image_count; j++)
-            vr_menu_swapchain.images[j].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+            vr_menu_swapchain.images[j].type = AVP_XR_TYPE_SWAPCHAIN_IMAGE;
         pfn_xrEnumerateSwapchainImages(vr_menu_swapchain.swapchain,
                                        vr_menu_swapchain.image_count,
                                        &vr_menu_swapchain.image_count,
@@ -1431,9 +1583,9 @@ static bool create_swapchains(void)
         pfn_xrEnumerateSwapchainImages(vr_score_swapchain.swapchain, 0,
                                        &vr_score_swapchain.image_count, NULL);
         vr_score_swapchain.images = SDL_calloc(vr_score_swapchain.image_count,
-                                               sizeof(XrSwapchainImageOpenGLESKHR));
+                                               sizeof(AvpXrSwapchainImage));
         for (Uint32 j = 0; j < vr_score_swapchain.image_count; j++)
-            vr_score_swapchain.images[j].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+            vr_score_swapchain.images[j].type = AVP_XR_TYPE_SWAPCHAIN_IMAGE;
         pfn_xrEnumerateSwapchainImages(vr_score_swapchain.swapchain,
                                        vr_score_swapchain.image_count,
                                        &vr_score_swapchain.image_count,
@@ -1538,7 +1690,7 @@ static void handle_xr_events(void)
  * and then pump events so the STOPPING -> EXITING transitions run (xrEndSession
  * is issued from handle_xr_events() on STOPPING). The loop is bounded so a
  * misbehaving runtime can never hang the quit. */
-#ifdef __ANDROID__
+#ifdef AVP_XR
 static void shutdown_xr_session(void)
 {
     if (!xr_enabled || !xr_session)
@@ -1557,7 +1709,7 @@ static void shutdown_xr_session(void)
         SDL_Delay(5);
     }
 }
-#endif /* __ANDROID__ */
+#endif /* AVP_XR */
 
 /* ========================================================================
  * Rendering helpers
@@ -1704,6 +1856,14 @@ int VR_IsBatterySaverActive(void)
 int VR_IsIn3DMode(void)
 {
     return xr_session_running && !xr_2d_mode;
+}
+
+/* Non-zero while an OpenXR session is presenting (2D quad or 3D eyes). The
+ * desktop paths (FSR) use this to stand down while the headset owns the frame;
+ * the flat build has a stub returning 0. */
+int VR_SessionActive(void)
+{
+    return xr_enabled && xr_session_running;
 }
 
 void VR_Set2DViewport(void)
@@ -2241,8 +2401,8 @@ int axes, balls, hats;
     JoystickData.dwVpos = 32768;
     JoystickData.dwPOV = (DWORD) -1;
 
-#ifdef __ANDROID__
-    /* On Android/Quest, OpenXR owns the controllers so GotJoystick is never set.
+#ifdef AVP_XR
+    /* On VR builds, OpenXR owns the controllers so GotJoystick is never set.
      * Skip the SDL joystick gate and go straight to XR input. */
 #else
     if (!GotJoystick) {
@@ -2250,9 +2410,9 @@ int axes, balls, hats;
     }
 #endif
 
-#ifdef __ANDROID__
-    /* On Quest, OpenXR owns the Touch controllers — the Android GameController
-       API does not receive axis events while an XrSession is running.
+#ifdef AVP_XR
+    /* In VR, OpenXR owns the controllers (on Quest the Android GameController
+       API does not even receive axis events while an XrSession is running).
        Read the left thumbstick through the OpenXR action system instead. */
     if (xr_session && xr_session_running && xr_input_action_set && xr_left_stick_action) {
         /* Sync actions to get the current frame's input state.
@@ -2506,6 +2666,11 @@ int axes, balls, hats;
             }
         }
 
+        /* Mission log (message history) edge. Reset here rather than in the left
+         * menu-button block below, because on PCVR the X long-press raises it as
+         * well and X is handled first — resetting later would wipe it. */
+        xr_menu_button_msg_history_edge = 0;
+
         /* X button → taunt in gameplay (Marine/Predator/Alien all map to the same
          * StartPlayerTaunt). Edge-triggered, NOT held: X also confirms menu
          * selections (KEY_CR), so the X press that starts the game is still down on
@@ -2525,8 +2690,66 @@ int axes, balls, hats;
                         && xstate.isActive)
                     x_cur = xstate.currentState ? 1 : 0;
             }
+#ifdef AVP_PCVR
+            /* PCVR: SteamVR reserves the left menu button — on Touch-style
+             * controllers it arrives as the runtime's SYSTEM button, which
+             * OpenXR never delivers to an application, so the tap-to-pause above
+             * can never fire here (turning SteamVR's "VR Dashboard on System
+             * Button" off just stops SteamVR acting on it; the press still does
+             * not reach us). X therefore carries everything that button did, as
+             * a three-stage hold — each stage fires AT its threshold (the same
+             * fire-on-threshold convention the Y button uses for zoom) so the
+             * hold gives feedback as it escalates:
+             *     tap (release < 0.5s) → taunt
+             *     hold >= 0.5s         → mission log  (was: menu long-press)
+             *     hold >= 1.0s         → pause menu   (was: menu tap)
+             * Holding through to the pause therefore shows the mission log on
+             * the way — harmless, it is a non-modal HUD overlay, and it doubles
+             * as the "keep holding" cue. Quest is untouched: its menu button works. */
+            {
+                static float x_hold_secs = 0.0f;
+                static int   x_stage     = 0;   /* 0 = none yet, 1 = log fired, 2 = pause fired */
+                const float  X_LOG_HOLD_SECS   = 0.5f;
+                const float  X_PAUSE_HOLD_SECS = 1.0f;
+
+                if (xr_2d_mode) {
+                    /* Menus: X is select (KEY_CR); no hold tracking here. */
+                    x_hold_secs = 0.0f;
+                    x_stage     = 0;
+                } else {
+                    if (x_cur && !x_prev) { x_hold_secs = 0.0f; x_stage = 0; }
+                    if (x_cur) {
+                        extern int RealFrameTime;
+                        x_hold_secs += (float)RealFrameTime / 65536.0f;
+                        if (x_stage < 1 && x_hold_secs >= X_LOG_HOLD_SECS) {
+                            /* Same edge the menu button's long hold raised;
+                             * usr_io.c turns it into MessageHistory_DisplayPrevious. */
+                            xr_menu_button_msg_history_edge = 1;
+                            x_stage = 1;
+                        }
+                        if (x_stage < 2 && x_hold_secs >= X_PAUSE_HOLD_SECS) {
+                            /* Exactly the pulse the menu button's tap issues:
+                             * AvP_TriggerInGameMenus reads
+                             * DebouncedKeyboardInput[FixedInputConfig.PauseGame],
+                             * which is KEY_ESCAPE (usr_io.c). */
+                            KeyboardInput[KEY_ESCAPE] = 1;
+                            DebouncedKeyboardInput[KEY_ESCAPE] = 1;
+                            x_stage = 2;
+                            /* Hold the menu-select latch until X is released, so
+                             * the still-down X that opened the menu doesn't also
+                             * confirm the highlighted entry on its first frame. */
+                            xr_x_pause_latch = 1;
+                        }
+                    } else if (x_prev && x_stage == 0) {
+                        xr_x_button_gameplay_pressed = 1;   /* short tap → taunt */
+                    }
+                }
+                if (!x_cur) xr_x_pause_latch = 0;
+            }
+#else
             if (!xr_2d_mode && x_cur && !x_prev)
                 xr_x_button_gameplay_pressed = 1;
+#endif
             x_prev = x_cur;
         }
 
@@ -2562,7 +2785,8 @@ int axes, balls, hats;
          * short tap opens the pause menu (fired on release so a hold can be told apart),
          * while holding it past 0.5s instead shows the message history (like F1 in the
          * flat game) and suppresses the pause so a hold never also opens it. */
-        xr_menu_button_msg_history_edge = 0;
+        /* (xr_menu_button_msg_history_edge is reset above, before the X block —
+         * on PCVR the X long-press raises it too, and X is handled first.) */
         if (xr_menu_button_action && pfn_xrGetActionStateBoolean) {
             XrActionStateGetInfo mget = { XR_TYPE_ACTION_STATE_GET_INFO };
             XrActionStateBoolean mstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
@@ -2647,6 +2871,12 @@ int axes, balls, hats;
                  * so the on-screen "Press A / B" prompt matches the controls. */
                 if (VR_OnUserProfileSelectMenu())
                     x_pressed = 0;
+#ifdef AVP_PCVR
+                /* X is still down from the long-press that opened this menu —
+                 * ignore it until released (see the X block above). */
+                if (xr_x_pause_latch)
+                    x_pressed = 0;
+#endif
                 KeyboardInput[KEY_CR] = x_pressed | a_pressed;
                 if (KeyboardInput[KEY_CR] && !prev_cr) {
                     DebouncedKeyboardInput[KEY_CR] = 1;
@@ -2813,7 +3043,7 @@ int axes, balls, hats;
  * amplitude: 0.0–1.0. duration_ms: pulse length in milliseconds. */
 void XR_Haptic_Right(float amplitude, float duration_ms)
 {
-#ifdef __ANDROID__
+#ifdef AVP_XR
     if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_right_haptic_action)
         return;
     XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
@@ -2830,7 +3060,7 @@ void XR_Haptic_Right(float amplitude, float duration_ms)
 
 void XR_Haptic_Left(float amplitude, float duration_ms)
 {
-#ifdef __ANDROID__
+#ifdef AVP_XR
     if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_left_haptic_action)
         return;
     XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
@@ -3179,12 +3409,14 @@ int InitSDL()
     
     LoadDeviceAndVideoModePreferences();
 
-#ifdef __ANDROID__
-    /* On Quest, always enable controller input and configure left-stick locomotion. */
+#ifdef AVP_XR
+    /* On VR builds, always enable controller input and configure left-stick
+       locomotion (the XR action system feeds JoystickData in ReadJoysticks). */
     WantJoystick = 1;
     extern void VR_InitJoystickConfig(void);
     VR_InitJoystickConfig();
-
+#endif
+#ifdef __ANDROID__
     /* Use the SDL3 gamepad API — Quest Touch controllers are presented as
        Android gamepads, not raw joysticks. SDL_INIT_GAMEPAD implies JOYSTICK. */
     SDL_InitSubSystem(SDL_INIT_GAMEPAD);
@@ -3578,8 +3810,8 @@ static int SetOGLVideoMode(int Width, int Height)
         FullscreenTextureHeight = 512;
         pglTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, FullscreenTextureWidth, FullscreenTextureHeight, 0, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, NULL);
         
-        /* ---- Native GLES OpenXR initialisation ---- */
-#ifdef __ANDROID__
+        /* ---- Native OpenXR initialisation ---- */
+#ifdef AVP_XR
 #ifndef AVP_DISABLE_XR   /* phone (non-VR) build: never touch OpenXR; xr_enabled stays
                            false, so the loop uses AvpShowViews() + SDL_GL_SwapWindow */
         if (!xr_enabled) {
@@ -3589,8 +3821,9 @@ static int SetOGLVideoMode(int Width, int Height)
              * mode and the compositor is waiting for XR frames. So we can't
              * use the intent to decide whether to init XR. The manifest already
              * declares this as a VR app; always attempt OpenXR init and fall
-             * back to 2D if it fails. */
-            SDL_Log("XR: attempting OpenXR init (manifest-declared VR app)");
+             * back to 2D if it fails. (On PCVR the same shape applies: try
+             * OpenXR; a machine with no runtime/headset falls back to flat.) */
+            SDL_Log("XR: attempting OpenXR init");
             if (!init_xr_instance()) {
                 SDL_Log("XR: init_xr_instance failed");
                 goto xr_init_done;
@@ -3604,24 +3837,40 @@ static int SetOGLVideoMode(int Width, int Height)
                 goto xr_init_done;
             }
             xr_enabled = true;
-            SDL_Log("XR: GLES native path active");
+            SDL_Log("XR: native path active");
+#ifdef AVP_PCVR
+            /* The mirror window must never pace the headset: with vsync on, a
+             * 60 Hz monitor caps xrWaitFrame-driven rendering at 60 fps. The
+             * runtime paces frames from here on. */
+            SDL_GL_SetSwapInterval(0);
+#endif
         }
         xr_init_done:;
 #else
         SDL_Log("XR: disabled at build time (phone/non-VR variant) — flat render path");
 #endif /* AVP_DISABLE_XR */
-#endif /* __ANDROID__ */
+#endif /* AVP_XR */
         /* ---- end OpenXR init ---- */
-        
+
     }
-    
+
     SDL_GetWindowSize(window, &Width, &Height);
-    
-#ifdef __ANDROID__
+
+#if defined(__ANDROID__)
     /* Use 640x480 virtual coordinates on Android so 2D HUD/progress-screen text
        (designed for 640x480 virtual space) normalises to correct NDC without glyph
        downscaling. VR 3D mode (AvpShowViewsVR) overrides SDB to eye FBO size. */
     SetWindowSize(Width, Height, 640, 480);
+#elif defined(AVP_PCVR)
+    /* Same 640x480 virtual space as Quest while the headset is active (the 2D
+       menu/progress readback path assumes it); normal desktop sizing when XR
+       init failed and we're running flat. */
+    if (xr_enabled) {
+        SetWindowSize(Width, Height, 640, 480);
+    } else {
+        SetWindowSize(Width, Height, Width, Height);
+        FSR_SetOutputSize(Width, Height); /* desktop FSR output (window) resolution */
+    }
 #else
     SetWindowSize(Width, Height, Width, Height);
     FSR_SetOutputSize(Width, Height); /* desktop FSR output (window) resolution */
@@ -4011,7 +4260,7 @@ void CheckForWindowsMessages()
     DebouncedGotAnyKey = 0;
     secure_avpzero(DebouncedKeyboardInput, sizeof DebouncedKeyboardInput);
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
     /* Process XR session state events before input is read this frame.
      * Without this, handle_xr_events() would only run in FlipBuffers()
      * (after ReadUserInput), so xrSyncActions would see stale session state. */
@@ -4243,7 +4492,7 @@ void InGameFlipBuffers(void)
     while ((err = glGetError()) != GL_NO_ERROR)
         SDL_Log("GL error: 0x%04X", err);
 #endif
-#ifdef __ANDROID__
+#ifdef AVP_XR
     if (xr_enabled) {
         handle_xr_events();
         if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
@@ -4298,7 +4547,7 @@ void FlipBuffers()
        backbuffer so the menu draws to the window, not the FBO. */
     FSR_AbortFrame();
 #endif
-#ifdef __ANDROID__
+#ifdef AVP_XR
     if (xr_enabled) {
         handle_xr_events();
         if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
@@ -4650,13 +4899,13 @@ int main(int argc, char *argv[])
         }
         
         IngameKeyboardInput_ClearBuffer();
-#ifdef __ANDROID__
+#ifdef AVP_XR
         vr_recalibrate = 1;   // recalibrate heading + room-scale on first VR frame
         xr_2d_mode = false;   // 3D game starting — stop quad rendering
         SDL_Log("*** xr_2d_mode set to FALSE — game starting ***");
 #endif
         while(AvP.MainLoopRunning) {
-#ifdef __ANDROID__
+#ifdef AVP_XR
             if (xr_should_quit) break;
 #endif
             CheckForWindowsMessages();
@@ -4670,7 +4919,7 @@ int main(int argc, char *argv[])
                         
                         UpdateGame();
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
                         /* Death "Level not completed" screen: once the death sequence
                          * has settled (see deathFadeLevel gate below), present the stats
                          * on the world-anchored 2D quad — like the menus — instead of the
@@ -4743,7 +4992,7 @@ int main(int argc, char *argv[])
                                    the next back buffer and overdrawn by the next world
                                    render before it's ever shown). */
                             }
-#ifdef __ANDROID__
+#ifdef AVP_XR
                         }
 #endif
 
@@ -4751,7 +5000,7 @@ int main(int argc, char *argv[])
                            menu branch, which never calls MaintainHUD) so it isn't drawn over
                            the live HUD in a network game. */
                         if (!InGameMenusAreRunning()
-#ifdef __ANDROID__
+#ifdef AVP_XR
                             && !VR_IsIn3DMode()
 #endif
                            )
@@ -4769,7 +5018,7 @@ int main(int argc, char *argv[])
 
                         FlushD3DZBuffer();
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
                         /* In VR: switch to 2D quad mode so render_frame() handles
                          * xrWaitFrame/Begin/End and displays the menu as a flat overlay.
                          * Clear FB 0 to black so the menu draws on a clean background. */
@@ -4793,7 +5042,7 @@ int main(int argc, char *argv[])
 
                     ThisFramesRenderingHasFinished();
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
                     /* Submit the 2D menu frame to the VR compositor, then restore
                      * 3D mode if the menu was just dismissed. */
                     if (xr_enabled && xr_session_running && xr_2d_mode) {
@@ -4801,9 +5050,18 @@ int main(int argc, char *argv[])
                         if (!menusActive)
                             xr_2d_mode = false;
                     }
+#ifdef AVP_PCVR
+                    /* PCVR exe running flat (headset/runtime absent → XR init
+                       failed): behave exactly like the desktop build below.
+                       When XR IS running, the presents above / in the gameplay
+                       branch already happened — a second InGameFlipBuffers here
+                       would run xrWaitFrame twice per game frame. */
+                    else if (!xr_enabled || !xr_session_running) {
+                        InGameFlipBuffers();
+                    }
 #endif
+#else
                     //InGameFlipBuffers();
-#ifndef __ANDROID__
                     /* Single desktop present for the whole frame, AFTER AvpShowViews,
                        MaintainHUD and AvP_InGameMenus, so the world, HUD, weapon and any
                        pause menu are all included in the presented frame. The gameplay
@@ -4840,7 +5098,7 @@ int main(int argc, char *argv[])
                 RestartLevel();
             }
         }
-#ifdef __ANDROID__
+#ifdef AVP_XR
         xr_2d_mode = true;    // back to menus
 #endif
         
@@ -4892,7 +5150,7 @@ int main(int argc, char *argv[])
     CDDA_End();
     ClearMemoryPool();
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
     /* End the OpenXR session and destroy all XR/GLES resources so the Quest
      * compositor isn't left holding a live session (which otherwise leaves the
      * headset on a black screen).

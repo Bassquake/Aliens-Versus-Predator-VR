@@ -305,7 +305,7 @@ void MaintainHUD(void)
 	
 	if (ScanDrawMode != ScanDrawDirectDraw)
 	{
-#ifdef __ANDROID__
+#ifdef AVP_XR
 		/* In VR 3D mode, HandleParticleSystem is called per-eye inside
 		   AvpShowViewsVR — skip here to avoid a third physics/render pass. */
 		if (!VR_IsIn3DMode())
@@ -369,7 +369,7 @@ void MaintainHUD(void)
 				   the 2D screen-space overlay from HandleMarineWeapon would double
 				   up on the weapon causing distortion, so skip it in VR. */
 				if (!VR_IsIn3DMode()) HandleMarineWeapon();
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				else
 				{
 					/* HandleMarineWeapon is skipped in VR, but it also drove the
@@ -673,7 +673,7 @@ static void DoMotionTracker(void)
 			if (MTSoundHandle==SOUND_NOACTIVEINDEX)
 			{
 				int panicFactor = MUL_FIXED(nearestDistance,MOTIONTRACKER_SCALE);
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				{
 					extern void XR_Haptic_Left(float amplitude, float duration_ms);
 					float hapticAmp;
@@ -738,7 +738,7 @@ static void DoMotionTracker(void)
 	   its sweep + scan cadence advances twice a frame; desktop runs it once. Double
 	   the tracker's time step on desktop so its sweep speed matches the Quest. */
 	int mtFrameTime = NormalFrameTime;
-#ifndef __ANDROID__
+#ifndef AVP_XR
 	mtFrameTime *= 2;
 #endif
 
@@ -784,7 +784,7 @@ static void DoMotionTracker(void)
 	{
 		DYNAMICSBLOCK *playerDynPtr = Player->ObStrategyBlock->DynPtr;
 		int phi = playerDynPtr->OrientEuler.EulerY;
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* In VR the body doesn't turn with the head, so the radar would never rotate
 		 * to match where the player is looking. Use the actual view yaw (head + snap
 		 * turn) instead of the body yaw. The view's world-forward is VDB_Mat column 3
@@ -1760,7 +1760,7 @@ static void DrawPredatorSights(void)
 
     if (TemplateWeapon[weaponPtr->WeaponIDNumber].IsSmartTarget)
     {
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* In VR, HandlePredatorWeapon (which normally drives the smart-target lock-on)
 		 * is skipped to avoid double-rendering the weapon, so run the search here for
 		 * auto-targeting weapons or the lock-on never updates. Eye 0 only: SmartTarget
@@ -1806,7 +1806,7 @@ static void DrawPredatorSights(void)
 
 			/* Advance the lock-on animation once per frame. MaintainHUD runs per eye in
 			 * VR, so gate the state advance to eye 0 or the lock-on plays at 2x speed. */
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 			if (!VR_IsIn3DMode() || vr_eye_index == 0)
 		#endif
 			{
@@ -1840,7 +1840,7 @@ static void DrawPredatorSights(void)
 		imageDesc.ImageNumber = HUDFontsImageNumber;
 		imageDesc.TopLeftX = (ScreenDescriptorBlock.SDB_Width-16)/2;
 		imageDesc.TopLeftY = (ScreenDescriptorBlock.SDB_Height-14)/2;
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* In VR, attach the tri-crosshair to the weapon controller aim
 		 * (GunMuzzleSightX/Y), exactly like the Marine crosshair, instead of locking
 		 * it to screen centre. GunMuzzleSightX/Y is maintained for every Predator

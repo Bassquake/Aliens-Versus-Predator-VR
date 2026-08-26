@@ -968,7 +968,7 @@ void PlatUpdatePlayer()
 		                                              : &Global_VDB_Ptr->VDB_Mat;
 
 		if (AvP.PlayerType != I_Alien) {
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			if (vr_listener_mat_valid) {
 				/* VR: use the full head orientation (incl. pitch & roll) so vertical
 				 * direction is reproduced - looking up/down with the headset now pans

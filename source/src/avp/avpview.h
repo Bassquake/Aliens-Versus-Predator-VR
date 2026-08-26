@@ -10,7 +10,7 @@ void ReflectObject(DISPLAYBLOCK *dPtr);
 
 extern VIEWDESCRIPTORBLOCK *Global_VDB_Ptr;
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 #include <SDL3/SDL.h>
 extern int vr_is_rendering;
 extern VECTORCH vr_base_world; /* pre-IPD camera position, consistent between eyes */

@@ -41,7 +41,7 @@
 #include "scream.h"
 #include "player.h"
 #include "avp_userprofile.h"
-#ifdef __ANDROID__
+#ifdef AVP_XR
 #include <math.h>
 #include "opengl.h"
 #endif
@@ -151,7 +151,7 @@ extern bool bTurnSpeedAdjust;
 #define JETPACK_MAX_SPEED 10000
 #define JETPACK_THRUST 40000
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* Milliseconds left on the current jetpack rumble pulse (see the firing block in
  * the player movement code). Counts down each frame and is reset to 0 when the
  * jetpack stops, so the rumble restarts cleanly next time it fires. */
@@ -351,7 +351,7 @@ static int AlienFacingClimbableWall(DYNAMICSBLOCK *dynPtr, VECTORCH *viewDir)
 	return 0;
 }
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* Rotate the player's body-space LinVelocity into world space for VR locomotion.
    Outside VR 3D mode this is just the plain OrientMat rotation.
 
@@ -541,7 +541,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 	NB player must be standing for faster movement
 	------------------------------------------------------*/
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 #define ROTATE_VELOCITY_WORLD(dynPtr) VR_RotateMoveVelocity(dynPtr)
 #else
 #define ROTATE_VELOCITY_WORLD(dynPtr) RotateVector(&(dynPtr)->LinVelocity, &(dynPtr)->OrientMat)
@@ -786,7 +786,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 				Sound_Play(SID_ED_JETPACK_START,"h");
 				Sound_Play(SID_ED_JETPACK_MID,"el",&playerStatusPtr->soundHandle5);
 			}
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			/* Continuous rumble on the left controller while the jetpack fires.
 			 * Re-issue an 80 ms pulse whenever the previous one is about to end so
 			 * the buzz stays unbroken across frames (mirrors the weapon-fire haptic
@@ -808,7 +808,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 				Sound_Play(SID_ED_JETPACK_END,"h");
 				Sound_Stop(playerStatusPtr->soundHandle5);
 			}
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			jetpack_haptic_ms_remaining = 0;
 			#endif
 		}
@@ -1968,7 +1968,7 @@ void ThrowAFlare(void)
 		MATRIXCH mat;
 		VECTORCH position;
 
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		extern int xr_left_trigger_pressed;
 		extern int vr_right_hand_valid;
 		extern MATRIXCH vr_right_hand_mat;

@@ -4359,7 +4359,7 @@ extern void TranslationSetup(void)
 	#endif
 
 	#if 1
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	extern int vr_is_rendering;
 	float vr_y_scale = vr_is_rendering ? (1.0f / 65536.0f) : (4.0f / (65536.0f * 3.0f));
 #else
@@ -4389,7 +4389,7 @@ extern void TranslationSetup(void)
 	RotateVector(&v,&Global_VDB_Ptr->VDB_Mat);
 
 	ViewMatrix[3+0*4] = ((float)-v.vx)*o;
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 		ViewMatrix[3+1*4] = ((float)-v.vy) * (vr_is_rendering ? 1.0f : (4.0f/3.0f)) * p;
 	#else
 		ViewMatrix[3 + 1 * 4] = ((float)-v.vy) * desktop_aspect * p;
@@ -6184,7 +6184,7 @@ void RenderPredatorTargetingSegment(int theta, int scale, int drawInRed)
 	VECTOR2D offset[4];
  	POLYHEADER fakeHeader;
 	int centreX,centreY;
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 	VECTORCH vrTargetDir; int vrHaveTarget = 0; /* VR: target's view-space direction, applied after zoom */
 	#endif
 	int z = ONE_FIXED-scale;
@@ -6194,7 +6194,7 @@ void RenderPredatorTargetingSegment(int theta, int scale, int drawInRed)
 		extern SCREENDESCRIPTORBLOCK ScreenDescriptorBlock;
 		int useScreenSight = 1;
 
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* In VR, place the reticle by transforming the locked target's WORLD position
 		 * into THIS eye with the current VDB - the exact transform the renderer uses -
 		 * rather than the precomputed/eye-0 SmartTargetSightX/Y (which carries a 4:3
@@ -6241,7 +6241,7 @@ void RenderPredatorTargetingSegment(int theta, int scale, int drawInRed)
 	}
 	z = (float)z*CameraZoomScale;
 
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 	/* Map the target's view-space direction onto the (zoom-scaled) reticle depth z so
 	 * the reticle centre projects to the same eye pixel as the enemy.
 	 *
@@ -6302,7 +6302,7 @@ void RenderPredatorTargetingSegment(int theta, int scale, int drawInRed)
 			offset[2].vx = -offset[2].vx;
 			offset[3].vx = -offset[3].vx;
 		}
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* The reticle reads large in the headset (VDB_ProjX is eye-FBO sized while the
 		 * HUD SDB centre is 320), so shrink the lock-on triangle arms in VR. */
 		if (vrHaveTarget)

@@ -1720,7 +1720,7 @@ void MakeParticle(VECTORCH *positionPtr, VECTORCH *velocityPtr, enum PARTICLE_ID
    translucent geometry + light-flare rendering from the current eye's viewpoint.
    Called once per frame on non-VR; called once per VR eye (HandleParticleSystem
    on eye 0, RenderParticlesOnly on eye 1). */
-#ifdef __ANDROID__
+#ifdef AVP_XR
 void RenderParticlesOnly(void)
 #else
 static void RenderParticlesOnly(void)

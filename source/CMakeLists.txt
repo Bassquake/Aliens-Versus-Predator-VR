@@ -60,6 +60,21 @@ if (AVP_MAC AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     message(STATUS "AVP: CMAKE_OSX_DEPLOYMENT_TARGET -> 11.3 (floor set by the bundled OpenAL)")
 endif()
 
+# ---------------------------------------------------------------------------
+# Windows PCVR target (OPT-IN — disabled by default)
+#
+# Builds the OpenXR VR path (the same one the Quest uses) against desktop GL +
+# WGL, running on SteamVR or any desktop OpenXR runtime. Needs the Khronos
+# OpenXR loader DLL at extern/OpenXR/lib/windows/<arch>/openxr_loader.dll —
+# the exe loads it at runtime (no import lib), and falls back to the flat
+# desktop render path when the DLL or an active runtime is absent. The VR exe
+# is named avp_<arch>vr.exe and lands in the same build/windows/<arch> folder
+# as the flat build so they share assets and DLLs. Enable with:
+#   cmake -DAVP_ENABLE_PCVR=ON ...   (use a separate binary dir, e.g.
+#   platform/windows/x64vr, so the flat and VR builds can coexist)
+# ---------------------------------------------------------------------------
+option(AVP_ENABLE_PCVR "Build the Windows OpenXR (SteamVR) PCVR target" OFF)
+
 if (ANDROID)
     PROJECT(avpvr)
 endif()
@@ -168,6 +183,11 @@ if (ANDROID)
     # Tell CMake where to find the SDL3 Android headers and binaries
     # Usually you'd use add_subdirectory(extern/SDL3) here
     add_definitions(-DANDROID)
+    # AVP_XR gates the shared OpenXR/VR code (present on Android AND the Windows
+    # PCVR build). On Android it is always defined, so every former
+    # `#ifdef __ANDROID__` XR guard preprocesses exactly as before; genuinely
+    # Android-only code (JNI, EGL, dlopen, gamepads) still uses __ANDROID__.
+    add_definitions(-DAVP_XR)
     # Non-VR "phone" build variant: the Gradle `phone` product flavor passes
     # -DAVP_DISABLE_XR=ON, which makes main.c skip OpenXR init entirely and use the
     # flat (windowed) render path + SDL_GL_SwapWindow. The Quest `quest` flavor leaves
@@ -294,6 +314,25 @@ if (WIN32)
                 "path. Rebuild the bundled libs to match the headers.")
         endif()
     endforeach()
+
+    # PCVR: the shared VR code compiles in (AVP_XR) with the Win32/WGL OpenXR
+    # binding (AVP_PCVR). Only the Khronos loader DLL is needed — main.c loads
+    # it with LoadLibraryA at runtime, so there is no import lib to link and a
+    # machine without the DLL/runtime still runs the exe flat. Hard-fail here
+    # when it is missing, matching the bundled-lib checks above, since the
+    # post-build copy step would otherwise fail mid-build instead.
+    if (AVP_ENABLE_PCVR)
+        set(AVP_OPENXR_DLL "${CMAKE_SOURCE_DIR}/extern/OpenXR/lib/windows/${ARCH_DIR}/openxr_loader.dll")
+        if (NOT EXISTS "${AVP_OPENXR_DLL}")
+            message(FATAL_ERROR
+                "PCVR build: missing ${AVP_OPENXR_DLL}\n"
+                "Drop in the Khronos OpenXR loader for ${ARCH_DIR} (openxr_loader.dll "
+                "from an OpenXR-SDK release at github.com/KhronosGroup/OpenXR-SDK), "
+                "or configure with -DAVP_ENABLE_PCVR=OFF.")
+        endif()
+        add_definitions(-DAVP_XR -DAVP_PCVR)
+        message(STATUS "AVP: PCVR (OpenXR) build enabled -> avp_${ARCH_DIR}vr.exe")
+    endif()
 endif()
     MESSAGE(WARNING "SDL 3.0 support is STABLE.")
 
@@ -1020,22 +1059,38 @@ elseif (WIN32)
     
     install (TARGETS avp DESTINATION .)
 
+    # The PCVR build gets its own exe name AND its own output folder
+    # (build/windows/<arch>vr), fully self-contained: the post-build steps below
+    # all stage into $<TARGET_FILE_DIR:avp>, so the DLLs, loader and assets
+    # follow the folder automatically. Kept separate from the flat build so the
+    # two never fight over config.cfg / user_profiles (the game writes next to
+    # its assets — see "Where the game writes" in CLAUDE.md).
+    if (AVP_ENABLE_PCVR)
+        set(AVP_EXE_NAME "avp_${AVP_ARCH}vr")
+        set(AVP_OUT_DIR  "${AVP_ARCH}vr")
+    else()
+        set(AVP_EXE_NAME "avp_${AVP_ARCH}")
+        set(AVP_OUT_DIR  "${AVP_ARCH}")
+    endif()
+
     # Place the exe and all accompanying files inside a avp/ subfolder,
     # mirroring the avp.app bundle layout on macOS.
     set_target_properties(avp PROPERTIES
-        # Name the exe per-arch (avp_x64.exe / avp_x86.exe / avp_arm64.exe) so the
+        # Name the exe per-arch (avp_x64.exe / avp_x86.exe / avp_arm64.exe —
+        # avp_<arch>vr.exe for the PCVR build) so the
         # builds can coexist. Set here (not in the generated .vcxproj) so it
         # survives a CMake regenerate.
-        OUTPUT_NAME "avp_${AVP_ARCH}"
+        OUTPUT_NAME "${AVP_EXE_NAME}"
         # Anchored to the source tree rather than the build dir, so it lands in
-        # <repo>/build/windows/<arch> no matter where CMake was pointed. Resolves to
+        # <repo>/build/windows/<arch> (build/windows/<arch>vr for PCVR) no matter
+        # where CMake was pointed. Resolves to
         # the same place as before for the documented platform/windows/<arch> layout.
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/../build/windows/${AVP_ARCH}"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/../build/windows/${AVP_OUT_DIR}"
         # Launch the VS debugger (F5 / "Local Windows Debugger") with the CWD set
         # to the exe's own folder, so it finds the assets copied next to it —
         # matching how it behaves when run from Explorer. Without this the
         # debugger uses the project dir and the game can't locate its data.
-        VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/../build/windows/${AVP_ARCH}"
+        VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/../build/windows/${AVP_OUT_DIR}"
     )
 
     # Runtime DLLs live in the target sysroot bin, not the host compiler bin.
@@ -1049,6 +1104,17 @@ elseif (WIN32)
                 "$<TARGET_FILE_DIR:avp>"
         COMMENT "Copying SDL3 runtime DLL next to avp.exe"
         VERBATIM)
+
+    # 1a. PCVR: stage the OpenXR loader next to the exe. main.c LoadLibraryA's
+    # it at startup; without it the exe silently runs flat.
+    if (AVP_ENABLE_PCVR)
+        add_custom_command(TARGET avp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${AVP_OPENXR_DLL}"
+                    "$<TARGET_FILE_DIR:avp>"
+            COMMENT "Copying openxr_loader.dll next to ${AVP_EXE_NAME}.exe"
+            VERBATIM)
+    endif()
 
     # 1b. Copy the FFmpeg runtime DLLs. Glob them per-arch rather than naming them:
     # the versioned suffixes differ between the bundled builds (x64/x86 ship

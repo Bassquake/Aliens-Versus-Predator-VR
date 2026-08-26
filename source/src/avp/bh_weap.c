@@ -1923,7 +1923,7 @@ void InitialiseEnergyBoltBehaviour(DAMAGE_PROFILE *damage, int factor)
 		VECTORCH targetDirection;
 		MATRIXCH orient;
 
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* In VR the gun direction comes from the weapon controller, so GetGunDirection
 		 * (which fires at the controller-aim raycast) ignores the smart-target lock.
 		 * If a target is locked, fire the bolt straight at it instead, so the shoulder
@@ -2993,7 +2993,7 @@ void InitialiseDiscBehaviour(STRATEGYBLOCK *target,SECTION_DATA *disc_section) {
 	
 		dynPtr->PrevPosition = dynPtr->Position;
 		TransposeMatrixCH(&matrix);
-		#ifdef __ANDROID__
+		#ifdef AVP_XR
 		/* No smart-target lock: aim and launch the disc along the right (weapon)
 		 * controller instead of the head. With a lock the disc homes onto the target,
 		 * so the throw direction doesn't matter and we keep the head-based setup. Same

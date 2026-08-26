@@ -14,7 +14,7 @@
 #define UseLocalAssert Yes
 #include "ourasert.h"
 #include "avp_userprofile.h"
-#ifdef __ANDROID__
+#ifdef AVP_XR
 extern void VR_DepthBSP(void);
 extern void VR_DepthObjects(void);
 extern void VR_AfterObjects(void);
@@ -580,7 +580,7 @@ void KRenderItems(VIEWDESCRIPTORBLOCK *VDBPtr)
 				MODULE *modulePtr = SortedModules[numMods].DispPtr->ObMyModule;
 				
 				CheckWireFrameMode(WireFrameMode&1);
-				#ifdef __ANDROID__
+				#ifdef AVP_XR
 				VR_DepthBSP();
 				#endif
 		  		AddShape(SortedModules[numMods].DispPtr,VDBPtr);
@@ -611,7 +611,7 @@ void KRenderItems(VIEWDESCRIPTORBLOCK *VDBPtr)
 						if(VisibleObjects[o].SortKey == numMods && !VisibleObjects[o].DrawBeforeEnvironment)
 						{
 							DISPLAYBLOCK *dptr = VisibleObjects[o].DispPtr;
-							#ifdef __ANDROID__
+							#ifdef AVP_XR
 							VR_DepthObjects();
 							#endif
 							AddShape(VisibleObjects[o].DispPtr,VDBPtr);
@@ -641,7 +641,7 @@ void KRenderItems(VIEWDESCRIPTORBLOCK *VDBPtr)
 		}
 		else
 		{
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			if (vr_is_rendering)
 			{
 				/* VR per-module rendering (back-to-front painter's algorithm).

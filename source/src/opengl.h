@@ -34,7 +34,7 @@ void FSR_Resolve(void);               /* upscale low-res FBO to the backbuffer  
 void FSR_AbortFrame(void);            /* discard a pending FBO (e.g. menu present)  */
 #endif
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 /* Clip-space HUD controls — set during MaintainHUD() in VR, reset afterwards.
    vr_hud_clip_scale: < 1.0 shrinks toward centre (1.0 = no scale).
    vr_hud_offset_x/y: shift entire HUD left/right/up/down in clip space. */

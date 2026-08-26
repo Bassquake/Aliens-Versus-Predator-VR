@@ -17,7 +17,7 @@
 #define UseLocalAssert Yes
 #include "ourasert.h"
 
-#ifdef __ANDROID__
+#ifdef AVP_XR
 extern int VR_IsIn3DMode(void);
 extern int vr_eye_index; /* 0 = left eye, 1 = right eye, during per-eye VR rendering */
 #endif
@@ -132,7 +132,7 @@ void DrawSfxObject(DISPLAYBLOCK *dispPtr)
 			 * rendered once per eye, so toggling per-eye would draw the flash in the
 			 * left eye then skip the right. Only toggle on the right (last) eye so both
 			 * eyes show the same frame's strobe state. */
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			if (!VR_IsIn3DMode() || vr_eye_index != 0)
 			#endif
 			sfxPtr->EffectDrawnLastFrame=!sfxPtr->EffectDrawnLastFrame;
@@ -164,7 +164,7 @@ void DrawSfxObject(DISPLAYBLOCK *dispPtr)
 			 * rendered once per eye, so toggling per-eye would draw the flash in the
 			 * left eye then skip the right. Only toggle on the right (last) eye so both
 			 * eyes show the same frame's strobe state. */
-			#ifdef __ANDROID__
+			#ifdef AVP_XR
 			if (!VR_IsIn3DMode() || vr_eye_index != 0)
 			#endif
 			sfxPtr->EffectDrawnLastFrame=!sfxPtr->EffectDrawnLastFrame;

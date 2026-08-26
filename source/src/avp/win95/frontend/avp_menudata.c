@@ -274,11 +274,20 @@ static AVPMENU_ELEMENT AvPMenu_InGameAVOptions[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER, 	{TEXTSTRING_AVOPTIONS_INGAMEMOVIES}, {1}, {&MoviesAreActive},	{TEXTSTRING_NO}},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_CROSSHAIR},    {1}, {&ShowCrosshair},	{TEXTSTRING_DETAILLEVELS_OFF},	TEXTSTRING_AVOPTIONS_CROSSHAIR_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FRAMERATE},        {1}, {&ShowFrameRate},       {TEXTSTRING_FPS_OFF},	TEXTSTRING_AVOPTIONS_FRAMERATE_HELP},
-	/* VR display refresh rate is Quest-only. */
-#ifdef __ANDROID__
+	/* Refresh rate and MSAA are Quest-only, and FSR is flat-desktop-only:
+	 *  - refresh rate needs XR_FB_display_refresh_rate, a Meta extension SteamVR
+	 *    does not expose (and OpenXR has no standard equivalent), so on PCVR the
+	 *    runtime owns the rate — it is set in SteamVR / the Steam Link app.
+	 *  - MSAA uses GL_EXT_multisampled_render_to_texture, a tiled-GPU extension
+	 *    absent from desktop drivers, so PCVR eye buffers render 1x regardless.
+	 *  - FSR is bypassed whenever an XR session is presenting (see
+	 *    ThisFramesRenderingHasBegun), so it would be dead in the headset too.
+	 * PCVR therefore offers none of the three rather than dead controls; use
+	 * SteamVR's own refresh-rate and per-app render-resolution settings. */
+#if defined(__ANDROID__)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE},  {3}, {&VRRefreshRateIndex},  {TEXTSTRING_VR_REFRESH_72},	TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
-#else
+#elif !defined(AVP_PCVR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FSR},              {4}, {&FSRQualityIndex},     {TEXTSTRING_AVOPTIONS_FSR_OFF}},
 #endif
 	{AVPMENU_ELEMENT_GOTOMENU,		{TEXTSTRING_DETAILLEVELS_TITLE},	{AVPMENU_DETAILLEVELS}},
@@ -295,11 +304,20 @@ static AVPMENU_ELEMENT AvPMenu_MainMenuAVOptions[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER,   	{TEXTSTRING_AVOPTIONS_INTROOUTROMOVIES}, {1}, {&IntroOutroMoviesAreActive},	{TEXTSTRING_NO},	TEXTSTRING_AVOPTIONS_INTROOUTROMOVIES_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_CROSSHAIR},    {1}, {&ShowCrosshair},	{TEXTSTRING_DETAILLEVELS_OFF},	TEXTSTRING_AVOPTIONS_CROSSHAIR_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FRAMERATE},        {1}, {&ShowFrameRate},       {TEXTSTRING_FPS_OFF},	TEXTSTRING_AVOPTIONS_FRAMERATE_HELP},
-	/* VR display refresh rate is Quest-only. */
-#ifdef __ANDROID__
+	/* Refresh rate and MSAA are Quest-only, and FSR is flat-desktop-only:
+	 *  - refresh rate needs XR_FB_display_refresh_rate, a Meta extension SteamVR
+	 *    does not expose (and OpenXR has no standard equivalent), so on PCVR the
+	 *    runtime owns the rate — it is set in SteamVR / the Steam Link app.
+	 *  - MSAA uses GL_EXT_multisampled_render_to_texture, a tiled-GPU extension
+	 *    absent from desktop drivers, so PCVR eye buffers render 1x regardless.
+	 *  - FSR is bypassed whenever an XR session is presenting (see
+	 *    ThisFramesRenderingHasBegun), so it would be dead in the headset too.
+	 * PCVR therefore offers none of the three rather than dead controls; use
+	 * SteamVR's own refresh-rate and per-app render-resolution settings. */
+#if defined(__ANDROID__)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE},  {3}, {&VRRefreshRateIndex},  {TEXTSTRING_VR_REFRESH_72},	TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
-#else
+#elif !defined(AVP_PCVR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FSR},              {4}, {&FSRQualityIndex},     {TEXTSTRING_AVOPTIONS_FSR_OFF}},
 #endif
 	{AVPMENU_ELEMENT_GOTOMENU,		{TEXTSTRING_DETAILLEVELS_TITLE},	{AVPMENU_DETAILLEVELS},	{0},	{0},	TEXTSTRING_DETAILLEVELS_TITLE_HELP},
@@ -314,7 +332,7 @@ static AVPMENU_ELEMENT AvPMenu_UserProfileSelect[] =
 };
 static AVPMENU_ELEMENT AvPMenu_UserProfileEnterName[] =
 {
-#ifdef __ANDROID__
+#ifdef AVP_XR
 	/* VR: no keyboard — guide the player through the controller name/continue flow. */
 	{AVPMENU_ELEMENT_TEXTFIELD, 	{TEXTSTRING_BLANK}, {MAX_SIZE_OF_USERS_NAME},	{NULL}, {0}, TEXTSTRING_USERPROFILE_HELP_VR},
 	{AVPMENU_ELEMENT_GOTOMENU, 		{TEXTSTRING_CONTINUE},	{AVPMENU_MAIN}, {0}, {0}, TEXTSTRING_USERPROFILE_HELP_VR},
@@ -697,11 +715,11 @@ static AVPMENU_ELEMENT AvPMenu_InGame[] =
 #endif
 	{AVPMENU_ELEMENT_RESTARTGAME,{TEXTSTRING_INGAMEMENU_RESTARTMISSION},		{0}},
 	/* Controller Configuration holds only VR turn/comfort options — VR (Android) only. */
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG}},
 	#endif
 	/* Mouse / joystick / key configuration hidden in VR (Android). */
-	#ifndef __ANDROID__
+	#ifndef AVP_XR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MOUSECONTROLS_TITLE},		{AVPMENU_CONTROLS}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_JOYSTICKCONTROLS_TITLE},		{AVPMENU_JOYSTICKCONTROLS}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MARINEKEYCONTROLS_TITLE}, 		{AVPMENU_MARINEKEYCONFIG}},
@@ -714,11 +732,11 @@ static AVPMENU_ELEMENT AvPMenu_InNetGame[] =
 {
 	{AVPMENU_ELEMENT_RESUMEGAME,{TEXTSTRING_INGAMEMENU_RESUMEGAME},			{0}},
 	/* Controller Configuration holds only VR turn/comfort options — VR (Android) only. */
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG}},
 	#endif
 	/* Mouse / joystick / key configuration hidden in VR (Android). */
-	#ifndef __ANDROID__
+	#ifndef AVP_XR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MOUSECONTROLS_TITLE},		{AVPMENU_CONTROLS}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_JOYSTICKCONTROLS_TITLE},		{AVPMENU_JOYSTICKCONTROLS}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MARINEKEYCONTROLS_TITLE}, 		{AVPMENU_MARINEKEYCONFIG}},
@@ -740,12 +758,12 @@ static AVPMENU_ELEMENT AvPMenu_KeyConfig[NUMBER_OF_PREDATOR_INPUTS+2+1+1];
 static AVPMENU_ELEMENT AvPMenu_Options[] =
 {
 	/* Controller Configuration holds only VR turn/comfort options — VR (Android) only. */
-	#ifdef __ANDROID__
+	#ifdef AVP_XR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
 	#endif
 	/* Mouse / joystick / per-species key configuration are hidden in VR (Android),
 	 * where input comes from the VR controllers via Controller Configuration above. */
-	#ifndef __ANDROID__
+	#ifndef AVP_XR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MOUSECONTROLS_TITLE},		{AVPMENU_CONTROLS},	{0},	{0},	TEXTSTRING_MOUSECONTROLS_TITLE_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_JOYSTICKCONTROLS_TITLE},		{AVPMENU_JOYSTICKCONTROLS},	{0},	{0},	TEXTSTRING_JOYSTICKCONTROLS_TITLE_HELP},
 	#if !(MARINE_DEMO||ALIEN_DEMO)
@@ -757,7 +775,7 @@ static AVPMENU_ELEMENT AvPMenu_Options[] =
 	#if !(PREDATOR_DEMO||MARINE_DEMO)
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENKEYCONTROLS_TITLE}, 		{AVPMENU_ALIENKEYCONFIG},	{0},	{0},	TEXTSTRING_ALIENKEYCONTROLS_TITLE_HELP},
 	#endif
-	#endif /* !__ANDROID__ */
+	#endif /* !AVP_XR */
 	{AVPMENU_ELEMENT_ENDOFMENU}
 };
 
@@ -1047,7 +1065,7 @@ extern void MakeSelectSessionMenu(void)
 
 extern void MakeInGameMenu(void)
 {
-#ifndef __ANDROID__
+#ifndef AVP_XR
 	/* KJL 14:51:28 06/11/98 - set the only available key config to be that of the player's
 	cyrrent character */
 	/*Adjust both variants of the menu -Richard*/

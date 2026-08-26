@@ -35,8 +35,8 @@ android {
         // value at this level would be dead config that looks authoritative.
         minSdk = 24
         targetSdk = 32
-        versionCode = 6
-        versionName = "0.6"
+        versionCode = 7
+        versionName = "0.7"
 
         externalNativeBuild {
             cmake {

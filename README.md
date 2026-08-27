@@ -30,8 +30,8 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/Ixnr
 
 ![Screenshot of assets files](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/assets-files.png)
 
-4. Download the [lowercase.ps1](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/assets/lowercase.ps1) powershell script or find it in the assets folder of this project. Place the script into where the assets are.
-5. Run the script in Powershell (type **lowercase.ps1**) and all files will now be lowercase.
+4. Download the [lowercase.ps1](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/assets/lowercase.ps1) powershell script or find it in the assets folder of this project. Place the script into the folder where the assets are.
+5. Run the script in Powershell (type **lowercase.ps1**) and all files will now be lowercase. On windows, if you get a security error, use this command **powershell -ExecutionPolicy Bypass -File .\lowercase.ps1** On Linux, run it as **pwsh ./lowercase.ps1** (Install pwsh first if it's not there — **sudo apt install powershell** or via Snap, depending on distro.)
 6. Plug your headset in via usb.
 7. Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in [Developer](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) mode already):
 

@@ -1440,7 +1440,11 @@ void DisplayPredatorHealthAndEnergy(void)
 	PLAYER_WEAPON_DATA *weaponPtr = &(PlayerStatusPtr->WeaponSlot[PlayerStatusPtr->SelectedWeaponSlot]);
 	int value;
 	int i;
-	int scale = DIV_FIXED(ScreenDescriptorBlock.SDB_Width,640);
+	/* Predator health/energy bars. Third of the three HUD scale sites that were
+	   SDB_Width/640 in the 1999 source (the others being HUDScaleFactor in
+	   d3d_hud.cpp and MotionTrackerScale in game.c) — all now SDB_Height/540 so
+	   the whole HUD scales together on a wide display. Keep them in step. */
+	int scale = DIV_FIXED(ScreenDescriptorBlock.SDB_Height,540);
 	int size = MUL_FIXED(51,scale);
 	{
 		NPC_DATA *NpcData;

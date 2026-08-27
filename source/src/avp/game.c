@@ -257,7 +257,16 @@ void StartGame(void)
 	{
 		extern SCREENDESCRIPTORBLOCK ScreenDescriptorBlock;
 		extern int MotionTrackerScale;
-		MotionTrackerScale = DIV_FIXED(ScreenDescriptorBlock.SDB_Width,640);
+		/* MUST stay in step with HUDScaleFactor in d3d_hud.cpp — the motion
+		   tracker is part of the same HUD and has to scale with the rest of it.
+		   Both were SDB_Width/640 in the 1999 source, which over-scales on a wide
+		   display; the digits were moved to SDB_Height/540 first and this was
+		   missed, leaving the tracker at 3.0 while the digits ran at 2.0 on a
+		   1920x1080 screen. Measured against retail Classic 2000 at 1920x1080: the
+		   tracker spans 612px here against 406px in retail, a ratio of 1.507,
+		   which puts retail at 3.0/1.5 = 2.0 — the same factor the digits needed.
+		   See the long note on HUDScaleFactor for why 540 rather than 480. */
+		MotionTrackerScale = DIV_FIXED(ScreenDescriptorBlock.SDB_Height,540);
 	}
  //	BuildInvSqrtTable();
 

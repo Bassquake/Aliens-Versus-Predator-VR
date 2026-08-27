@@ -234,14 +234,24 @@ void D3D_InitialiseMarineHUD(void)
 	MotionTrackerCentreX = BlueBar.TopLeftX+(BlueBar.Width/2);
 	MotionTrackerScale = 65536;
 
-	/* Scale the HUD off HEIGHT, not width. The original used SDB_Width/640 (the
-	   1999 code is identical), which was fine because it only ever ran 4:3 — there
-	   width/640 and height/480 are the same number at every supported mode. They
-	   only diverge on a wide display, where deriving from width over-scales the
-	   HUD against the screen it is actually judged against: at 1920x1080 width
-	   gives 3.0 but height gives 2.25, so the HUD came out ~33% too big.
-	   height/480 reproduces the original proportions and is bit-identical on 4:3. */
-	HUDScaleFactor = DIV_FIXED(ScreenDescriptorBlock.SDB_Height,480);
+	/* Scale the HUD off HEIGHT, not width, and against 540 rather than 480.
+	   MEASURED, not derived. The 1999 source (and this file, until 2026-08-27)
+	   used SDB_Width/640, which is the same number at every 4:3 mode but
+	   over-scales on a wide display — it judges the HUD against width when the eye
+	   judges it against height. Switching the axis gave height/480 = 2.25 at
+	   1920x1080, still visibly bigger than the retail Classic 2000 build.
+	   Measuring both at 1920x1080 settled it: the HUD digits (22px tall before
+	   scaling) render 45px in this port against 40px in retail, and the green
+	   Health/Armor digits give the same 1.125 ratio, so retail is running an
+	   effective factor of exactly 2.0. 540 = 480 * 1.125 reproduces that.
+	   The retail binary is NOT this source — the re-release added widescreen
+	   support and evidently changed HUD scaling with it — so its actual formula is
+	   unknown and 2.0 at 1080p is the only data point. This stays proportional to
+	   height, so other resolutions are an extrapolation: 2.67 at 1440p, 4.0 at
+	   2160p. If retail turns out to clamp instead of scale, this needs revisiting.
+	   Note this is deliberately no longer bit-identical to 1999 on 4:3 modes
+	   (1024x768 gives 1.42 where the original gave 1.60). */
+	HUDScaleFactor = DIV_FIXED(ScreenDescriptorBlock.SDB_Height,540);
 
 	#if UseGadgets
 //	MotionTrackerGadget::SetCentre(r2pos(100,100));

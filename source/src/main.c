@@ -3602,7 +3602,12 @@ static void SetWindowSize(int PhysicalWidth, int PhysicalHeight, int VirtualWidt
     ScreenDescriptorBlock.SDB_Height    = VirtualHeight;
     ScreenDescriptorBlock.SDB_CentreX   = VirtualWidth/2;
     ScreenDescriptorBlock.SDB_CentreY   = VirtualHeight/2;
-    ScreenDescriptorBlock.SDB_ProjX     = VirtualWidth/2;
+    /* Hor+ default, matching SetupVision's normal lens (prototyp.h). This is only
+       the default a freshly allocated VDB inherits (vdb.c copies SDB->VDB);
+       SetupVision overrides VDB_ProjX per species at level start, and re-widens it
+       for the Alien. Left as VirtualWidth/2 this silently reintroduced the old
+       zoomed-in FOV for any VDB created after a window resize. */
+    ScreenDescriptorBlock.SDB_ProjX     = AVP_PROJX_NORMAL(VirtualWidth, VirtualHeight);
     ScreenDescriptorBlock.SDB_ProjY     = VirtualHeight/2;
     ScreenDescriptorBlock.SDB_ClipLeft  = 0;
     ScreenDescriptorBlock.SDB_ClipRight = VirtualWidth;

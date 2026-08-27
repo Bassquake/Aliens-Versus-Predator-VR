@@ -471,6 +471,62 @@ typedef struct screendescriptorblock {
 
 } SCREENDESCRIPTORBLOCK;
 
+/* ---------------------------------------------------------------------------
+ * Horizontal projection scale (VDB_ProjX / SDB_ProjX) — "Hor+" widescreen.
+ *
+ * The renderer projects as  ndc_x = X * ProjX / (Z * CentreX), so the horizontal
+ * half-FOV is atan(CentreX / ProjX); the vertical equivalent uses ProjY together
+ * with the view-matrix Y scale, which is hardcoded to 4/3 in kshape.c.
+ *
+ * The 1999 original only ever ran 4:3 and used ProjX = width/2 (normal lens) or
+ * width/4 (the Alien's wide lens), giving 90 x 73.74 degrees and 126.87 x 112.62
+ * degrees respectively. Deriving ProjX from WIDTH means a 16:9 window keeps the
+ * same 90 degrees horizontally and loses vertical FOV instead (Vert-, ~58.7
+ * degrees) — the view reads as zoomed in.
+ *
+ * Deriving it from HEIGHT instead pins the vertical FOV at the original value
+ * and lets horizontal grow with the aspect ratio, which is Hor+ — what a 4:3-era
+ * game should do on a wide display. Solving atan(CentreX/ProjX) = atan(tanV *
+ * aspect) with the 4/3 Y scale gives ProjX = height * 2/3, or height/3 for the
+ * wide lens. On a 4:3 screen both reduce to exactly the original width/2 and
+ * width/4, so 4:3 rendering is bit-identical to 1999.
+ *
+ * At 16:9 the normal lens yields 106.26 x 73.74.
+ *
+ * THE ALIEN'S WIDE LENS DELIBERATELY DOES NOT GET Hor+, and this is the reason:
+ * the culling/clipping frustum planes in frustum.c are HARDCODED — NORMAL tests
+ * vx <= vz (45 degree half-angle, 90 total) and WIDE tests vx <= 2*vz (63.43,
+ * 126.87 total) — and those clippers are live in the GL path (kshape.c,
+ * d3d_render.cpp, particle.c), not just early-out culling. The Alien at 4:3
+ * already sits exactly on WIDE's 126.87, so widening it further would push
+ * geometry outside the widest frustum that exists and clip the world into black
+ * wedges at the screen edges. It therefore stays width-derived, which holds its
+ * horizontal FOV at 126.87 on any aspect and loses vertical instead (Vert-).
+ * Giving the Alien Hor+ too would need a third, wider set of clip functions.
+ *
+ * The normal lens has room: Hor+ at 16:9 needs a 53.13 degree half-angle, which
+ * NORMAL's 45 does NOT cover — so the flat path switches it to the WIDE frustum
+ * (see SetupVision). WIDE covers the normal lens out to a 2.67:1 aspect, past
+ * 21:9.
+ *
+ * Note there is no hardcoded aspect constant to keep in step any more: kshape.c
+ * derives the view-matrix Y scale as ProjX/ProjY, which is the general condition
+ * for an undistorted image and reproduces the original's 4/3 exactly at 4:3.
+ *
+ * VR does NOT use these: the eye projection is built from the headset's real
+ * per-eye XrFovf in avpview.c, and must match the optics or the world swims.
+ * ------------------------------------------------------------------------- */
+#define AVP_PROJX_NORMAL(renderWidth, renderHeight)  (((renderHeight) * 2) / 3)
+#define AVP_PROJX_WIDE(renderWidth, renderHeight)    ((renderWidth) / 4)
+
+/* True when the viewport is wider than 4:3, i.e. when the normal lens's Hor+
+ * horizontal FOV has grown past NORMAL's hardcoded 45 degree half-angle and the
+ * WIDE clip frustum must be used instead or the world gets clipped at the screen
+ * edges. Exactly 4:3 keeps NORMAL, which is the tighter (cheaper) cull and what
+ * the original always used. */
+#define AVP_NORMAL_LENS_NEEDS_WIDE_FRUSTUM(renderWidth, renderHeight) \
+	((renderWidth) * 3 > (renderHeight) * 4)
+
 
 /*
 

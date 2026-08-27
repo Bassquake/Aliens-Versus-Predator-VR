@@ -1428,12 +1428,12 @@ void MakeViewingWindowSmaller(void)
 	}
 	if(AvP.PlayerType == I_Alien)
 	{
-		Global_VDB_Ptr->VDB_ProjX = (Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft)/4;
+		Global_VDB_Ptr->VDB_ProjX = AVP_PROJX_WIDE(Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft, Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp);
 		Global_VDB_Ptr->VDB_ProjY = (Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp)/4;
 	}
 	else
 	{
-		Global_VDB_Ptr->VDB_ProjX = (Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft)/2;
+		Global_VDB_Ptr->VDB_ProjX = AVP_PROJX_NORMAL(Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft, Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp);
 		Global_VDB_Ptr->VDB_ProjY = (Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp)/2;
 	}
 	//BlankScreen(); 
@@ -1453,12 +1453,12 @@ void MakeViewingWindowLarger(void)
 	}
 	if(AvP.PlayerType == I_Alien)
 	{
-		Global_VDB_Ptr->VDB_ProjX = (Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft)/4;
+		Global_VDB_Ptr->VDB_ProjX = AVP_PROJX_WIDE(Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft, Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp);
 		Global_VDB_Ptr->VDB_ProjY = (Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp)/4;
 	}
 	else
 	{
-		Global_VDB_Ptr->VDB_ProjX = (Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft)/2;
+		Global_VDB_Ptr->VDB_ProjX = AVP_PROJX_NORMAL(Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft, Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp);
 		Global_VDB_Ptr->VDB_ProjY = (Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp)/2;
 	}
 }

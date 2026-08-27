@@ -234,7 +234,14 @@ void D3D_InitialiseMarineHUD(void)
 	MotionTrackerCentreX = BlueBar.TopLeftX+(BlueBar.Width/2);
 	MotionTrackerScale = 65536;
 
-	HUDScaleFactor = DIV_FIXED(ScreenDescriptorBlock.SDB_Width,640);	
+	/* Scale the HUD off HEIGHT, not width. The original used SDB_Width/640 (the
+	   1999 code is identical), which was fine because it only ever ran 4:3 — there
+	   width/640 and height/480 are the same number at every supported mode. They
+	   only diverge on a wide display, where deriving from width over-scales the
+	   HUD against the screen it is actually judged against: at 1920x1080 width
+	   gives 3.0 but height gives 2.25, so the HUD came out ~33% too big.
+	   height/480 reproduces the original proportions and is bit-identical on 4:3. */
+	HUDScaleFactor = DIV_FIXED(ScreenDescriptorBlock.SDB_Height,480);
 
 	#if UseGadgets
 //	MotionTrackerGadget::SetCentre(r2pos(100,100));

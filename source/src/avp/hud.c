@@ -470,15 +470,20 @@ void MaintainHUD(void)
 							AlienTongueOffset = 0;
 					}
 				}
-				SetFrustrumType(FRUSTRUM_TYPE_NORMAL);
-				Global_VDB_Ptr->VDB_ProjX = (Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft)/2;
+				/* Drop to the normal lens for the weapon/overlay. WIDE once Hor+
+				   outgrows NORMAL's 45 degree half-angle (see prototyp.h). */
+				SetFrustrumType(AVP_NORMAL_LENS_NEEDS_WIDE_FRUSTUM(
+				                    Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft,
+				                    Global_VDB_Ptr->VDB_ClipDown  - Global_VDB_Ptr->VDB_ClipUp)
+				                ? FRUSTRUM_TYPE_WIDE : FRUSTRUM_TYPE_NORMAL);
+				Global_VDB_Ptr->VDB_ProjX = AVP_PROJX_NORMAL(Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft, Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp);
 				Global_VDB_Ptr->VDB_ProjY = (Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp)/2;
 
 				if (!VR_IsIn3DMode()) HandleAlienWeapon();
 				HandleAlienOVision();
 
 				SetFrustrumType(FRUSTRUM_TYPE_WIDE);
-				Global_VDB_Ptr->VDB_ProjX = (Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft)/4;
+				Global_VDB_Ptr->VDB_ProjX = AVP_PROJX_WIDE(Global_VDB_Ptr->VDB_ClipRight - Global_VDB_Ptr->VDB_ClipLeft, Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp);
 				Global_VDB_Ptr->VDB_ProjY = (Global_VDB_Ptr->VDB_ClipDown - Global_VDB_Ptr->VDB_ClipUp)/4;
 							
 				CheckWireFrameMode(0);

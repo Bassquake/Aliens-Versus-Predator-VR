@@ -69,7 +69,7 @@ void SetupVision(void)
 
 		/* change clipping planes for new field of view */
 		/* KJL 12:00:54 07/04/97 - new projection angles */
-		VDBPtr->VDB_ProjX = ScreenDescriptorBlock.SDB_Width/4;
+		VDBPtr->VDB_ProjX = AVP_PROJX_WIDE(ScreenDescriptorBlock.SDB_Width, ScreenDescriptorBlock.SDB_Height);
 		VDBPtr->VDB_ProjY = (ScreenDescriptorBlock.SDB_Height)/4;
 
 		/* KJL 17:37:51 7/17/97 - frustrum setup */
@@ -85,12 +85,14 @@ void SetupVision(void)
 		LOCALASSERT(VDBPtr);
 
 		/* change clipping planes for new field of view */
-		VDBPtr->VDB_ProjX = ScreenDescriptorBlock.SDB_Width/2;
+		VDBPtr->VDB_ProjX = AVP_PROJX_NORMAL(ScreenDescriptorBlock.SDB_Width, ScreenDescriptorBlock.SDB_Height);
 		VDBPtr->VDB_ProjY = (ScreenDescriptorBlock.SDB_Height)/2;
 		
 		SetupPredOVision();
-		/* KJL 17:37:51 7/17/97 - frustrum setup */
-		SetFrustrumType(FRUSTRUM_TYPE_NORMAL);
+		/* KJL 17:37:51 7/17/97 - frustrum setup. WIDE once the Hor+ horizontal FOV
+		   outgrows NORMAL's 45 degree half-angle (see prototyp.h). */
+		SetFrustrumType(AVP_NORMAL_LENS_NEEDS_WIDE_FRUSTUM(ScreenDescriptorBlock.SDB_Width, ScreenDescriptorBlock.SDB_Height)
+		                ? FRUSTRUM_TYPE_WIDE : FRUSTRUM_TYPE_NORMAL);
 	}
 	else
 	{
@@ -102,12 +104,14 @@ void SetupVision(void)
 		LOCALASSERT(VDBPtr);
 
 		/* change clipping planes for new field of view */
-		VDBPtr->VDB_ProjX = ScreenDescriptorBlock.SDB_Width/2;
+		VDBPtr->VDB_ProjX = AVP_PROJX_NORMAL(ScreenDescriptorBlock.SDB_Width, ScreenDescriptorBlock.SDB_Height);
 		VDBPtr->VDB_ProjY = (ScreenDescriptorBlock.SDB_Height)/2;
 		
 		SetupMarineOVision();
-		/* KJL 17:37:51 7/17/97 - frustrum setup */
-		SetFrustrumType(FRUSTRUM_TYPE_NORMAL);
+		/* KJL 17:37:51 7/17/97 - frustrum setup. WIDE once the Hor+ horizontal FOV
+		   outgrows NORMAL's 45 degree half-angle (see prototyp.h). */
+		SetFrustrumType(AVP_NORMAL_LENS_NEEDS_WIDE_FRUSTUM(ScreenDescriptorBlock.SDB_Width, ScreenDescriptorBlock.SDB_Height)
+		                ? FRUSTRUM_TYPE_WIDE : FRUSTRUM_TYPE_NORMAL);
 	}
 
 	InitCameraValues();

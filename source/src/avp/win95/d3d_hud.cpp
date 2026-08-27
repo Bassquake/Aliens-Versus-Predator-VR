@@ -154,14 +154,33 @@ void Draw_HUDImage(HUDImageDesc *imageDescPtr)
 		scaledHeight = MUL_FIXED(imageDescPtr->Scale,imageDescPtr->Height);
 	}
 
-	quadVertices[0].U = imageDescPtr->TopLeftU;
-	quadVertices[0].V = imageDescPtr->TopLeftV;
-	quadVertices[1].U = imageDescPtr->TopLeftU + imageDescPtr->Width;
-	quadVertices[1].V = imageDescPtr->TopLeftV;
-	quadVertices[2].U = imageDescPtr->TopLeftU + imageDescPtr->Width;
-	quadVertices[2].V = imageDescPtr->TopLeftV + imageDescPtr->Height;
-	quadVertices[3].U = imageDescPtr->TopLeftU;
-	quadVertices[3].V = imageDescPtr->TopLeftV + imageDescPtr->Height;
+	/* Rescale the UVs — and ONLY the UVs — when an HD texture pack has replaced
+	   this atlas with a bigger one. TopLeftU/V and Width/Height are absolute
+	   pixels in the stock atlas, but Width/Height ALSO drive the on-screen quad
+	   above, so scaling the fields themselves would blow up the HUD's size. */
+	int uvU0 = imageDescPtr->TopLeftU;
+	int uvV0 = imageDescPtr->TopLeftV;
+	int uvU1 = imageDescPtr->TopLeftU + imageDescPtr->Width;
+	int uvV1 = imageDescPtr->TopLeftV + imageDescPtr->Height;
+	{
+		int uvScale = HUD_AtlasUVScale(imageDescPtr->ImageNumber, HUD_ATLAS_STOCK_SIZE);
+		if (uvScale != ONE_FIXED)
+		{
+			uvU0 = MUL_FIXED(uvU0, uvScale);
+			uvV0 = MUL_FIXED(uvV0, uvScale);
+			uvU1 = MUL_FIXED(uvU1, uvScale);
+			uvV1 = MUL_FIXED(uvV1, uvScale);
+		}
+	}
+
+	quadVertices[0].U = uvU0;
+	quadVertices[0].V = uvV0;
+	quadVertices[1].U = uvU1;
+	quadVertices[1].V = uvV0;
+	quadVertices[2].U = uvU1;
+	quadVertices[2].V = uvV1;
+	quadVertices[3].U = uvU0;
+	quadVertices[3].V = uvV1;
 	
 	quadVertices[0].X = imageDescPtr->TopLeftX;
 	quadVertices[0].Y = imageDescPtr->TopLeftY;
@@ -203,6 +222,19 @@ void D3D_InitialiseMarineHUD(void)
 		HUDImageNumber = CL_LoadImageOnce("Huds\\Marine\\MarineHUD.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
 		MotionTrackerHalfWidth = 127/2;
 		MotionTrackerTextureSize = 128;
+
+		/* Every UV into this atlas is an ABSOLUTE PIXEL COORDINATE assuming the
+		   stock 256x256 MarineHUD.RIM: the tracker spans 1..129, the blue bar
+		   starts at V=223, the gunsight/crosshair sits at U=227. An HD texture
+		   pack that enlarges the atlas therefore leaves all of them describing a
+		   sub-rectangle, and the art renders magnified — HD Redux ships a
+		   1024x1024 replacement, so everything drawn from it came out 4x too big
+		   (the motion tracker and crosshair most visibly). Draw_HUDImage rescales
+		   the UVs it emits; the tracker below builds its own, so scale the size it
+		   uses for them here. MotionTrackerHalfWidth is deliberately NOT scaled —
+		   that one drives the on-screen geometry, not the texture lookup. */
+		MotionTrackerTextureSize = MUL_FIXED(MotionTrackerTextureSize,
+		                                     HUD_AtlasUVScale(HUDImageNumber, HUD_ATLAS_STOCK_SIZE));
 
 		BlueBar.ImageNumber = HUDImageNumber;
 		BlueBar.TopLeftX = 0;

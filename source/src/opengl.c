@@ -782,6 +782,7 @@ GLuint CreateOGLTexture(D3DTexture *tex, unsigned char *buf)
 	int PotHeight = PowerOfTwo(tex->TexHeight);
 	tex->IsNpot = (PotWidth != tex->TexWidth) || (PotHeight != tex->TexHeight);
 
+
 	GLuint h;
 	GLfloat max_anisotropy;
 	
@@ -1971,6 +1972,34 @@ void D3D_HUD_Setup()
 	CheckTranslucencyModeIsCorrect(TRANSLUCENCY_GLOWING);
 	
 	pglDepthFunc(GL_LEQUAL);	
+}
+
+/* How much larger the loaded atlas is than the size its UVs were authored for.
+ *
+ * Every UV the HUD code emits is an ABSOLUTE PIXEL COORDINATE in a fixed stock
+ * atlas — the Marine HUD's tracker spans 1..129, its blue bar starts at V=223,
+ * its gunsight sits at U=227, all against a 256x256 MarineHUD.RIM. An HD texture
+ * pack (HD Redux ships a 1024x1024 replacement) leaves those numbers describing
+ * a quarter of the image, so every element samples a sub-rectangle and renders
+ * magnified. Returning actual/stock lets the caller rescale its UVs to match
+ * whatever was actually loaded, which works for any pack rather than one.
+ *
+ * Read from the D3DTexture rather than IMAGEHEADER::ImageWidth: the header's
+ * dimensions are not reliably populated at the point the HUD sets itself up,
+ * whereas the texture object is valid by the time anything is drawn. Returns
+ * ONE_FIXED (no scaling) if the texture is not resolvable, so a missing or
+ * stock-sized atlas behaves exactly as before.
+ *
+ * 16.16 fixed point, to match the MUL_FIXED the callers use. */
+int HUD_AtlasUVScale(int imageNumber, int stockSize)
+{
+	D3DTexture *tex;
+
+	if (stockSize <= 0) return ONE_FIXED;
+	tex = ImageHeaderArray[imageNumber].D3DTexture;
+	if (!tex || tex->w == 0) return ONE_FIXED;
+
+	return DIV_FIXED((int)tex->w, stockSize);
 }
 
 void D3D_HUDQuad_Output(int imageNumber, struct VertexTag *quadVerticesPtr, unsigned int colour)

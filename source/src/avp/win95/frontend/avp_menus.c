@@ -96,7 +96,6 @@ extern char MP_Config_Name[];
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int MSAASampleIndex;
-extern int FSRQualityIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
@@ -340,7 +339,6 @@ int AvP_MainMenus(void)
 			int savedShowFrameRate = ShowFrameRate;
 			int savedVRRefreshRateIndex = VRRefreshRateIndex;
 			int savedMSAASampleIndex = MSAASampleIndex;
-			int savedFSRQualityIndex = FSRQualityIndex;
 			int savedVRTurnMode = VRTurnMode;
 			int savedVRSnapAngleIndex = VRSnapAngleIndex;
 			int savedVRSmoothTurnSpeed = VRSmoothTurnSpeed;
@@ -357,7 +355,6 @@ int AvP_MainMenus(void)
 					savedShowFrameRate = ShowFrameRate;
 					savedVRRefreshRateIndex = VRRefreshRateIndex;
 					savedMSAASampleIndex = MSAASampleIndex;
-					savedFSRQualityIndex = FSRQualityIndex;
 					savedVRTurnMode = VRTurnMode;
 					savedVRSnapAngleIndex = VRSnapAngleIndex;
 					savedVRSmoothTurnSpeed = VRSmoothTurnSpeed;
@@ -379,7 +376,6 @@ int AvP_MainMenus(void)
 			ShowFrameRate = savedShowFrameRate;
 			VRRefreshRateIndex = savedVRRefreshRateIndex;
 			MSAASampleIndex = savedMSAASampleIndex;
-			FSRQualityIndex = savedFSRQualityIndex;
 			VRTurnMode = savedVRTurnMode;
 			VRSnapAngleIndex = savedVRSnapAngleIndex;
 			VRSmoothTurnSpeed = savedVRSmoothTurnSpeed;

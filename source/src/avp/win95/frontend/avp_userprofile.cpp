@@ -37,7 +37,6 @@ extern int ShowCrosshair;
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int MSAASampleIndex;
-extern int FSRQualityIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
@@ -269,7 +268,6 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	ShowFrameRate = 0;
 	VRRefreshRateIndex = 0;
 	MSAASampleIndex = 1; /* 2x by default */
-	FSRQualityIndex = 0; /* desktop FSR off by default */
 	VRTurnMode = 0; /* snap turn by default */
 	VRSnapAngleIndex = 1; /* 45 degrees by default */
 	VRSmoothTurnSpeed = 5; /* mid speed by default (0..10) */
@@ -324,7 +322,6 @@ extern void GetSettingsFromUserProfile(void)
 	ShowFrameRate =				!UserProfilePtr->ShowFrameRateDisabled;
 	VRRefreshRateIndex =			UserProfilePtr->VRRefreshRateIndex;
 	MSAASampleIndex =			UserProfilePtr->MSAASampleIndex;
-	FSRQualityIndex =			UserProfilePtr->FSRQualityIndex;
 	VRTurnMode =				UserProfilePtr->VRTurnMode;
 	VRSnapAngleIndex =			UserProfilePtr->VRSnapAngleIndex;
 	VRSmoothTurnSpeed =			UserProfilePtr->VRSmoothTurnSpeed;
@@ -367,7 +364,6 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->ShowFrameRateDisabled =	!ShowFrameRate;
 	profilePtr->VRRefreshRateIndex =	VRRefreshRateIndex;
 	profilePtr->MSAASampleIndex =		MSAASampleIndex;
-	profilePtr->FSRQualityIndex =		FSRQualityIndex;
 	profilePtr->VRTurnMode =		VRTurnMode;
 	profilePtr->VRSnapAngleIndex =		VRSnapAngleIndex;
 	profilePtr->VRSmoothTurnSpeed =		VRSmoothTurnSpeed;

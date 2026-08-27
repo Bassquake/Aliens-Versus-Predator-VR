@@ -110,12 +110,22 @@ static GLuint eye_depth_rb[2] = {0, 0};
 static int    eye_fbo_w       = 0;
 static int    eye_fbo_h       = 0;
 
-/* MSAA (anti-aliasing) for the per-eye 3D render. Uses
- * GL_EXT_multisampled_render_to_texture so the multisampled colour resolves
- * implicitly into the single-sample XR swapchain texture — tile-friendly on the
- * Quest GPU (no separate resolve blit). Falls back to no-MSAA when the extension
- * is absent or the setting is Off, in which case the render path is byte-for-byte
- * identical to before. */
+/* MSAA (anti-aliasing) for the per-eye 3D render. TWO implementations, picked at
+ * runtime from what the driver offers:
+ *
+ *   EXT path (Quest / tiled GPUs) — GL_EXT_multisampled_render_to_texture lets the
+ *     multisampled colour resolve IMPLICITLY into the single-sample XR swapchain
+ *     texture when the FBO is unbound. No resolve blit, which is what makes it
+ *     cheap on a tiler.
+ *
+ *   Core path (PCVR / desktop GL) — desktop drivers do not expose that extension,
+ *     so we render into a multisampled colour renderbuffer and blit it down into
+ *     the swapchain texture with glBlitFramebuffer at the end of the eye pass.
+ *     This is the piece CLAUDE.md used to list as "not yet ported"; desktop
+ *     silently rendered 1x before.
+ *
+ * Both fall back to no-MSAA when the setting is Off or neither path is available,
+ * in which case the render path is byte-for-byte identical to before. */
 extern int MSAASampleIndex;        /* menu setting: 0=off,1=2x,2=4x (main.c)  */
 extern int MSAA_SampleCount(void); /* setting -> 0/2/4 sample count (main.c)  */
 
@@ -124,8 +134,28 @@ typedef void (*PFN_glFramebufferTexture2DMultisampleEXT)(GLenum, GLenum, GLenum,
 static PFN_glRenderbufferStorageMultisampleEXT  p_glRenderbufferStorageMultisampleEXT  = NULL;
 static PFN_glFramebufferTexture2DMultisampleEXT p_glFramebufferTexture2DMultisampleEXT = NULL;
 static int msaa_ext_checked   = 0;
-static int msaa_ext_available = 0;
+static int msaa_ext_available = 0;   /* tiled-GPU implicit-resolve extension     */
+static int msaa_core_available = 0;  /* core GL multisample RB + blit resolve    */
 static int eye_fbo_samples    = 0;   /* sample count the eye FBOs were last built with */
+
+#ifndef __ANDROID__
+/* Core-path only: multisampled colour target rendered into, plus the FBO the
+ * swapchain texture is attached to as the blit destination. */
+static GLuint eye_color_rb[2]   = {0, 0};
+static GLuint eye_resolve_fbo[2] = {0, 0};
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER  0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER  0x8CA9
+#endif
+#ifndef GL_MAX_SAMPLES
+#define GL_MAX_SAMPLES       0x8D57
+#endif
+#ifndef GL_MULTISAMPLE
+#define GL_MULTISAMPLE       0x809D
+#endif
+#endif /* !__ANDROID__ */
 
 /* Offscreen RGBA surface the MP score table is rendered into once per frame, so
  * the compositor (main.c) can float it as a world-locked quad instead of the
@@ -175,13 +205,28 @@ static void VR_InitMSAAProcs(void)
     }
     SDL_Log("VR: MSAA (EXT_multisampled_render_to_texture) %s",
             msaa_ext_available ? "available" : "unavailable");
+
+#ifndef __ANDROID__
+    /* No extension on desktop — fall back to the core multisample renderbuffer +
+     * blit resolve. Both entry points come from oglfunc.c. */
+    if (!msaa_ext_available) {
+        GLint maxs = 0;
+        glGetIntegerv(GL_MAX_SAMPLES, &maxs);
+        msaa_core_available = (pfn_glRenderbufferStorageMultisample && pfn_glBlitFramebuffer
+                               && maxs > 1) ? 1 : 0;
+        SDL_Log("VR: MSAA (core multisample + blit resolve) %s, GL_MAX_SAMPLES=%d",
+                msaa_core_available ? "available" : "unavailable", (int)maxs);
+    }
+#endif
 }
 
-/* Effective sample count given the menu setting and extension support (0 = off). */
+/* Effective sample count given the menu setting and what the driver supports
+ * (0 = off). Clamped to GL_MAX_SAMPLES on the core path by VR_InitEyeFBOs. */
 static int VR_EffectiveMSAASamples(void)
 {
     VR_InitMSAAProcs();
-    return msaa_ext_available ? MSAA_SampleCount() : 0;
+    if (!msaa_ext_available && !msaa_core_available) return 0;
+    return MSAA_SampleCount();
 }
 
 /* Set to 1 during AvpShowViewsVR so kshape.c can skip the 4/3 Y-axis correction */
@@ -299,28 +344,82 @@ void VR_InitEyeFBOs(int w, int h)
     int samples = VR_EffectiveMSAASamples();
     eye_fbo_samples = samples;
 
+#ifndef __ANDROID__
+    /* Core path clamps to what the driver will actually give us. */
+    if (samples > 0 && !msaa_ext_available && msaa_core_available) {
+        GLint maxs = 0;
+        glGetIntegerv(GL_MAX_SAMPLES, &maxs);
+        if (samples > (int)maxs) samples = (int)maxs;
+        eye_fbo_samples = samples;
+    }
+#endif
+
     for (int i = 0; i < 2; i++) {
         if (eye_fbo[i])      { glDeleteFramebuffers(1,  &eye_fbo[i]);      eye_fbo[i]      = 0; }
         if (eye_depth_rb[i]) { glDeleteRenderbuffers(1, &eye_depth_rb[i]); eye_depth_rb[i] = 0; }
+#ifndef __ANDROID__
+        if (eye_color_rb[i])    { glDeleteRenderbuffers(1, &eye_color_rb[i]);    eye_color_rb[i]    = 0; }
+        if (eye_resolve_fbo[i]) { glDeleteFramebuffers(1,  &eye_resolve_fbo[i]); eye_resolve_fbo[i] = 0; }
+#endif
 
         /* Depth+stencil renderbuffer (multisampled to match the colour attachment
          * when MSAA is active — both must share the same sample count). */
         glGenRenderbuffers(1, &eye_depth_rb[i]);
         glBindRenderbuffer(GL_RENDERBUFFER, eye_depth_rb[i]);
-        if (samples > 0)
+        if (samples > 0 && msaa_ext_available)
             p_glRenderbufferStorageMultisampleEXT(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, w, h);
+#ifndef __ANDROID__
+        else if (samples > 0 && msaa_core_available)
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, w, h);
+#endif
         else
             glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
 
-        /* FBO — color attachment is attached per-frame from the XR swapchain */
+        /* FBO — color attachment is attached per-frame from the XR swapchain
+         * (EXT path and no-MSAA path), or is our own multisampled colour
+         * renderbuffer that gets blitted into the swapchain (core path). */
         glGenFramebuffers(1, &eye_fbo[i]);
         glBindFramebuffer(GL_FRAMEBUFFER, eye_fbo[i]);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
                                   GL_RENDERBUFFER, eye_depth_rb[i]);
+
+#ifndef __ANDROID__
+        if (samples > 0 && !msaa_ext_available && msaa_core_available) {
+            /* GL_SRGB8_ALPHA8 to match the swapchain format chosen in main.c —
+             * blitting between differing colour encodings would shift gamma. */
+            glGenRenderbuffers(1, &eye_color_rb[i]);
+            glBindRenderbuffer(GL_RENDERBUFFER, eye_color_rb[i]);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_SRGB8_ALPHA8, w, h);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                      GL_RENDERBUFFER, eye_color_rb[i]);
+
+            GLenum st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            if (st != GL_FRAMEBUFFER_COMPLETE) {
+                SDL_Log("VR: MSAA %dx eye FBO incomplete (0x%x) — dropping to 1x",
+                        samples, (unsigned)st);
+                glDeleteRenderbuffers(1, &eye_color_rb[i]); eye_color_rb[i] = 0;
+                msaa_core_available = 0;
+                samples = 0;
+                eye_fbo_samples = 0;
+                /* Rebuild this eye's depth as single-sample to match. */
+                glBindRenderbuffer(GL_RENDERBUFFER, eye_depth_rb[i]);
+                glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                          GL_RENDERBUFFER, eye_depth_rb[i]);
+            } else {
+                /* Destination FBO for the resolve blit; the swapchain texture is
+                 * attached to it per frame. */
+                glGenFramebuffers(1, &eye_resolve_fbo[i]);
+            }
+        }
+#endif
     }
 
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    SDL_Log("VR: Eye FBOs %dx%d ready (MSAA %dx)", w, h, samples);
+    SDL_Log("VR: Eye FBOs %dx%d ready (MSAA %dx, %s)", w, h, eye_fbo_samples,
+            eye_fbo_samples == 0 ? "off" : (msaa_ext_available ? "EXT implicit resolve"
+                                                               : "core blit resolve"));
 }
 
 /* Rebuild the eye FBOs if the MSAA menu setting changed since they were created.
@@ -1944,11 +2043,23 @@ void AvpShowViewsVR(void)
         if (sc_img_idx == UINT32_MAX) continue; /* image not ready — skip this eye, don't attach an invalid texture */
         GLuint sc_tex     = VR_GetSwapchainImageTexture(eye, sc_img_idx);
         glBindFramebuffer(GL_FRAMEBUFFER, eye_fbo[eye]);
-        if (eye_fbo_samples > 0)
+        if (eye_fbo_samples > 0 && msaa_ext_available)
             /* Multisampled render straight into the swapchain texture; the tiler
              * resolves implicitly when the FBO is unbound at end of the eye pass. */
             p_glFramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                                    GL_TEXTURE_2D, sc_tex, 0, eye_fbo_samples);
+#ifndef __ANDROID__
+        else if (eye_fbo_samples > 0 && msaa_core_available) {
+            /* Core path: colour is already our multisampled renderbuffer (attached
+             * at build time). Point the resolve FBO at this frame's swapchain
+             * texture; the blit at the end of the eye pass writes into it. */
+            glBindFramebuffer(GL_FRAMEBUFFER, eye_resolve_fbo[eye]);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D, sc_tex, 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, eye_fbo[eye]);
+            glEnable(GL_MULTISAMPLE);
+        }
+#endif
         else
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                    GL_TEXTURE_2D, sc_tex, 0);
@@ -2506,6 +2617,21 @@ void AvpShowViewsVR(void)
         Global_VDB_Ptr->VDB_CentreY   = saved_CentreY;
         ScreenDescriptorBlock = saved_sdb;
 
+#ifndef __ANDROID__
+        if (eye_fbo_samples > 0 && msaa_core_available) {
+            /* Resolve our multisampled colour down into the swapchain texture.
+             * Matching rectangles, so GL_NEAREST is the required filter for a
+             * multisample resolve blit. */
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, eye_fbo[eye]);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, eye_resolve_fbo[eye]);
+            glBlitFramebuffer(0, 0, eye_fbo_w, eye_fbo_h,
+                              0, 0, eye_fbo_w, eye_fbo_h,
+                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            /* Drop the swapchain texture from the resolve FBO — it goes back to
+             * the runtime on release below and must not stay attached. */
+            glBindFramebuffer(GL_FRAMEBUFFER, eye_resolve_fbo[eye]);
+        }
+#endif
         /* Detach swapchain texture and release — compositor will composite this frame */
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
         VR_ReleaseSwapchainImage(eye);

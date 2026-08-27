@@ -53,7 +53,6 @@ extern int ShowCrosshair;
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int MSAASampleIndex;
-extern int FSRQualityIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
@@ -277,29 +276,25 @@ static AVPMENU_ELEMENT AvPMenu_InGameAVOptions[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER, 	{TEXTSTRING_AVOPTIONS_INGAMEMOVIES}, {1}, {&MoviesAreActive},	{TEXTSTRING_NO}},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_CROSSHAIR},    {1}, {&ShowCrosshair},	{TEXTSTRING_DETAILLEVELS_OFF},	TEXTSTRING_AVOPTIONS_CROSSHAIR_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FRAMERATE},        {1}, {&ShowFrameRate},       {TEXTSTRING_FPS_OFF},	TEXTSTRING_AVOPTIONS_FRAMERATE_HELP},
-	/* Refresh rate and MSAA are Quest-only, and FSR is flat-desktop-only:
+	/* MSAA is offered everywhere the game renders 3D itself; refresh rate is
+	 * Quest-only:
 	 *  - refresh rate needs XR_FB_display_refresh_rate, a Meta extension SteamVR
 	 *    does not expose (and OpenXR has no standard equivalent), so on PCVR the
 	 *    runtime owns the rate — it is set in SteamVR / the Steam Link app.
-	 *  - MSAA uses GL_EXT_multisampled_render_to_texture, a tiled-GPU extension
-	 *    absent from desktop drivers, so PCVR eye buffers render 1x regardless.
-	 *  - FSR is bypassed whenever an XR session is presenting (see
-	 *    ThisFramesRenderingHasBegun), so it would be dead in the headset too.
-	 * PCVR therefore offers none of the three rather than dead controls; use
-	 * SteamVR's own refresh-rate and per-app render-resolution settings.
-	 *  - the non-VR Android "android" (phone/tablet) flavor gets none of them
-	 *    either: it sets AVP_DISABLE_XR, so OpenXR init is compiled out and both
-	 *    VR options are inert. Note this HAS to nest inside the __ANDROID__
-	 *    branch rather than chain onto it — falling through to the #elif would
-	 *    hand the phone the FSR slider, and FSR's whole implementation is
-	 *    #ifndef __ANDROID__, so that would just be a different dead control. */
-#if defined(__ANDROID__)
-  #if !defined(AVP_DISABLE_XR)
+	 *  - MSAA is implemented twice: Quest uses the tiled-GPU
+	 *    GL_EXT_multisampled_render_to_texture (implicit resolve, avpview.c),
+	 *    while desktop and PCVR use core glRenderbufferStorageMultisample plus a
+	 *    glBlitFramebuffer resolve. Both read MSAASampleIndex, so one slider
+	 *    drives both. It replaced the FSR upscaler, which is gone.
+	 *  - the non-VR Android "android" (phone/tablet) flavor still gets neither:
+	 *    it sets AVP_DISABLE_XR, so there is no XR session to set a rate on, and
+	 *    its flat path goes through the GLES renderer rather than the desktop
+	 *    MSAA target. */
+#if defined(__ANDROID__) && !defined(AVP_DISABLE_XR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE},  {3}, {&VRRefreshRateIndex},  {TEXTSTRING_VR_REFRESH_72},	TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP},
+#endif
+#if !defined(__ANDROID__) || !defined(AVP_DISABLE_XR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
-  #endif
-#elif !defined(AVP_PCVR)
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FSR},              {4}, {&FSRQualityIndex},     {TEXTSTRING_AVOPTIONS_FSR_OFF}},
 #endif
 	{AVPMENU_ELEMENT_GOTOMENU,		{TEXTSTRING_DETAILLEVELS_TITLE},	{AVPMENU_DETAILLEVELS}},
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
@@ -315,26 +310,25 @@ static AVPMENU_ELEMENT AvPMenu_MainMenuAVOptions[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER,   	{TEXTSTRING_AVOPTIONS_INTROOUTROMOVIES}, {1}, {&IntroOutroMoviesAreActive},	{TEXTSTRING_NO},	TEXTSTRING_AVOPTIONS_INTROOUTROMOVIES_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_CROSSHAIR},    {1}, {&ShowCrosshair},	{TEXTSTRING_DETAILLEVELS_OFF},	TEXTSTRING_AVOPTIONS_CROSSHAIR_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FRAMERATE},        {1}, {&ShowFrameRate},       {TEXTSTRING_FPS_OFF},	TEXTSTRING_AVOPTIONS_FRAMERATE_HELP},
-	/* Refresh rate and MSAA are Quest-only, and FSR is flat-desktop-only:
+	/* MSAA is offered everywhere the game renders 3D itself; refresh rate is
+	 * Quest-only:
 	 *  - refresh rate needs XR_FB_display_refresh_rate, a Meta extension SteamVR
 	 *    does not expose (and OpenXR has no standard equivalent), so on PCVR the
 	 *    runtime owns the rate — it is set in SteamVR / the Steam Link app.
-	 *  - MSAA uses GL_EXT_multisampled_render_to_texture, a tiled-GPU extension
-	 *    absent from desktop drivers, so PCVR eye buffers render 1x regardless.
-	 *  - FSR is bypassed whenever an XR session is presenting (see
-	 *    ThisFramesRenderingHasBegun), so it would be dead in the headset too.
-	 * PCVR therefore offers none of the three rather than dead controls; use
-	 * SteamVR's own refresh-rate and per-app render-resolution settings.
-	 *  - the non-VR Android "android" (phone/tablet) flavor gets none of them
-	 *    either — see the matching comment on the main-menu AV options above,
-	 *    including why the AVP_DISABLE_XR test nests instead of chaining. */
-#if defined(__ANDROID__)
-  #if !defined(AVP_DISABLE_XR)
+	 *  - MSAA is implemented twice: Quest uses the tiled-GPU
+	 *    GL_EXT_multisampled_render_to_texture (implicit resolve, avpview.c),
+	 *    while desktop and PCVR use core glRenderbufferStorageMultisample plus a
+	 *    glBlitFramebuffer resolve. Both read MSAASampleIndex, so one slider
+	 *    drives both. It replaced the FSR upscaler, which is gone.
+	 *  - the non-VR Android "android" (phone/tablet) flavor still gets neither:
+	 *    it sets AVP_DISABLE_XR, so there is no XR session to set a rate on, and
+	 *    its flat path goes through the GLES renderer rather than the desktop
+	 *    MSAA target. */
+#if defined(__ANDROID__) && !defined(AVP_DISABLE_XR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE},  {3}, {&VRRefreshRateIndex},  {TEXTSTRING_VR_REFRESH_72},	TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP},
+#endif
+#if !defined(__ANDROID__) || !defined(AVP_DISABLE_XR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
-  #endif
-#elif !defined(AVP_PCVR)
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FSR},              {4}, {&FSRQualityIndex},     {TEXTSTRING_AVOPTIONS_FSR_OFF}},
 #endif
 	{AVPMENU_ELEMENT_GOTOMENU,		{TEXTSTRING_DETAILLEVELS_TITLE},	{AVPMENU_DETAILLEVELS},	{0},	{0},	TEXTSTRING_DETAILLEVELS_TITLE_HELP},
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},{0},{0},{0}, 	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},

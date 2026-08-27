@@ -198,8 +198,8 @@ static const char * gamedatapath = NULL;
  * frontend menus, user profile, HUD
  * and renderer (which reference them unconditionally) would fail to link.
  *   - The VR comfort/turn/refresh options are inert on desktop (no headset).
- *   - MSAA and FSR are real desktop settings (FSR is a desktop-only spatial
- *     upscaler; its config wrongly lived in the Android block before).
+ *   - MSAA is a real desktop setting, and now drives desktop and PCVR as well
+ *     as Quest (it wrongly lived in the Android block before).
  * --------------------------------------------------------------------- */
 int VRRefreshRateIndex  = 0;
 int VRTurnMode          = 0;
@@ -216,18 +216,6 @@ int MSAASampleIndex = 1;
 int MSAA_SampleCount(void)
 {
     switch (MSAASampleIndex) { case 1: return 2; case 2: return 4; default: return 0; }
-}
-
-int FSRQualityIndex = 0;
-float FSR_RenderScale(void)
-{
-    switch (FSRQualityIndex) {
-        case 1:  return 1.3f;  /* Ultra Quality */
-        case 2:  return 1.5f;  /* Quality       */
-        case 3:  return 1.7f;  /* Balanced      */
-        case 4:  return 2.0f;  /* Performance   */
-        default: return 1.0f;  /* Off           */
-    }
 }
 
 int   VR_IsIn3DMode(void)           { return 0; }
@@ -531,24 +519,6 @@ int MSAA_SampleCount(void)
         case 1:  return 2;   /* 2x */
         case 2:  return 4;   /* 4x */
         default: return 0;   /* 0 → no MSAA */
-    }
-}
-
-/* Desktop FSR 1 (spatial) upscaling setting: 0=off, 1=Ultra Quality, 2=Quality,
- * 3=Balanced, 4=Performance. Written by the AV options menu; read by the desktop
- * renderer (opengl.c). Quest is unaffected. */
-int FSRQualityIndex = 0;
-
-/* Render-resolution scale factor for the current FSR quality (1.0 = native/off).
- * The game renders at window_size / scale, then FSR upscales to window size. */
-float FSR_RenderScale(void)
-{
-    switch (FSRQualityIndex) {
-        case 1:  return 1.3f;  /* Ultra Quality */
-        case 2:  return 1.5f;  /* Quality       */
-        case 3:  return 1.7f;  /* Balanced      */
-        case 4:  return 2.0f;  /* Performance   */
-        default: return 1.0f;  /* Off           */
     }
 }
 
@@ -1919,8 +1889,8 @@ int VR_IsIn3DMode(void)
 }
 
 /* Non-zero while an OpenXR session is presenting (2D quad or 3D eyes). The
- * desktop paths (FSR) use this to stand down while the headset owns the frame;
- * the flat build has a stub returning 0. */
+ * desktop paths (the MSAA target) use this to stand down while the headset owns
+ * the frame; the flat build has a stub returning 0. */
 int VR_SessionActive(void)
 {
     return xr_enabled && xr_session_running;
@@ -3856,9 +3826,11 @@ static int SetOGLVideoMode(int Width, int Height)
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-        /* No MSAA on desktop — desktop anti-aliasing/upscaling is intended to be
-           handled by a post-process upscaler (FSR/DLSS/XeSS) instead. The MSAA
-           menu option applies to the Quest/VR path only. */
+        /* Deliberately NO multisampling on the default framebuffer. Desktop MSAA
+           is done with our own multisampled FBO plus a blit resolve (opengl.c),
+           which the menu slider can change at any time; baking samples into the
+           GL context here would instead need a context rebuild to change, and
+           would double up with the FBO. */
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
 #endif
@@ -3990,11 +3962,11 @@ static int SetOGLVideoMode(int Width, int Height)
         SetWindowSize(Width, Height, 640, 480);
     } else {
         SetWindowSize(Width, Height, Width, Height);
-        FSR_SetOutputSize(Width, Height); /* desktop FSR output (window) resolution */
+        MSAA_SetOutputSize(Width, Height); /* desktop MSAA target (window) resolution */
     }
 #else
     SetWindowSize(Width, Height, Width, Height);
-    FSR_SetOutputSize(Width, Height); /* desktop FSR output (window) resolution */
+    MSAA_SetOutputSize(Width, Height); /* desktop MSAA target (window) resolution */
 #endif
 
     pglEnable(GL_BLEND);
@@ -4453,7 +4425,7 @@ void CheckForWindowsMessages()
                     pglViewport(0, 0, WindowWidth, WindowHeight);
                 }
 #ifndef __ANDROID__
-                FSR_SetOutputSize(WindowWidth, WindowHeight); /* rebuild FSR targets at new size */
+                MSAA_SetOutputSize(WindowWidth, WindowHeight); /* rebuild the MSAA target at the new size */
 #endif
                 break;
             case SDL_EVENT_QUIT:
@@ -4656,10 +4628,9 @@ void InGameFlipBuffers(void)
 #endif
 
 #ifndef __ANDROID__
-    /* Desktop: if this in-game frame was rendered into the FSR low-res target,
-       EASU-upscale + RCAS-sharpen it onto the backbuffer before presenting.
-       No-op when FSR is off. */
-    FSR_Resolve();
+    /* Desktop: if this frame was rendered into the multisampled target, resolve
+       it onto the backbuffer before presenting. No-op when MSAA is off. */
+    MSAA_Resolve();
 #endif
 
     SDL_GL_SwapWindow(window);
@@ -4671,10 +4642,10 @@ void FlipBuffers()
     // (the existing GL upload below keeps the flat window working too)
 
 #ifndef __ANDROID__
-    /* Safety net: this is the 2D/menu present path. If an FSR in-game frame was
-       begun (low-res FBO bound) but we ended up here, drop it back to the
+    /* Safety net: this is the 2D/menu present path. If an in-game frame was begun
+       (multisampled FBO bound) but we ended up here, drop it back to the
        backbuffer so the menu draws to the window, not the FBO. */
-    FSR_AbortFrame();
+    MSAA_AbortFrame();
 #endif
 #ifdef AVP_XR
     if (xr_enabled) {

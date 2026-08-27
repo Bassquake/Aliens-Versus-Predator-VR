@@ -320,10 +320,41 @@ clipping fns for different polygon types with the minimum of fuss */
 
 /* Wide screen versions of clip macros */
 
-#define Clip_Wide_NX_Test(v) (-(v)->X <= (v)->Z*2)
-#define Clip_Wide_PX_Test(v) ((v)->X <= (v)->Z*2)
-#define Clip_Wide_NY_Test(v) (-(v)->Y <= (v)->Z*2)
-#define Clip_Wide_PY_Test(v) ((v)->Y <= (v)->Z*2)	  
+/* tan(half-angle) of the WIDE frustum's four side planes: the plane sits at
+ * |X| = Z*WIDE_F, so the frustum spans 2*atan(WIDE_F).
+ *
+ * Was 2 (126.87 degrees) in the 1999 source, which is EXACTLY the Alien's
+ * wide-lens FOV at 4:3 — the frustum was sized to the widest thing that used it,
+ * with no headroom. That became the limit on widescreen: giving the Alien the
+ * same Hor+ treatment as the other species needs 138.9 degrees at 16:9, so the
+ * world was clipped into black wedges at the screen edges. 3 gives 143.13
+ * degrees, enough for the Alien out to about 2:1, and more headroom for the
+ * normal lens and the VR eye pass which also use this frustum.
+ *
+ * It appears BOTH as a multiplier and as a divisor below (the plane equation and
+ * its inverse), and again in the object/vertex tests further down. Change it
+ * here only — every use is written in terms of this macro so they cannot drift
+ * apart, which would clip asymmetrically. */
+#define WIDE_F 3
+
+/* sqrt(1 + WIDE_F*WIDE_F) in 16.16 fixed point — the length of the side planes'
+   normal, used to scale bounding-sphere radii in the unnormalised object test
+   (see ObjectWithin_Wide_Frustrum). This is a DERIVED constant: it is written as
+   a magic number, so no textual search for the factor will find it, which is
+   exactly how it got missed when WIDE_F went from 2 to 3. The #error makes that
+   impossible to repeat. */
+#if   WIDE_F == 2
+#define WIDE_RADIUS_SCALE 146543   /* sqrt(5)  * 65536 */
+#elif WIDE_F == 3
+#define WIDE_RADIUS_SCALE 207243   /* sqrt(10) * 65536 */
+#else
+#error "WIDE_F changed: add the matching sqrt(1 + WIDE_F*WIDE_F) * 65536 constant"
+#endif
+
+#define Clip_Wide_NX_Test(v) (-(v)->X <= (v)->Z*WIDE_F)
+#define Clip_Wide_PX_Test(v) ((v)->X <= (v)->Z*WIDE_F)
+#define Clip_Wide_NY_Test(v) (-(v)->Y <= (v)->Z*WIDE_F)
+#define Clip_Wide_PY_Test(v) ((v)->Y <= (v)->Z*WIDE_F)
 #define Clip_Wide_NX_OutputXYZ \
 		/* if one is in, and the other is out, output a clipped vertex */ \
 		if (nextVertexInside != curVertexInside) \
@@ -332,12 +363,12 @@ clipping fns for different polygon types with the minimum of fuss */
  \
 			lambda = DIV_FIXED \
 			( \
-				(-2*curVertexPtr->Z - curVertexPtr->X), \
-				(nextVertexPtr->X-curVertexPtr->X) - (-2)*(nextVertexPtr->Z-curVertexPtr->Z) \
+				(-WIDE_F*curVertexPtr->Z - curVertexPtr->X), \
+				(nextVertexPtr->X-curVertexPtr->X) + WIDE_F*(nextVertexPtr->Z-curVertexPtr->Z) \
 			); \
  \
 			outputVerticesPtr->X = curVertexPtr->X + MUL_FIXED(lambda,nextVertexPtr->X-curVertexPtr->X); \
-			outputVerticesPtr->Z = -outputVerticesPtr->X/2; \
+			outputVerticesPtr->Z = -outputVerticesPtr->X/WIDE_F; \
 			outputVerticesPtr->Y = curVertexPtr->Y + MUL_FIXED(lambda,nextVertexPtr->Y-curVertexPtr->Y);
 
 #define Clip_Wide_PX_OutputXYZ \
@@ -348,12 +379,12 @@ clipping fns for different polygon types with the minimum of fuss */
  \
 			lambda = DIV_FIXED \
 			( \
-				(2*curVertexPtr->Z - curVertexPtr->X), \
-				(nextVertexPtr->X-curVertexPtr->X) - 2*(nextVertexPtr->Z-curVertexPtr->Z) \
+				(WIDE_F*curVertexPtr->Z - curVertexPtr->X), \
+				(nextVertexPtr->X-curVertexPtr->X) - WIDE_F*(nextVertexPtr->Z-curVertexPtr->Z) \
 			); \
  \
 			outputVerticesPtr->X = curVertexPtr->X + MUL_FIXED(lambda,nextVertexPtr->X-curVertexPtr->X); \
-			outputVerticesPtr->Z = outputVerticesPtr->X/2; \
+			outputVerticesPtr->Z = outputVerticesPtr->X/WIDE_F; \
 			outputVerticesPtr->Y = curVertexPtr->Y + MUL_FIXED(lambda,nextVertexPtr->Y-curVertexPtr->Y);
 
 #define Clip_Wide_NY_OutputXYZ \
@@ -364,12 +395,12 @@ clipping fns for different polygon types with the minimum of fuss */
  \
 			lambda = DIV_FIXED \
 			( \
-				(2*curVertexPtr->Z + curVertexPtr->Y), \
-				-(nextVertexPtr->Y-curVertexPtr->Y) - 2*(nextVertexPtr->Z-curVertexPtr->Z) \
+				(WIDE_F*curVertexPtr->Z + curVertexPtr->Y), \
+				-(nextVertexPtr->Y-curVertexPtr->Y) - WIDE_F*(nextVertexPtr->Z-curVertexPtr->Z) \
 			); \
  \
 			outputVerticesPtr->Z = curVertexPtr->Z + MUL_FIXED(lambda,nextVertexPtr->Z-curVertexPtr->Z); \
-			outputVerticesPtr->Y = -(outputVerticesPtr->Z*2); \
+			outputVerticesPtr->Y = -(outputVerticesPtr->Z*WIDE_F); \
 			outputVerticesPtr->X = curVertexPtr->X + MUL_FIXED(lambda,nextVertexPtr->X-curVertexPtr->X);
 
 #define Clip_Wide_PY_OutputXYZ \
@@ -380,12 +411,12 @@ clipping fns for different polygon types with the minimum of fuss */
  \
 			lambda = DIV_FIXED \
 			( \
-				(2*curVertexPtr->Z - curVertexPtr->Y), \
-				(nextVertexPtr->Y-curVertexPtr->Y) - 2*(nextVertexPtr->Z-curVertexPtr->Z) \
+				(WIDE_F*curVertexPtr->Z - curVertexPtr->Y), \
+				(nextVertexPtr->Y-curVertexPtr->Y) - WIDE_F*(nextVertexPtr->Z-curVertexPtr->Z) \
 			); \
  \
 			outputVerticesPtr->Z = curVertexPtr->Z + MUL_FIXED(lambda,nextVertexPtr->Z-curVertexPtr->Z); \
-			outputVerticesPtr->Y = (outputVerticesPtr->Z*2); \
+			outputVerticesPtr->Y = (outputVerticesPtr->Z*WIDE_F); \
 			outputVerticesPtr->X = curVertexPtr->X + MUL_FIXED(lambda,nextVertexPtr->X-curVertexPtr->X);
 
 
@@ -1097,13 +1128,21 @@ static int ObjectWithin_Wide_Frustrum(DISPLAYBLOCK *dbPtr)
 {
 	if (dbPtr->ObView.vz+dbPtr->ObShapeData->shaperadius>=ZCLIPPINGVALUE)
 	{
-		/* scale radius by square root of 5 */
-		int radius = MUL_FIXED(146543,dbPtr->ObShapeData->shaperadius);
+		/* The plane tests below are UNNORMALISED — they compare (vx - WIDE_F*vz),
+		   which is the true distance times the plane-normal length
+		   sqrt(1 + WIDE_F^2) — so the bounding-sphere radius has to be scaled by
+		   that same length or the test is too strict and culls objects that are
+		   really inside. This constant therefore TRACKS WIDE_F and is checked
+		   against it below; it was sqrt(5) for the original WIDE_F of 2, and
+		   leaving it there while the planes moved to 3 made the test ~41% tighter,
+		   which culled whole modules near the edge of view — the floor vanishing
+		   (and showing through to black) when looking down. */
+		int radius = MUL_FIXED(WIDE_RADIUS_SCALE,dbPtr->ObShapeData->shaperadius);
 
-		if ((dbPtr->ObView.vx-2*dbPtr->ObView.vz)<=radius)
-			if ((-dbPtr->ObView.vx-2*dbPtr->ObView.vz)<=radius)
-				if ((dbPtr->ObView.vy-2*dbPtr->ObView.vz)<=radius)
-					if ((-dbPtr->ObView.vy-2*dbPtr->ObView.vz)<=radius)
+		if ((dbPtr->ObView.vx-WIDE_F*dbPtr->ObView.vz)<=radius)
+			if ((-dbPtr->ObView.vx-WIDE_F*dbPtr->ObView.vz)<=radius)
+				if ((dbPtr->ObView.vy-WIDE_F*dbPtr->ObView.vz)<=radius)
+					if ((-dbPtr->ObView.vy-WIDE_F*dbPtr->ObView.vz)<=radius)
 						return 1;
 	}
 	return 0;
@@ -1157,16 +1196,16 @@ void TestVerticesWith_Wide_Frustrum(void)
 		if(ZCLIPPINGVALUE <= RotatedPts[v].vz)
 			vertexFlag |= INSIDE_FRUSTRUM_Z_PLANE;
 		
-		if(-RotatedPts[v].vx <= RotatedPts[v].vz*2)
+		if(-RotatedPts[v].vx <= RotatedPts[v].vz*WIDE_F)
 			vertexFlag |= INSIDE_FRUSTRUM_PX_PLANE;	
 		
-		if(RotatedPts[v].vx <= RotatedPts[v].vz*2)
+		if(RotatedPts[v].vx <= RotatedPts[v].vz*WIDE_F)
 			vertexFlag |= INSIDE_FRUSTRUM_NX_PLANE;	
 		
-		if(-RotatedPts[v].vy <= RotatedPts[v].vz*2)
+		if(-RotatedPts[v].vy <= RotatedPts[v].vz*WIDE_F)
 			vertexFlag |= INSIDE_FRUSTRUM_PY_PLANE;	
 		
-		if(RotatedPts[v].vy <= RotatedPts[v].vz*2)
+		if(RotatedPts[v].vy <= RotatedPts[v].vz*WIDE_F)
 			vertexFlag |= INSIDE_FRUSTRUM_NY_PLANE;	
 		
 		FrustrumFlagForVertex[v] = vertexFlag;

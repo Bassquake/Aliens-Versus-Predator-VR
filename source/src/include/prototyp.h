@@ -493,21 +493,24 @@ typedef struct screendescriptorblock {
  *
  * At 16:9 the normal lens yields 106.26 x 73.74.
  *
- * THE ALIEN'S WIDE LENS DELIBERATELY DOES NOT GET Hor+, and this is the reason:
- * the culling/clipping frustum planes in frustum.c are HARDCODED — NORMAL tests
- * vx <= vz (45 degree half-angle, 90 total) and WIDE tests vx <= 2*vz (63.43,
- * 126.87 total) — and those clippers are live in the GL path (kshape.c,
- * d3d_render.cpp, particle.c), not just early-out culling. The Alien at 4:3
- * already sits exactly on WIDE's 126.87, so widening it further would push
- * geometry outside the widest frustum that exists and clip the world into black
- * wedges at the screen edges. It therefore stays width-derived, which holds its
- * horizontal FOV at 126.87 on any aspect and loses vertical instead (Vert-).
- * Giving the Alien Hor+ too would need a third, wider set of clip functions.
+ * THE ALIEN'S WIDE LENS GETS Hor+ TOO, but only because frustum.c's WIDE_F was
+ * widened from 2 to 3 to make room. The clip frustum planes are hardcoded —
+ * NORMAL tests vx <= vz (45 degree half-angle, 90 total) and WIDE tests
+ * vx <= WIDE_F*vz — and those clippers are LIVE in the GL path (kshape.c,
+ * d3d_render.cpp, particle.c), not just early-out culling, so any lens wider
+ * than its frustum gets the world clipped into black wedges at the screen edges.
+ * The Alien at 4:3 sits exactly on the old WIDE_F=2 limit of 126.87 degrees,
+ * which left no headroom at all; Hor+ needs 138.9 at 16:9. WIDE_F=3 gives
+ * 143.13, which covers the Alien out to about 2:1.
+ *
+ * Past that the Alien clamps rather than clipping: AVP_PROJX_WIDE never lets the
+ * horizontal half-angle exceed atan(WIDE_F), so an ultra-wide screen loses some
+ * vertical FOV instead of losing geometry. Raise WIDE_F if that matters, at the
+ * cost of a looser (more expensive) cull for every user of the WIDE frustum.
  *
  * The normal lens has room: Hor+ at 16:9 needs a 53.13 degree half-angle, which
  * NORMAL's 45 does NOT cover — so the flat path switches it to the WIDE frustum
- * (see SetupVision). WIDE covers the normal lens out to a 2.67:1 aspect, past
- * 21:9.
+ * (see SetupVision).
  *
  * Note there is no hardcoded aspect constant to keep in step any more: kshape.c
  * derives the view-matrix Y scale as ProjX/ProjY, which is the general condition
@@ -517,7 +520,20 @@ typedef struct screendescriptorblock {
  * per-eye XrFovf in avpview.c, and must match the optics or the world swims.
  * ------------------------------------------------------------------------- */
 #define AVP_PROJX_NORMAL(renderWidth, renderHeight)  (((renderHeight) * 2) / 3)
-#define AVP_PROJX_WIDE(renderWidth, renderHeight)    ((renderWidth) / 4)
+
+/* Alien wide lens, Hor+ with a clamp. renderHeight/3 keeps the vertical FOV at
+ * the original 112.62 degrees; the (renderWidth)/(2*WIDE_FRUSTUM_F) floor stops
+ * the horizontal half-angle exceeding atan(WIDE_F) and clipping (see above).
+ * At 4:3 the height term wins and equals the original renderWidth/4 exactly. */
+#define WIDE_FRUSTUM_F 3   /* must match WIDE_F in frustum.c */
+/* The floor divide ROUNDS UP: truncating leaves ProjX a fraction too small and
+   the half-angle a hair over atan(WIDE_F), which clips (seen at 2560x1080). */
+#define AVP_PROJX_WIDE_FLOOR(renderWidth) \
+	(((renderWidth) + 2 * WIDE_FRUSTUM_F - 1) / (2 * WIDE_FRUSTUM_F))
+#define AVP_PROJX_WIDE(renderWidth, renderHeight)          \
+	( ((renderHeight) / 3) > AVP_PROJX_WIDE_FLOOR(renderWidth) \
+	  ? ((renderHeight) / 3)                               \
+	  : AVP_PROJX_WIDE_FLOOR(renderWidth) )
 
 /* True when the viewport is wider than 4:3, i.e. when the normal lens's Hor+
  * horizontal FOV has grown past NORMAL's hardcoded 45 degree half-angle and the

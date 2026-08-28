@@ -1679,16 +1679,32 @@ void FadedScreen(int alpha)
 		for (x = 0; x < surface->w; x++) {
 			unsigned int srcR, srcG, srcB;
 			
+			/* These extract to the channels' NATIVE 5/6/5 ranges (0..31, 0..63,
+			   0..31), unlike the other blitters in this file, which expand to
+			   8-bit first. The repack must therefore shift straight back up,
+			   with no further >>3 / >>2 / >>3.
+
+			   It used to do the 8-bit repack on these 5/6/5 values, dividing
+			   every channel by a further 8/4/8: at full alpha R=31 came out as
+			   3, so the whole fade ran at about an eighth brightness and had
+			   only 4 distinct red/blue levels (16 green) across its entire range
+			   instead of 32/64/32. That is what made the backdrop fade after the
+			   intro videos step visibly instead of ramping smoothly. */
 			srcR = (*ptr & 0xF800) >> 11;
 			srcG = (*ptr & 0x07E0) >> 5;
 			srcB = (*ptr & 0x001F);
-			
+
 			srcR = MUL_FIXED(srcR, alpha);
 			srcG = MUL_FIXED(srcG, alpha);
 			srcB = MUL_FIXED(srcB, alpha);
-			*ptr =	((srcR>>3)<<11) |
-				((srcG>>2)<<5 ) |
-				((srcB>>3));
+
+			if (srcR > 31) srcR = 31;
+			if (srcG > 63) srcG = 63;
+			if (srcB > 31) srcB = 31;
+
+			*ptr =	(srcR<<11) |
+				(srcG<<5 ) |
+				(srcB);
 			ptr++;
 		}
 	}

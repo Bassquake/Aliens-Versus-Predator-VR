@@ -336,8 +336,90 @@ static D3DTexture *CurrTextureHandle;
 
 static enum TRANSLUCENCY_TYPE CurrentTranslucencyMode = TRANSLUCENCY_OFF;
 static enum FILTERING_MODE_ID CurrentFilteringMode = FILTERING_BILINEAR_OFF;
-static GLenum TextureMinFilter = GL_LINEAR_MIPMAP_LINEAR;
 static D3DTexture *CurrentlyBoundTexture = NULL;
+
+/* --- Texture filtering settings (AV Options) ------------------------------
+   All three default to 0, and 0 is deliberately the behaviour the port had
+   before they existed. That matters because they are stored in spare bytes of
+   the profile blob (see avp_userprofile.h): an existing .prf has zeroes there,
+   so a zero MUST decode to the old default or upgrading would silently change
+   everyone's settings. It is the same reason EnemySpeed* is stored as
+   (10 - speed).
+
+   That constraint is why the anisotropy slider counts DOWN (16x first). Every
+   other TEXTSLIDER in the frontend also puts its default at index 0, so this
+   matches the house style rather than fighting it; MSAA is the one exception,
+   and it gets away with it only because it owns a real bitfield that
+   SetDefaultUserProfile writes explicitly. */
+int AnisotropicFilterIndex = 0; /* 0=16x(default) 1=8x 2=4x 3=2x 4=off        */
+int TextureFilterIndex     = 0; /* 0=trilinear(default) 1=bilinear 2=nearest  */
+int NPOTMipmapsEnabled     = 0; /* 0=off(default) 1=on                        */
+
+/* Whether this texture actually has usable mip levels. glGenerateMipmap runs
+   for every texture, but NPOT ones are padded up to a power of two and their
+   padding bleeds into the lower levels, which is why they were pinned to
+   GL_LINEAR. The padding is now edge-replicated (see the upload below), so
+   they can opt in. */
+static int TexHasMipmaps(const D3DTexture *tex)
+{
+	if (!tex) return 1;
+	return (!tex->IsNpot) || NPOTMipmapsEnabled;
+}
+
+static GLenum TexMinFilter(int hasMipmaps)
+{
+	switch (TextureFilterIndex) {
+		case 2:  return GL_NEAREST;
+		case 1:  return hasMipmaps ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR;
+		default: return hasMipmaps ? GL_LINEAR_MIPMAP_LINEAR  : GL_LINEAR;
+	}
+}
+
+/* "Nearest" has to take the magnification filter too, or textures still smooth
+   out as you walk up to them and the setting looks broken. */
+static GLenum TexMagFilter(void)
+{
+	return (TextureFilterIndex == 2) ? GL_NEAREST : GL_LINEAR;
+}
+
+/* Requested anisotropy, clamped to what the driver offers. Index 0 asks for
+   16x, which is what GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT reports on essentially
+   every desktop GPU and on Adreno, so it reproduces the old "always maximum"
+   behaviour. A driver advertising more than 16 would previously have used it;
+   the difference above 16x is not visible. */
+static GLfloat TexAnisotropy(void)
+{
+	GLfloat maxAniso = 1.0f;
+	GLfloat want;
+
+	if (!ogl_use_texture_filter_anisotropic)
+		return 1.0f;
+
+	pglGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
+
+	switch (AnisotropicFilterIndex) {
+		case 1:  want = 8.0f;  break;
+		case 2:  want = 4.0f;  break;
+		case 3:  want = 2.0f;  break;
+		case 4:  want = 1.0f;  break; /* off */
+		default: want = 16.0f; break;
+	}
+
+	if (want > maxAniso) want = maxAniso;
+	if (want < 1.0f)     want = 1.0f;
+
+	return want;
+}
+
+/* Apply the current settings to a texture that is already bound. */
+static void ApplyFilterToBoundTexture(D3DTexture *tex)
+{
+	pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, TexMagFilter());
+	pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, TexMinFilter(TexHasMipmaps(tex)));
+
+	if (ogl_use_texture_filter_anisotropic)
+		pglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, TexAnisotropy());
+}
 
 /* VR HUD clip-space controls — active only during MaintainHUD() in VR.
    vr_hud_clip_scale: < 1.0 shrinks the HUD toward centre (1.0 = no scale).
@@ -388,6 +470,40 @@ static int starrc;
 void OGL_RegenerateMipmaps(void)
 {
 	glGenerateMipmap(GL_TEXTURE_2D);
+}
+
+/* Push the current texture filtering settings onto every resident texture.
+   Mip levels are already present on all of them (glGenerateMipmap runs at
+   upload regardless), so switching between trilinear/bilinear/nearest and
+   toggling NPOT mipmaps is a filter change only — nothing has to be re-uploaded
+   and no level reload is needed. */
+static void FlushTriangleBuffers(int backup); /* defined further down */
+
+void OGL_ApplyTextureFilterSettings(void)
+{
+	extern int NumImages;
+	int i;
+
+	FlushTriangleBuffers(1);
+
+	for (i = 0; i < NumImages; i++) {
+		D3DTexture *tex = ImageHeaderArray[i].D3DTexture;
+
+		if (!tex || !tex->id)
+			continue;
+
+		pglBindTexture(GL_TEXTURE_2D, tex->id);
+		ApplyFilterToBoundTexture(tex);
+
+		/* Record what is actually on the object, so CheckBoundTextureIsCorrect
+		   only re-applies when the per-draw mode genuinely differs. */
+		tex->filter = FILTERING_BILINEAR_ON;
+	}
+
+	/* Force the next bind to go through the normal path rather than trusting a
+	   cache that no longer reflects what is bound. */
+	CurrentlyBoundTexture = NULL;
+	pglBindTexture(GL_TEXTURE_2D, 0);
 }
 
 // In opengl.c — call this to re-bind game shader attribs after any external blit
@@ -586,16 +702,15 @@ static void CheckBoundTextureIsCorrect(D3DTexture *tex)
 				pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 				break;
 			case FILTERING_BILINEAR_ON:
-				pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-				pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, TextureMinFilter);
+				ApplyFilterToBoundTexture(tex);
 				break;
 			default:
 				break;
 		}
-		
+
 		tex->filter = CurrentFilteringMode;
 	}
-	
+
 	CurrentlyBoundTexture = tex;
 }
 
@@ -612,13 +727,12 @@ static void CheckFilteringModeIsCorrect(enum FILTERING_MODE_ID filter)
 				pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 				break;
 			case FILTERING_BILINEAR_ON:
-				pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-				pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, TextureMinFilter);
+				ApplyFilterToBoundTexture(CurrentlyBoundTexture);
 				break;
 			default:
 				break;
 		}
-		
+
 		CurrentlyBoundTexture->filter = CurrentFilteringMode;
 	}
 }
@@ -784,8 +898,7 @@ GLuint CreateOGLTexture(D3DTexture *tex, unsigned char *buf)
 
 
 	GLuint h;
-	GLfloat max_anisotropy;
-	
+
 	FlushTriangleBuffers(1);
 
 	pglGenTextures(1, &h);
@@ -801,18 +914,33 @@ GLuint CreateOGLTexture(D3DTexture *tex, unsigned char *buf)
         tex->TexWidth = PotWidth;
         tex->TexHeight = PotHeight;
 
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
 		/* Allocate with zeroed padding so rows beyond tex->h aren't raw VRAM garbage */
 		int padBytes = tex->TexWidth * tex->TexHeight * 4;
 		unsigned char *padBuf = calloc(1, padBytes);
 		if (padBuf) {
-			int row;
+			int row, col;
 			for (row = 0; row < tex->h; row++)
 				memcpy(padBuf + row * tex->TexWidth * 4,
 				       buf    + row * tex->w       * 4,
 				       tex->w * 4);
+
+			/* Extend the last real column and row across the padding instead of
+			   leaving it black. Zeroed padding is invisible at mip 0 (nothing
+			   samples past tex->w/h) but averages into every lower mip level as
+			   a dark fringe, which is what made mipmapping these unusable. With
+			   the edge replicated the lower levels stay the colour of the image,
+			   so the NPOT Texture Mipmaps option is worth having. */
+			for (row = 0; row < tex->h; row++) {
+				unsigned char *rowBase = padBuf + row * tex->TexWidth * 4;
+				const unsigned char *lastPx = rowBase + (tex->w - 1) * 4;
+				for (col = tex->w; col < (int)tex->TexWidth; col++)
+					memcpy(rowBase + col * 4, lastPx, 4);
+			}
+			for (row = tex->h; row < (int)tex->TexHeight; row++)
+				memcpy(padBuf + row * tex->TexWidth * 4,
+				       padBuf + (tex->h - 1) * tex->TexWidth * 4,
+				       tex->TexWidth * 4);
+
 			pglTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex->TexWidth, tex->TexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, padBuf);
 			free(padBuf);
 		} else {
@@ -821,9 +949,6 @@ GLuint CreateOGLTexture(D3DTexture *tex, unsigned char *buf)
 		}
 		glGenerateMipmap(GL_TEXTURE_2D);
     } else {
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, TextureMinFilter);
-
 		pglTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex->w, tex->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
 		glGenerateMipmap(GL_TEXTURE_2D);
 	}
@@ -836,12 +961,11 @@ GLuint CreateOGLTexture(D3DTexture *tex, unsigned char *buf)
 	tex->RecipW = 1.0f / (float) tex->TexWidth;
 	tex->RecipH = 1.0f / (float) tex->TexHeight;
 
-	if ( ogl_use_texture_filter_anisotropic )
-	{
-		pglGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_anisotropy);
-		pglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, max_anisotropy);
-	}
-	
+	/* Filters and anisotropy come from the AV Options settings, and are applied
+	   after tex->IsNpot is known so the NPOT mipmap choice can be honoured. */
+	ApplyFilterToBoundTexture(tex);
+
+
 	if ( CurrentlyBoundTexture != NULL )
 	{
 		/* restore the previously-bound texture */
@@ -891,6 +1015,28 @@ void ReleaseDDSurface(void* DDSurface)
 
 void ThisFramesRenderingHasBegun()
 {
+	/* Texture filter parameters live on the texture objects, which are created
+	   once at level load, so a change in AV Options has to be pushed out to
+	   everything already resident. Polling three ints here rather than hooking
+	   the menu catches every route the values can change by — the sliders, a
+	   profile load, or "Use these settings" — with no menu-side plumbing. */
+	{
+		static int appliedAniso  = -1;
+		static int appliedFilter = -1;
+		static int appliedNpot   = -1;
+
+		if (appliedAniso  != AnisotropicFilterIndex ||
+		    appliedFilter != TextureFilterIndex     ||
+		    appliedNpot   != NPOTMipmapsEnabled) {
+
+			OGL_ApplyTextureFilterSettings();
+
+			appliedAniso  = AnisotropicFilterIndex;
+			appliedFilter = TextureFilterIndex;
+			appliedNpot   = NPOTMipmapsEnabled;
+		}
+	}
+
 	CheckFilteringModeIsCorrect(FILTERING_BILINEAR_ON);
 	RestoreGameShaderState();
 #ifdef AVP_XR

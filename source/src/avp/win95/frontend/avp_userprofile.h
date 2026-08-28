@@ -105,7 +105,14 @@ typedef struct
 	unsigned char EnemySpeedPredator; //main menu Cheats: predator enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char HUDInsetLevel; //Controller Config: "Adjust HUD elements" 0=default,1,2 pull HUD toward centre (was Padding)
 	unsigned char ManualReloadEnabled; //Controller Config: "Manual Reload" 0=off (default), 1=on (was Padding)
-	char Padding[61];
+	/* AV Options texture filtering. All three are index 0 = the port's previous
+	   behaviour, which is required rather than tidy: these come out of Padding,
+	   so every profile written before they existed has zeroes here. See the
+	   matching note in opengl.c for why the anisotropy list counts down. */
+	unsigned char AnisotropicFilterIndex; //0=16x (default), 1=8x, 2=4x, 3=2x, 4=off (was Padding)
+	unsigned char TextureFilterIndex;     //0=trilinear (default), 1=bilinear, 2=nearest (was Padding)
+	unsigned char NPOTMipmapsEnabled;     //0=off (default), 1=on (was Padding)
+	char Padding[58];
 
 	int CDPlayerVolume;
 

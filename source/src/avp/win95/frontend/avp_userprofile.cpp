@@ -37,6 +37,9 @@ extern int ShowCrosshair;
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int MSAASampleIndex;
+extern int AnisotropicFilterIndex;
+extern int TextureFilterIndex;
+extern int NPOTMipmapsEnabled;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
@@ -281,6 +284,10 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	EnemySpeedPredator = 10;
 	HUDInsetLevel = 0;       /* "Adjust HUD elements" defaults to level 1 (current layout) */
 	ManualReloadEnabled = 0; /* "Manual Reload" defaults to Off */
+	/* All three reproduce the filtering the port had before these were options. */
+	AnisotropicFilterIndex = 0; /* 16x, matching the old always-maximum behaviour */
+	TextureFilterIndex = 0;     /* trilinear, the old hardcoded min filter */
+	NPOTMipmapsEnabled = 0;     /* NPOT textures were never mipped before */
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -322,6 +329,9 @@ extern void GetSettingsFromUserProfile(void)
 	ShowFrameRate =				!UserProfilePtr->ShowFrameRateDisabled;
 	VRRefreshRateIndex =			UserProfilePtr->VRRefreshRateIndex;
 	MSAASampleIndex =			UserProfilePtr->MSAASampleIndex;
+	AnisotropicFilterIndex =		UserProfilePtr->AnisotropicFilterIndex;
+	TextureFilterIndex =			UserProfilePtr->TextureFilterIndex;
+	NPOTMipmapsEnabled =			UserProfilePtr->NPOTMipmapsEnabled;
 	VRTurnMode =				UserProfilePtr->VRTurnMode;
 	VRSnapAngleIndex =			UserProfilePtr->VRSnapAngleIndex;
 	VRSmoothTurnSpeed =			UserProfilePtr->VRSmoothTurnSpeed;
@@ -364,6 +374,9 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->ShowFrameRateDisabled =	!ShowFrameRate;
 	profilePtr->VRRefreshRateIndex =	VRRefreshRateIndex;
 	profilePtr->MSAASampleIndex =		MSAASampleIndex;
+	profilePtr->AnisotropicFilterIndex =	AnisotropicFilterIndex;
+	profilePtr->TextureFilterIndex =	TextureFilterIndex;
+	profilePtr->NPOTMipmapsEnabled =	NPOTMipmapsEnabled;
 	profilePtr->VRTurnMode =		VRTurnMode;
 	profilePtr->VRSnapAngleIndex =		VRSnapAngleIndex;
 	profilePtr->VRSmoothTurnSpeed =		VRSmoothTurnSpeed;

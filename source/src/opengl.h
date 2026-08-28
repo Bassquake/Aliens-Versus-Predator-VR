@@ -24,6 +24,17 @@ void InitGameShader(void);
 void RestoreGameShaderState(void);
 void OGL_RegenerateMipmaps(void);
 
+/* Texture filtering settings, driven by the AV Options menu. All three are 0 by
+   default, and 0 reproduces the port's behaviour from before they existed (see
+   the note in opengl.c — the profile blob stores them in previously-zero bytes,
+   so 0 has to mean "as before"). Applied to already-loaded textures by
+   OGL_ApplyTextureFilterSettings, which ThisFramesRenderingHasBegun calls
+   whenever one of them changes. */
+extern int AnisotropicFilterIndex; /* 0=16x(default) 1=8x 2=4x 3=2x 4=off       */
+extern int TextureFilterIndex;     /* 0=trilinear(default) 1=bilinear 2=nearest */
+extern int NPOTMipmapsEnabled;     /* 0=off(default) 1=on                       */
+void OGL_ApplyTextureFilterSettings(void);
+
 #ifndef __ANDROID__
 /* Desktop MSAA. The frame is rendered into a multisampled FBO at window
    resolution and blitted down onto the backbuffer at present time.

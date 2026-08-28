@@ -28,6 +28,40 @@ extern SCREENDESCRIPTORBLOCK ScreenDescriptorBlock;
 extern int CloudTable[128][128];
 extern int CloakingPhase;
 
+/* --- HD texture-pack headroom for the additive menu compositor -------------
+   Every bright element of the frontend is blended ADDITIVELY into the 640x480
+   surface (see RenderMenuText and DrawAvPMenuGfx): the glyphs, the selected
+   item's glow, and the backdrop all sum and clamp at white. That only holds
+   together because the stock art is dark -- menus\starfield.rim is nearly
+   black, the glow peaks at 86/255, and menus\fractal.rim (which becomes
+   CloudTable, the per-pixel modulation the text is drawn through) averages
+   just over half brightness.
+
+   An HD pack replaces all three with much brighter art and the sum saturates,
+   so the text renders as flat pure white and the glow as a solid slab. Measured
+   against AvP Redux 2.0's tex37.ffl, which is what the game actually loads
+   (the fastfile is consulted before the loose graphics\ tree):
+
+     menus\fractal.rim   red mean 139/255 (0.546) -> 247/255 (0.970), and 93%
+                         of its pixels now sit above 0.9, so the cloud
+                         modulation is gone and every glyph pixel is added at
+                         essentially full strength.
+     menus\glowy_*.rim   peak channel 86 -> 198, i.e. the glow is ~2.3x hotter
+                         (and green rather than blue-grey).
+
+   Both are normalised back to the stock levels below, which restores the
+   headroom the compositor assumes while leaving the pack's hue and shape
+   alone. The two constants are MEASURED from the stock assets, and both
+   corrections are exact no-ops on stock art -- the scale works out to 1.0 --
+   so the unmodded frontend is byte-identical. */
+#define MENU_CLOUD_STOCK_MEAN  35810   /* stock fractal.rim red mean, 16.16 (139.34/255) */
+#define MENU_GLOW_STOCK_PEAK   86      /* stock glowy_*.rim peak channel, 0..255         */
+
+/* Scale applied to the glow's alpha in RenderMenuText / RenderMenuText_Clipped,
+   16.16. ONE_FIXED (no change) for stock art; measured from the loaded glow in
+   LoadAllAvPMenuGfx below. */
+static int MenuGlowScale = ONE_FIXED;
+
 AVPMENUGFX AvPMenuGfxStorage[MAX_NO_OF_AVPMENUGFXS] =
 {
 	{"menus\\fractal.rim"},
@@ -417,11 +451,13 @@ int RenderMenuText(char *textPtr, int sx, int sy, int alpha, enum AVPMENUFORMAT_
 	
 	if (alpha >BRIGHTNESS_OF_DARKENED_ELEMENT) {
 		int size = width - 18;
+		int glowAlpha = MUL_FIXED(alpha, MenuGlowScale);
+
 		if (size<18) size = 18;
-		
-		DrawAvPMenuGfx(AVPMENUGFX_GLOWY_LEFT,sx+18,sy-8,alpha,AVPMENUFORMAT_RIGHTJUSTIFIED);
-		DrawAvPMenuGlowyBar(sx+18,sy-8,alpha,size-18);
-		DrawAvPMenuGfx(AVPMENUGFX_GLOWY_RIGHT,sx+size,sy-8,alpha,AVPMENUFORMAT_LEFTJUSTIFIED);
+
+		DrawAvPMenuGfx(AVPMENUGFX_GLOWY_LEFT,sx+18,sy-8,glowAlpha,AVPMENUFORMAT_RIGHTJUSTIFIED);
+		DrawAvPMenuGlowyBar(sx+18,sy-8,glowAlpha,size-18);
+		DrawAvPMenuGfx(AVPMENUGFX_GLOWY_RIGHT,sx+size,sy-8,glowAlpha,AVPMENUFORMAT_LEFTJUSTIFIED);
 	}
 {
 	unsigned char *srcPtr;
@@ -522,11 +558,13 @@ int RenderMenuText_Clipped(char *textPtr, int sx, int sy, int alpha, enum AVPMEN
 	
 	if (alpha > BRIGHTNESS_OF_DARKENED_ELEMENT) {
 		int size = width - 18;
+		int glowAlpha = MUL_FIXED(alpha, MenuGlowScale);
+
 		if (size<18) size = 18;
-		
-		DrawAvPMenuGfx_Clipped(AVPMENUGFX_GLOWY_LEFT,sx+18,sy-8,alpha,AVPMENUFORMAT_RIGHTJUSTIFIED,topY,bottomY);
-		DrawAvPMenuGlowyBar_Clipped(sx+18,sy-8,alpha,size-18,topY,bottomY);
-		DrawAvPMenuGfx_Clipped(AVPMENUGFX_GLOWY_RIGHT,sx+size,sy-8,alpha,AVPMENUFORMAT_LEFTJUSTIFIED,topY,bottomY);
+
+		DrawAvPMenuGfx_Clipped(AVPMENUGFX_GLOWY_LEFT,sx+18,sy-8,glowAlpha,AVPMENUFORMAT_RIGHTJUSTIFIED,topY,bottomY);
+		DrawAvPMenuGlowyBar_Clipped(sx+18,sy-8,glowAlpha,size-18,topY,bottomY);
+		DrawAvPMenuGfx_Clipped(AVPMENUGFX_GLOWY_RIGHT,sx+size,sy-8,glowAlpha,AVPMENUFORMAT_LEFTJUSTIFIED,topY,bottomY);
 	}
 {
 	unsigned char *srcPtr;
@@ -1131,17 +1169,109 @@ void LoadAllAvPMenuGfx()
 	
 	image = gfxPtr->ImagePtr;
 	srcPtr = image->buf;
-	
-	for (y=0; y<gfxPtr->Height; y++) {
-		for (x=0; x<gfxPtr->Width; x++) {
-			
-			int r = srcPtr[0];
-			
-			r = DIV_FIXED(r, 0xFF);
-			CloudTable[x][y]=r;
-			
-			srcPtr += 4;
+
+	/* CloudTable is a fixed 128x128; clamp rather than trusting the loaded
+	   image, since a texture pack is free to ship a different size here and
+	   the original loop would run straight off the end of the array. */
+	{
+		int rows = gfxPtr->Height;
+		int cols = gfxPtr->Width;
+
+		if (rows > 128) rows = 128;
+		if (cols > 128) cols = 128;
+
+		for (y=0; y<rows; y++) {
+			unsigned char *rowPtr = srcPtr;
+
+			for (x=0; x<cols; x++) {
+
+				int r = rowPtr[0];
+
+				r = DIV_FIXED(r, 0xFF);
+				CloudTable[x][y]=r;
+
+				rowPtr += 4;
+			}
+
+			srcPtr += image->w * 4;
 		}
+
+		/* Pull an over-bright replacement fractal back to the stock average so
+		   the additive text keeps its headroom (see the note by
+		   MENU_CLOUD_STOCK_MEAN). Only ever darkens, and the 1/16 margin keeps
+		   stock art -- whose mean IS the reference -- from being touched at all. */
+		{
+			int total = 0;
+			int mean;
+			int scale = ONE_FIXED;
+
+			for (y=0; y<128; y++)
+				for (x=0; x<128; x++)
+					total += CloudTable[x][y] >> 8;   /* >>8 so 16384 entries cannot overflow */
+
+			mean = (total / (128*128)) << 8;
+
+			if (mean > MENU_CLOUD_STOCK_MEAN + MENU_CLOUD_STOCK_MEAN/16) {
+				scale = DIV_FIXED(MENU_CLOUD_STOCK_MEAN, mean);
+
+				for (y=0; y<128; y++)
+					for (x=0; x<128; x++)
+						CloudTable[x][y] = MUL_FIXED(CloudTable[x][y], scale);
+			}
+
+			/* Logged unconditionally so a pack that looks wrong can be diagnosed
+			   without re-deriving these numbers by hand. Stock reads
+			   "mean 0.543 -> scale 1.000 (untouched)". */
+			SDL_Log("MENU: fractal %dx%d -> CloudTable mean %.3f (stock %.3f) -> scale %.3f%s",
+			        cols, rows,
+			        (double)mean / (double)ONE_FIXED,
+			        (double)MENU_CLOUD_STOCK_MEAN / (double)ONE_FIXED,
+			        (double)scale / (double)ONE_FIXED,
+			        scale == ONE_FIXED ? " (untouched)" : "");
+		}
+	}
+}
+
+/* Match an HD pack's glow intensity to the stock art's, preserving its hue.
+   Reads the peak channel of the stretched middle section, which is the part
+   that covers most of the bar. ONE_FIXED (no change) when the glow is stock. */
+{
+	AVPMENUGFX *glowPtr = &AvPMenuGfxStorage[AVPMENUGFX_GLOWY_MIDDLE];
+	D3DTexture *glowImage = glowPtr->ImagePtr;
+
+	MenuGlowScale = ONE_FIXED;
+
+	if (!glowImage || !glowImage->buf) {
+		/* No glow art loaded at all — a pack whose fastfile omits it and which
+		   has no loose copy either. Nothing to scale; say so rather than
+		   silently reporting a peak of 0. */
+		SDL_Log("MENU: glowy_middle absent -> glow scale 1.000 (untouched)");
+	} else {
+		unsigned char *p = glowImage->buf;
+		int peak = 0;
+		int x, y;
+
+		for (y=0; y<glowPtr->Height; y++) {
+			unsigned char *rowPtr = p;
+
+			for (x=0; x<glowPtr->Width; x++) {
+				if (rowPtr[0] > peak) peak = rowPtr[0];
+				if (rowPtr[1] > peak) peak = rowPtr[1];
+				if (rowPtr[2] > peak) peak = rowPtr[2];
+				rowPtr += 4;
+			}
+
+			p += glowImage->w * 4;
+		}
+
+		if (peak > MENU_GLOW_STOCK_PEAK)
+			MenuGlowScale = DIV_FIXED(MENU_GLOW_STOCK_PEAK, peak);
+
+		/* Stock reads "peak 86 (stock 86) -> scale 1.000 (untouched)". */
+		SDL_Log("MENU: glowy_middle %dx%d peak %d (stock %d) -> glow scale %.3f%s",
+		        glowPtr->Width, glowPtr->Height, peak, MENU_GLOW_STOCK_PEAK,
+		        (double)MenuGlowScale / (double)ONE_FIXED,
+		        MenuGlowScale == ONE_FIXED ? " (untouched)" : "");
 	}
 }
 

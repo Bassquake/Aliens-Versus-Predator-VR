@@ -4260,6 +4260,28 @@ char ShiftDown = 0;
 char CapsLockOn = 0;
 const char ShiftAddition[2] = { 32, 0 };
 
+/* Keep SDL text input enabled so TEXT_INPUT events (and their correct
+   shift/caps handling) keep arriving for the console and menu text fields.
+   Desktop leaves this on permanently, which is free there — there is no
+   on-screen keyboard.
+
+   On Android it is NOT free: SDL_StartTextInput raises the system IME. Calling
+   it from the event loop, on every key down/up, pinned the soft keyboard open
+   over the running game — it covered roughly two thirds of the screen, resized
+   the GL surface down to a strip, and swallowed the keystrokes it sat on, which
+   is why only a few keys (modifiers, some numpad) appeared to reach gameplay
+   with a Bluetooth keyboard attached.
+
+   So on Android, Platform_SetTextInputActive() is the SOLE owner of IME state:
+   the menu code drives it each frame from ActUponUsersInput and turns it on
+   only while a text field is actually focused. Do not re-enable it from here. */
+static void KeepTextInputAlive(void)
+{
+#ifndef __ANDROID__
+    SDL_StartTextInput(window);
+#endif
+}
+
 static void handle_keypress(int key, int unicode, int press)
 {
     if (key == -1)
@@ -4283,7 +4305,7 @@ static void handle_keypress(int key, int unicode, int press)
                     CapsLockOn ^= 1;
                     break;
                 case KEY_CR:
-                    SDL_StartTextInput(window);
+                    KeepTextInputAlive();
                     RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_CHAR('\r');
                     break;
                 case KEY_BACKSPACE:
@@ -4317,7 +4339,7 @@ static void handle_keypress(int key, int unicode, int press)
                     RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_KEYDOWN(VK_TAB);
                     break;
                 default:
-                    SDL_StartTextInput(window);
+                    KeepTextInputAlive();
                     break;
             }
     }
@@ -4326,7 +4348,7 @@ static void handle_keypress(int key, int unicode, int press)
         DebouncedKeyboardInput[key] = 1;
         DebouncedGotAnyKey = 1;
     }
-    
+
     if (press)
         GotAnyKey = 1;
     KeyboardInput[key] = press;
@@ -4377,6 +4399,39 @@ void CheckForWindowsMessages()
                 break;
             case SDL_EVENT_MOUSE_BUTTON_UP:
                 break;
+            /* A touch counts as "any key".
+             *
+             * On a touch-only device nothing could otherwise satisfy the
+             * `while(!DebouncedGotAnyKey);` waits (the loading screen at the end
+             * of Start_Progress_Bar, the intro logos, the credits):
+             * DebouncedGotAnyKey is raised only by a real key event in
+             * handle_keypress, by a joystick button, or by the XR controller
+             * block above — and that block is compiled out on the phone, which
+             * sets AVP_DISABLE_XR. The mouse-button cases above are empty stubs
+             * and there is no other touch handling in the tree.
+             *
+             * Deliberately hooked to FINGER_DOWN rather than to the mouse
+             * cases: SDL synthesises mouse events from touch, so this is enough
+             * for a phone, while desktop mouse behaviour is left exactly as it
+             * was. That matters because DebouncedGotAnyKey also dismisses the
+             * completed-level stats screen (hud.c) and the death screen
+             * (pmove.c) — making a click "any key" would let a reflexive click
+             * after dying restart the level instantly.
+             *
+             * Both flags are set: CheckForWindowsMessages clears them at the
+             * top of each frame, and GotAnyKey on its own is what lets a touch
+             * skip the intro logos (avp_intro.cpp).
+             *
+             * NOTE: this is a usability gap for touch-only devices, NOT the
+             * cause of the phone "stuck on Press any key to continue" report —
+             * that was the missing present further down (see the InGameFlipBuffers
+             * comment in the game loop). With a keyboard attached the prompt
+             * always worked; the display just never updated afterwards. */
+            case SDL_EVENT_FINGER_DOWN:
+                if (!GotAnyKey)
+                    DebouncedGotAnyKey = 1;
+                GotAnyKey = 1;
+                break;
             case SDL_EVENT_MOUSE_WHEEL:
                 if (wantmouse) {
                     if (event.wheel.y < 0) {
@@ -4387,7 +4442,7 @@ void CheckForWindowsMessages()
                 }
                 break;
             case SDL_EVENT_TEXT_INPUT: {
-                SDL_StartTextInput(window);
+                KeepTextInputAlive();
                 int unicode = event.text.text[0]; //TODO convert to utf-32
                 if (unicode && !(unicode & 0xFF80)) {
                     RE_ENTRANT_QUEUE_WinProc_AddMessage_WM_CHAR(unicode);
@@ -4396,7 +4451,7 @@ void CheckForWindowsMessages()
             }
                 break;
             case SDL_EVENT_KEY_DOWN:
-                SDL_StartTextInput(window);
+                KeepTextInputAlive();
                 if (event.key.key == SDLK_PRINTSCREEN) {
                     if (HavePrintScn == 0)
                         GotPrintScn = 1;
@@ -4406,7 +4461,7 @@ void CheckForWindowsMessages()
                 }
                 break;
             case SDL_EVENT_KEY_UP:
-                SDL_StartTextInput(window);
+                KeepTextInputAlive();
                 if (event.key.key == SDLK_PRINTSCREEN) {
                     GotPrintScn = 0;
                     HavePrintScn = 0;
@@ -5166,16 +5221,27 @@ int main(int argc, char *argv[])
                         if (!menusActive)
                             xr_2d_mode = false;
                     }
-#ifdef AVP_PCVR
-                    /* PCVR exe running flat (headset/runtime absent → XR init
-                       failed): behave exactly like the desktop build below.
-                       When XR IS running, the presents above / in the gameplay
-                       branch already happened — a second InGameFlipBuffers here
-                       would run xrWaitFrame twice per game frame. */
+                    /* An AVP_XR build that is NOT presenting through a headset has to
+                       present here, exactly like the desktop build below. Two targets
+                       reach this: a PCVR exe running flat (headset/runtime absent, so XR
+                       init failed) and the non-VR Android "android" flavor, which sets
+                       AVP_DISABLE_XR and never brings up a session at all.
+
+                       This was gated on AVP_PCVR, which silently excluded the phone:
+                       AVP_XR is defined for EVERY Android build, AVP_PCVR only for
+                       desktop, so on the phone no branch here presented and the gameplay
+                       branch above deliberately does not present either. The result was a
+                       game loop that ran and rendered normally while the display stayed
+                       frozen on the last loading-screen frame — it looked like "Press any
+                       key to continue" had hung, when the level had in fact started.
+
+                       When XR IS running, the presents above / in the gameplay branch
+                       already happened — a second InGameFlipBuffers here would run
+                       xrWaitFrame twice per game frame — so the condition stays keyed on
+                       there being no live session. */
                     else if (!xr_enabled || !xr_session_running) {
                         InGameFlipBuffers();
                     }
-#endif
 #else
                     //InGameFlipBuffers();
                     /* Single desktop present for the whole frame, AFTER AvpShowViews,

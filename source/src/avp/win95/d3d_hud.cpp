@@ -163,7 +163,7 @@ void Draw_HUDImage(HUDImageDesc *imageDescPtr)
 	int uvU1 = imageDescPtr->TopLeftU + imageDescPtr->Width;
 	int uvV1 = imageDescPtr->TopLeftV + imageDescPtr->Height;
 	{
-		int uvScale = HUD_AtlasUVScale(imageDescPtr->ImageNumber, HUD_ATLAS_STOCK_SIZE);
+		int uvScale = HUD_AtlasUVScale(imageDescPtr->ImageNumber);
 		if (uvScale != ONE_FIXED)
 		{
 			uvU0 = MUL_FIXED(uvU0, uvScale);
@@ -220,6 +220,7 @@ void D3D_InitialiseMarineHUD(void)
 	{
 		HUDResolution = HUD_RES_MED;
 		HUDImageNumber = CL_LoadImageOnce("Huds\\Marine\\MarineHUD.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+		HUD_SetAtlasStockSize(HUDImageNumber, 256); /* authored size; see hud_layout.h */
 		MotionTrackerHalfWidth = 127/2;
 		MotionTrackerTextureSize = 128;
 
@@ -234,7 +235,7 @@ void D3D_InitialiseMarineHUD(void)
 		   uses for them here. MotionTrackerHalfWidth is deliberately NOT scaled —
 		   that one drives the on-screen geometry, not the texture lookup. */
 		MotionTrackerTextureSize = MUL_FIXED(MotionTrackerTextureSize,
-		                                     HUD_AtlasUVScale(HUDImageNumber, HUD_ATLAS_STOCK_SIZE));
+		                                     HUD_AtlasUVScale(HUDImageNumber));
 
 		BlueBar.ImageNumber = HUDImageNumber;
 		BlueBar.TopLeftX = 0;
@@ -254,6 +255,7 @@ void D3D_InitialiseMarineHUD(void)
 
 		/* load in sfx */
 		SpecialFXImageNumber = CL_LoadImageOnce("Common\\partclfx.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+		HUD_SetAtlasStockSize(SpecialFXImageNumber, 256); /* authored size; see hud_layout.h */
 
 //		SpecialFXImageNumber = CL_LoadImageOnceEx("flame1",IRF_D3D,DDSCAPS_SYSTEMMEMORY,0);;
 //		SpecialFXImageNumber = CL_LoadImageOnceEx("star",IRF_D3D,DDSCAPS_SYSTEMMEMORY,0);;
@@ -300,17 +302,21 @@ void LoadCommonTextures(void)
 			case I_Predator:
 			{
 				PredatorNumbersImageNumber = CL_LoadImageOnce("HUDs\\Predator\\predNumbers.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+				HUD_SetAtlasStockSize(PredatorNumbersImageNumber, 256); /* authored size; see hud_layout.h */
 				StaticImageNumber = CL_LoadImageOnce("Common\\static.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE|LIO_TRANSPARENT);
+				HUD_SetAtlasStockSize(StaticImageNumber, 128); /* authored size; see hud_layout.h */
 				break;
 			}
 			case I_Alien:
 			{
 				AlienTongueImageNumber = CL_LoadImageOnce("HUDs\\Alien\\AlienTongue.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+				HUD_SetAtlasStockSize(AlienTongueImageNumber, 128); /* authored size; see hud_layout.h */
 				break;
 			}
 			case I_Marine:
 			{
 				StaticImageNumber = CL_LoadImageOnce("Common\\static.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE|LIO_TRANSPARENT);
+				HUD_SetAtlasStockSize(StaticImageNumber, 128); /* authored size; see hud_layout.h */
 //			   	ChromeImageNumber = CL_LoadImageOnce("Common\\water2.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE|LIO_TRANSPARENT);
 				break;
 			}
@@ -321,15 +327,22 @@ void LoadCommonTextures(void)
 	else
 	{
    		PredatorNumbersImageNumber = CL_LoadImageOnce("HUDs\\Predator\\predNumbers.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+   		HUD_SetAtlasStockSize(PredatorNumbersImageNumber, 256); /* authored size; see hud_layout.h */
    		StaticImageNumber = CL_LoadImageOnce("Common\\static.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE|LIO_TRANSPARENT);
+   		HUD_SetAtlasStockSize(StaticImageNumber, 128); /* authored size; see hud_layout.h */
 		AlienTongueImageNumber = CL_LoadImageOnce("HUDs\\Alien\\AlienTongue.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+		HUD_SetAtlasStockSize(AlienTongueImageNumber, 128); /* authored size; see hud_layout.h */
 	  //	ChromeImageNumber = CL_LoadImageOnce("Common\\water2.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE|LIO_TRANSPARENT);
 	}
 	
 	HUDFontsImageNumber = CL_LoadImageOnce("Common\\HUDfonts.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+	HUD_SetAtlasStockSize(HUDFontsImageNumber, 128); /* authored size; see hud_layout.h */
 	SpecialFXImageNumber = CL_LoadImageOnce("Common\\partclfx.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE/*|LIO_TRANSPARENT*/);
+	HUD_SetAtlasStockSize(SpecialFXImageNumber, 256); /* authored size; see hud_layout.h */
 	CloudyImageNumber = CL_LoadImageOnce("Common\\cloudy.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+	HUD_SetAtlasStockSize(CloudyImageNumber, 128); /* authored size; see hud_layout.h */
 	BurningImageNumber = CL_LoadImageOnce("Common\\burn.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE);
+	HUD_SetAtlasStockSize(BurningImageNumber, 128); /* authored size; see hud_layout.h */
 //	RebellionLogoImageNumber = CL_LoadImageOnce("Common\\logo.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE|LIO_TRANSPARENT);
 //	FoxLogoImageNumber = CL_LoadImageOnce("Common\\foxlogo.RIM",LIO_D3DTEXTURE|LIO_RELATIVEPATH|LIO_RESTORABLE|LIO_TRANSPARENT);
 	

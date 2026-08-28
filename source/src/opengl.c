@@ -2137,11 +2137,57 @@ void D3D_HUD_Setup()
  * stock-sized atlas behaves exactly as before.
  *
  * 16.16 fixed point, to match the MUL_FIXED the callers use. */
-int HUD_AtlasUVScale(int imageNumber, int stockSize)
+/* Per-atlas authored ("stock") size, registered by d3d_hud.cpp as each HUD atlas
+   is loaded. 0 = not registered = do not rescale.
+
+   This MUST be per atlas. It was originally a single global constant of 256,
+   which is right for MarineHUD.RIM but wrong for most of the others that go
+   through Draw_HUDImage: Common\HUDfonts.RIM, Common\static.RIM,
+   HUDs\Alien\AlienTongue.RIM, Common\cloudy.RIM and Common\burn.RIM are all
+   128x128. Against a 256 reference those produced a scale of 0.5 and HALVED
+   their UVs on stock assets, which is what broke the Predator's tri-crosshair
+   (drawn from HUDfonts at U=1,V=51) on every platform. */
+#define HUD_MAX_ATLASES 8
+static struct { int imageNumber; int stockSize; } HUDAtlasStock[HUD_MAX_ATLASES];
+static int HUDAtlasStockCount = 0;
+
+void HUD_SetAtlasStockSize(int imageNumber, int stockSize)
+{
+	int i;
+
+	if (imageNumber < 0 || stockSize <= 0) return;
+
+	for (i = 0; i < HUDAtlasStockCount; i++) {
+		if (HUDAtlasStock[i].imageNumber == imageNumber) {
+			HUDAtlasStock[i].stockSize = stockSize;
+			return;
+		}
+	}
+
+	if (HUDAtlasStockCount < HUD_MAX_ATLASES) {
+		HUDAtlasStock[HUDAtlasStockCount].imageNumber = imageNumber;
+		HUDAtlasStock[HUDAtlasStockCount].stockSize   = stockSize;
+		HUDAtlasStockCount++;
+	}
+}
+
+int HUD_AtlasUVScale(int imageNumber)
 {
 	D3DTexture *tex;
+	int stockSize = 0;
+	int i;
 
+	for (i = 0; i < HUDAtlasStockCount; i++) {
+		if (HUDAtlasStock[i].imageNumber == imageNumber) {
+			stockSize = HUDAtlasStock[i].stockSize;
+			break;
+		}
+	}
+
+	/* Unregistered atlas: leave the UVs exactly as the 1999 code emitted them.
+	   Guessing a reference here is what caused the bug above. */
 	if (stockSize <= 0) return ONE_FIXED;
+
 	tex = ImageHeaderArray[imageNumber].D3DTexture;
 	if (!tex || tex->w == 0) return ONE_FIXED;
 

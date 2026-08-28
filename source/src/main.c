@@ -1052,7 +1052,11 @@ static bool init_xr_instance(void)
 #endif
 
     XrApplicationInfo app_info = {0};
-    SDL_strlcpy(app_info.applicationName, "AvP",  XR_MAX_APPLICATION_NAME_SIZE);
+    /* This is what the runtime shows as the running application — SteamVR puts it
+       in the VR dashboard, and it wins over the name on a non-Steam shortcut.
+       Keep it in step with the SDL window title in SetOGLVideoMode. Limit is
+       XR_MAX_APPLICATION_NAME_SIZE (128); SDL_strlcpy truncates safely. */
+    SDL_strlcpy(app_info.applicationName, "Aliens Versus Predator: VR",  XR_MAX_APPLICATION_NAME_SIZE);
     app_info.applicationVersion = 1;
     SDL_strlcpy(app_info.engineName, "SDL3", XR_MAX_ENGINE_NAME_SIZE);
     /* Request OpenXR 1.0, not XR_CURRENT_API_VERSION (1.1 in the bundled headers).

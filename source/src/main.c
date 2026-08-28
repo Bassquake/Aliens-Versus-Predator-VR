@@ -3954,11 +3954,22 @@ static int SetOGLVideoMode(int Width, int Height)
 
     SDL_GetWindowSize(window, &Width, &Height);
 
-#if defined(__ANDROID__)
-    /* Use 640x480 virtual coordinates on Android so 2D HUD/progress-screen text
-       (designed for 640x480 virtual space) normalises to correct NDC without glyph
-       downscaling. VR 3D mode (AvpShowViewsVR) overrides SDB to eye FBO size. */
+#if defined(__ANDROID__) && !defined(AVP_DISABLE_XR)
+    /* Quest: 640x480 virtual coordinates so 2D HUD/progress-screen text (designed
+       for 640x480 virtual space) normalises to correct NDC without glyph
+       downscaling. Safe here because VR 3D mode (AvpShowViewsVR) overrides SDB to
+       the eye FBO size before rendering the world, so the 3D aspect comes from the
+       eye buffer, not from this. */
     SetWindowSize(Width, Height, 640, 480);
+#elif defined(__ANDROID__)
+    /* Phone/tablet (AVP_DISABLE_XR): native virtual size, exactly like desktop.
+       This flavor renders the world through the FLAT AvpShowViews() path, which —
+       unlike AvpShowViewsVR — never overrides SDB. Left at 640x480 the world was
+       projected for 4:3 and then stretched across the real window (1280x672 on a
+       Galaxy S7, ~1.9:1), i.e. squashed vertically. The menus looked right
+       throughout because they are composited into the fixed 640x480 software
+       surface and presented pillarboxed by FlipBuffers, independent of SDB. */
+    SetWindowSize(Width, Height, Width, Height);
 #elif defined(AVP_PCVR)
     /* Same 640x480 virtual space as Quest while the headset is active (the 2D
        menu/progress readback path assumes it); normal desktop sizing when XR

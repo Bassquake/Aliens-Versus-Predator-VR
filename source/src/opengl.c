@@ -2204,7 +2204,32 @@ void D3D_HUDQuad_Output(int imageNumber, struct VertexTag *quadVerticesPtr, unsi
 
 /* possibly use polygon offset? (predator hud) */
 
-	CheckTriangleBuffer(4, 0, 0, 0, tex, TRANSLUCENCY_GLOWING, -1);
+	/* HUD art is normally point-sampled: -1 leaves the current filtering mode,
+	   which the HUD text path leaves at FILTERING_BILINEAR_OFF (GL_NEAREST).
+	   That is exactly right for a stock atlas, where the quad is drawn 1:1 with
+	   the texels and nearest sampling is lossless.
+
+	   An HD atlas is a different matter. Its UVs get rescaled (see
+	   HUD_AtlasUVScale) so the same 13x13 gunsight now covers 52x52 texels, i.e.
+	   4:1 MINIFICATION — and point-sampling a minified image aliases: it keeps
+	   one texel in every 4x4 block at full weight instead of averaging them.
+	   Measured on HD Redux's 1024x1024 MarineHUD, that rendered the Marine
+	   crosshair with 36 lit pixels against 16 for both stock and retail; box
+	   -downsampling the same HD art gives exactly 16, so the art was never the
+	   problem, only the sampling.
+
+	   So ask for BILINEAR_ON whenever this atlas is being rescaled, which selects
+	   GL_LINEAR + the mip chain (already generated for every texture) and lets
+	   the GPU do the 4:1 downsample properly. A stock-sized atlas still passes
+	   -1 and renders byte-identically to before. */
+	{
+		enum FILTERING_MODE_ID hudFilter = (enum FILTERING_MODE_ID)-1;
+
+		if (HUD_AtlasUVScale(imageNumber) != ONE_FIXED)
+			hudFilter = FILTERING_BILINEAR_ON;
+
+		CheckTriangleBuffer(4, 0, 0, 0, tex, TRANSLUCENCY_GLOWING, hudFilter);
+	}
 	
 	RecipW = tex->RecipW / 65536.0f;
 	RecipH = tex->RecipH / 65536.0f;

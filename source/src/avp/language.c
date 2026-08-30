@@ -122,7 +122,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AVOPTIONS_CROSSHAIR: return "Show Crosshair";
 			case TEXTSTRING_AVOPTIONS_CROSSHAIR_HELP: return "Crosshair helps with aiming.";
 			case TEXTSTRING_AVOPTIONS_FRAMERATE: return "Show FPS";
-			case TEXTSTRING_AVOPTIONS_FRAMERATE_HELP: return "Displays an FPS counter at top left.";
+			case TEXTSTRING_AVOPTIONS_FRAMERATE_HELP: return "Displays an FPS (Frames Per Second) counter at top left as screens Hz / gameplay fps.";
 			case TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE: return "Refresh Rate";
 			case TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP: return "Sets the refresh rate of the headset.";
 			case TEXTSTRING_VR_REFRESH_72:  return "72 Hz (Default)";

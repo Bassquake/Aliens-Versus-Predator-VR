@@ -5794,13 +5794,16 @@ void HandleCheatModeFeatures(void)
 
 void ShowMenuFrameRate(void)
 {
-	extern int NormalFrameTime;
+	extern int GetSmoothedFrameRate(void);
 	extern float VR_GetTargetHz(void);
+	extern float Platform_GetDisplayRefreshHz(void);
 	extern int ShowFrameRate;
 	if (!ShowFrameRate) return;
 	char buffer[24];
-	int fps = NormalFrameTime > 0 ? 65536 / NormalFrameTime : 0;
+	int fps = GetSmoothedFrameRate();
+	/* Headset rate when a session is presenting, otherwise the monitor's. */
 	float target_hz = VR_GetTargetHz();
+	if (target_hz <= 0.0f) target_hz = Platform_GetDisplayRefreshHz();
 	if (target_hz > 0.0f)
 		SDL_snprintf(buffer, sizeof(buffer), "%d fps/%.0f Hz", fps, target_hz);
 	else

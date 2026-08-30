@@ -622,6 +622,29 @@ void ResetFrameCounter(void)
 	RouteFinder_CallsThisFrame = 0;
 }
 
+/* Smoothed frame rate for the on-screen FPS counters, averaged over a window
+   rather than derived from the last frame.
+
+   The per-frame figure cannot be used for display above about 100 fps.
+   timeGetTime() has millisecond resolution and the delta is clamped to >= 1, so
+   fps = 65536/NormalFrameTime works out to exactly 1000/ms — the only values it
+   can ever show are 1000, 500, 333, 250, 200, 166, ... That is why an uncapped
+   menu reads a suspiciously round "500": it is the 2 ms bucket, not a
+   measurement. Near 60 fps (16-17 ms) the quantisation is only +/-3 fps, which
+   is why it looks fine when vsync is capping things.
+
+   Averaging frames over ~500 ms removes the quantisation entirely and costs
+   nothing. Accumulates the RAW delta, before the >= 1 clamp below, so frames
+   that genuinely measure 0 ms do not inflate the elapsed time. */
+static int fpsWindowMs     = 0;
+static int fpsWindowFrames = 0;
+static int fpsSmoothed     = 0;
+
+int GetSmoothedFrameRate(void)
+{
+	return fpsSmoothed;
+}
+
 void FrameCounterHandler(void)
 {
 	int newTickCount = timeGetTime();
@@ -629,6 +652,14 @@ void FrameCounterHandler(void)
 
 	fcnt_milliseconds = newTickCount - lastTickCount;
 	lastTickCount = newTickCount;
+
+	fpsWindowMs += fcnt_milliseconds > 0 ? fcnt_milliseconds : 0;
+	fpsWindowFrames++;
+	if (fpsWindowMs >= 500) {
+		fpsSmoothed = (fpsWindowFrames * 1000 + fpsWindowMs / 2) / fpsWindowMs;
+		fpsWindowMs = 0;
+		fpsWindowFrames = 0;
+	}
 
 	if (fcnt_milliseconds <= 0) {
 		fcnt_milliseconds = 1;

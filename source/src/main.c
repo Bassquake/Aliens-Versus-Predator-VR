@@ -222,7 +222,12 @@ int   VR_IsIn3DMode(void)           { return 0; }
 int   VR_SessionActive(void)        { return 0; }
 int   VR_HeadsetActive(void)        { return 0; }
 int   VR_IsBatterySaverActive(void) { return 0; }
-float VR_GetTargetHz(void)          { return 60.0f; }
+/* 0 = "no headset refresh target", which is the truth on a non-XR build. Both
+   callers (the menu and in-game FPS counters) treat >0 as "append /<n> Hz", so
+   this is what stops a flat build claiming "/60 Hz" on, say, a 144 Hz monitor.
+   It used to return 60.0f. Matches the real implementation further down, which
+   already returns 0 when there is no XR frame state — a PCVR exe running flat. */
+float VR_GetTargetHz(void)          { return 0.0f; }
 #endif /* !AVP_XR */
 
 #ifdef AVP_XR
@@ -3875,15 +3880,49 @@ static int SetOGLVideoMode(int Width, int Height)
             SDL_Log("GL context depth buffer: %d bits, double-buffered: %d", gotDepth, gotDouble);
         }
         
+        /* Name the software rasterisers explicitly. This used to test only for
+           "SwiftShader" and "software", which misses every Mesa one — llvmpipe,
+           softpipe, swrast, lavapipe — so a software fallback was cheerfully
+           reported as "Hardware rendering confirmed".
+
+           That is not cosmetic. A 32-bit build on a machine with only 64-bit GPU
+           drivers silently lands on llvmpipe: it cannot vsync, so the frontend
+           free-runs at several hundred fps while gameplay crawls, and the only
+           clue was an FPS counter reading a number that looked wrong. */
         const char *renderer = (const char *)glGetString(GL_RENDERER);
-        if (strstr(renderer, "SwiftShader") || strstr(renderer, "software")) {
-            SDL_Log("WARNING: Software rendering detected!");
+        if (!renderer) renderer = "(null)";
+        if (strstr(renderer, "SwiftShader") || strstr(renderer, "software")
+         || strstr(renderer, "llvmpipe")    || strstr(renderer, "softpipe")
+         || strstr(renderer, "swrast")      || strstr(renderer, "lavapipe")) {
+            SDL_Log("WARNING: SOFTWARE rendering (%s) - no GPU driver for this "
+                    "build's architecture. Expect low frame rates and no vsync.",
+                    renderer);
         } else {
             SDL_Log("Hardware rendering confirmed: %s", renderer);
         }
         
         // These should be configurable video options.
-        SDL_GL_SetSwapInterval(1);
+        /* Check the result: this request is honoured on Windows but drivers and
+           compositors are free to refuse it (Mesa with vblank_mode=0, some X11
+           and Wayland setups). Silently ignoring a refusal leaves the frontend
+           free-running — the menu is a 640x480 blit plus one quad, so it will
+           happily spin at several hundred fps, burning a core to draw a static
+           screen. Log it so an uncapped frame rate is explainable rather than
+           mysterious. */
+        if (!SDL_GL_SetSwapInterval(1)) {
+            SDL_Log("WARNING: vsync request refused (%s) - frame rate is uncapped",
+                    SDL_GetError());
+        } else {
+            SDL_Log("vsync enabled (swap interval 1)");
+        }
+        {
+            /* The rate vsync is capping to, and what the FPS counter shows after
+               the "/" on flat builds. */
+            extern float Platform_GetDisplayRefreshHz(void);
+            float hz = Platform_GetDisplayRefreshHz();
+            if (hz > 0.0f) SDL_Log("display refresh: %.0f Hz", hz);
+            else           SDL_Log("display refresh: unknown");
+        }
         
         load_ogl_functions(1);
         
@@ -4367,6 +4406,33 @@ static void handle_keypress(int key, int unicode, int press)
     if (press)
         GotAnyKey = 1;
     KeyboardInput[key] = press;
+}
+
+/* Refresh rate of the display the game window is currently on, for the FPS
+   counter's "/<n> Hz" on flat builds. 0 when unknown, which the callers treat as
+   "show fps only".
+
+   Queried live rather than cached so dragging the window to a second monitor
+   with a different rate is picked up. It is only called while the counter is
+   actually being drawn, so the cost is irrelevant.
+
+   This is the flat-path counterpart to VR_GetTargetHz(): a headset's rate comes
+   from the OpenXR runtime, a monitor's from SDL. Callers prefer the former when
+   a session is live. */
+float Platform_GetDisplayRefreshHz(void)
+{
+    SDL_DisplayID id;
+    const SDL_DisplayMode *mode;
+
+    if (!window) return 0.0f;
+
+    id = SDL_GetDisplayForWindow(window);
+    if (!id) return 0.0f;
+
+    mode = SDL_GetCurrentDisplayMode(id);
+    if (!mode || mode->refresh_rate <= 0.0f) return 0.0f;
+
+    return mode->refresh_rate;
 }
 
 /* Show/hide the system on-screen keyboard for menu text entry. Idempotent —
@@ -5190,7 +5256,14 @@ int main(int argc, char *argv[])
                             && !VR_IsIn3DMode()
 #endif
                            )
-                        MaintainHUD();
+                        {
+                            extern void ShowGameFrameRate(void);
+                            MaintainHUD();
+                            /* "Show FPS" for the flat path. The VR eye pass draws
+                               its own counter in AvpShowViewsVR, and VR 3D mode
+                               skips this whole branch, so there is no double draw. */
+                            ShowGameFrameRate();
+                        }
 
                         CheckCDAndChooseTrackIfNeeded();
                         

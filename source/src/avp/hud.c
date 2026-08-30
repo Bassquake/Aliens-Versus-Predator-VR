@@ -96,6 +96,38 @@ int GunMuzzleSightX, GunMuzzleSightY;
 int ShowCrosshair = 1; /* 1 = draw crosshair, 0 = hide; toggled from AV options menu */
 int ShowFrameRate = 0; /* 1 = draw FPS counter, 0 = hide; toggled from AV options menu */
 
+/* In-game FPS counter for the FLAT render path, drawn top-left to match the
+   frontend's ShowMenuFrameRate (avp_menus.c) — same figure, same corner, same
+   format, so the reading does not change when you leave the menus.
+
+   The VR eye pass draws its own counter inside AvpShowViewsVR, which is why
+   "Show FPS" appeared to work in menus but never in gameplay: nothing on the
+   flat path ever drew one. main.c calls this alongside MaintainHUD, in the
+   branch the VR 3D pass deliberately skips, so the two cannot double up. */
+void ShowGameFrameRate(void)
+{
+	extern int GetSmoothedFrameRate(void);
+	extern float VR_GetTargetHz(void);
+	extern float Platform_GetDisplayRefreshHz(void);
+	char buffer[24];
+	int fps;
+	float target_hz;
+
+	if (!ShowFrameRate) return;
+
+	fps = GetSmoothedFrameRate();
+	/* Headset rate when a session is presenting, otherwise the monitor's. */
+	target_hz = VR_GetTargetHz();
+	if (target_hz <= 0.0f) target_hz = Platform_GetDisplayRefreshHz();
+
+	if (target_hz > 0.0f)
+		SDL_snprintf(buffer, sizeof(buffer), "%d fps/%.0f Hz", fps, target_hz);
+	else
+		SDL_snprintf(buffer, sizeof(buffer), "%d fps", fps);
+
+	RenderString(buffer, 20, 20, 0xFFFFFFFF);
+}
+
 /* motion tracker info */
 static int MTScanLineSize=MOTIONTRACKER_SMALLESTSCANLINESIZE;
 static int PreviousMTScanLineSize=MOTIONTRACKER_SMALLESTSCANLINESIZE;

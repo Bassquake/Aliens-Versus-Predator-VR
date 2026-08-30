@@ -3430,62 +3430,256 @@ VideoModeStruct VideoModeList[] = {
 int CurrentVideoMode;
 const int TotalVideoModes = sizeof(VideoModeList) / sizeof(VideoModeList[0]);
 
-void LoadDeviceAndVideoModePreferences()
+/* ---- Video-mode preference, stored in <gamedir>/config.cfg ---------------
+
+   config.cfg is the game's own settings file: the console replays it at
+   startup (BatchFileProcessing::Run, davehook.c) and rewrites it with the
+   current key bindings on every level exit (KeyBinding::WriteToConfigFile),
+   so the resolution belongs there rather than in a second file beside it.
+
+   It is written as a COMMENT. consbtch.cpp skips any line beginning with '#',
+   so the command processor never sees it, no console command has to be
+   registered for it, and an older build ignores it. A stock config.cfg has no
+   such line and simply falls through to the desktop-resolution default below,
+   which is also what happens if a user deletes the line by hand.
+
+   Note this stores the RESOLUTION, not the index into VideoModeList. That
+   list has gained entries before, and an index would silently come to mean a
+   different mode after any future edit to it. */
+#define VIDEOMODE_CONFIG_FILE "config.cfg"
+#define VIDEOMODE_CONFIG_TAG  "#VIDEOMODE"
+
+/* Does this line carry our setting? Case-insensitive so a hand-edited file
+   works either way; the console uppercases everything it reads, we don't. */
+static int VideoModeConfigLine(const char *line)
+{
+    const char *tag = VIDEOMODE_CONFIG_TAG;
+
+    while (*tag) {
+        if (toupper((unsigned char)*line) != *tag) return 0;
+        line++;
+        tag++;
+    }
+    return (*line == ' ' || *line == '\t');
+}
+
+/* The stored mode as an index into VideoModeList, or -1 if config.cfg has no
+   usable line. Availability is NOT checked here — the caller does that. */
+static int VideoModeFromConfigFile(void)
 {
     FILE *fp;
-    int mode;
-    
-    fp = OpenGameFile("avp_tempvideo.cfg", FILEMODE_READONLY, FILETYPE_CONFIG);
-    
-    if (fp != NULL) {
-        // fullscreen mode (0=window,1=fullscreen,2=fullscreen desktop)
-        // window width
-        // window height
-        // fullscreen width
-        // fullscreen height
-        // fullscreen desktop aspect ratio n
-        // fullscreen desktop aspect ratio d
-        // fullscreen desktop scale n
-        // fullscreen desktop scale d
-        // multisample number of samples (0/2/4)
-        if (fscanf(fp, "%d", &mode) == 1) {
-            fclose(fp);
-            
-            if (mode >= 0 && mode < TotalVideoModes && VideoModeList[mode].available) {
-                CurrentVideoMode = mode;
-                return;
-            }
-        } else {
-            fclose(fp);
-        }
-    }
-    
-    /* No, or invalid, mode found */
-    
-    /* Try 640x480 first */
-    if (VideoModeList[1].available) {
-        CurrentVideoMode = 1;
-    } else {
-        int i;
-        
+    char line[256];
+    int found = -1;
+
+    fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_READONLY, FILETYPE_CONFIG);
+    if (fp == NULL) return -1;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        int w, h, i;
+
+        if (!VideoModeConfigLine(line)) continue;
+        if (sscanf(line + sizeof(VIDEOMODE_CONFIG_TAG) - 1, "%d %d", &w, &h) != 2) continue;
+
         for (i = 0; i < TotalVideoModes; i++) {
-            if (VideoModeList[i].available) {
-                CurrentVideoMode = i;
+            if (VideoModeList[i].w == w && VideoModeList[i].h == h) {
+                found = i;    /* a later line wins, as with a repeated BIND */
                 break;
             }
         }
     }
+    fclose(fp);
+
+    return found;
+}
+
+/* The mode used when config.cfg carries no preference: the DESKTOP resolution,
+   which is what the game actually presents at. (The original fell back to
+   640x480, harmless only while the selection was ignored; now that it is
+   honoured, that would start a first run in a 640x480 letterbox.)
+
+   Keyed to SDL_GetPrimaryDisplay() rather than the window's display because it
+   runs once before the window exists. Both the load and the save go through
+   here, which is the point: an ABSENT line means "whatever this returns", so
+   if the writer decided "same as native" by any other route the two could
+   disagree and a saved choice would come back as something else. */
+static int VideoModeDefaultIndex(void)
+{
+    const SDL_DisplayMode *desktop = SDL_GetDesktopDisplayMode(SDL_GetPrimaryDisplay());
+    int i, best = 0;
+
+    if (desktop) {
+        for (i = 0; i < TotalVideoModes; i++) {
+            if (VideoModeList[i].available &&
+                VideoModeList[i].w == desktop->w && VideoModeList[i].h == desktop->h) {
+                return i;
+            }
+        }
+    }
+
+    /* Desktop mode not in the list: take the largest available that fits. */
+    for (i = 0; i < TotalVideoModes; i++) {
+        if (!VideoModeList[i].available) continue;
+        if (desktop && (VideoModeList[i].w > desktop->w || VideoModeList[i].h > desktop->h))
+            continue;
+        best = i;
+    }
+
+    return best;
+}
+
+/* Append the current mode to an already-open config.cfg. Called from the save
+   below AND from KeyBinding::WriteToConfigFile, which rebuilds that file from
+   nothing on every level exit and would otherwise drop the setting. */
+void VideoMode_WriteConfigLine(FILE *fp)
+{
+#if !defined(FIXED_WINDOW_SIZE)
+    if (fp == NULL) return;
+
+    /* Store nothing when the choice IS the default. An absent line already
+       means "native resolution", so the line would be redundant — and leaving
+       it out means a later change of desktop resolution, or moving to a
+       different monitor, is simply picked up on the next launch rather than
+       the game staying pinned to the old display's size. The save below strips
+       any previous line before calling this, so going back to native REMOVES
+       the setting rather than rewriting it. */
+    if (CurrentVideoMode == VideoModeDefaultIndex()) return;
+
+    fprintf(fp, "%s %d %d\n", VIDEOMODE_CONFIG_TAG,
+            VideoModeList[CurrentVideoMode].w,
+            VideoModeList[CurrentVideoMode].h);
+#endif
+}
+
+void LoadDeviceAndVideoModePreferences()
+{
+    int mode = VideoModeFromConfigFile();
+
+    /* Legacy: this used to live in the port's own avp_tempvideo.cfg, as an
+       index. Honour it once so an existing choice survives the move; the next
+       write of config.cfg (a resolution change, or any level exit) carries it
+       over and the old file is then deleted. */
+    if (mode < 0) {
+        FILE *fp = OpenGameFile("avp_tempvideo.cfg", FILEMODE_READONLY, FILETYPE_CONFIG);
+
+        if (fp != NULL) {
+            int old;
+
+            if (fscanf(fp, "%d", &old) == 1 && old >= 0 && old < TotalVideoModes)
+                mode = old;
+            fclose(fp);
+        }
+    }
+
+    /* No, or invalid, mode found: fall back to the native resolution. */
+    CurrentVideoMode = (mode >= 0 && VideoModeList[mode].available)
+                     ? mode
+                     : VideoModeDefaultIndex();
+}
+
+/* Make the selected resolution actually take effect.
+
+   THIS is what the option was missing. The window is created with
+   SDL_WINDOW_FULLSCREEN but no fullscreen mode ever set, and SDL3 treats that as
+   borderless-fullscreen-DESKTOP: it ignores the requested size entirely and uses
+   whatever the display is already running. So CurrentVideoMode reached
+   SDL_CreateWindow and was then silently discarded, on every platform.
+
+   Setting the mode explicitly fixes it: NULL keeps the borderless-desktop
+   behaviour (correct when the selection IS the desktop resolution, and the nicer
+   option there — no mode switch, instant alt-tab), anything else switches to the
+   closest real exclusive mode.
+
+   Safe to call at any time; the resulting resize is picked up by the existing
+   SDL_EVENT_WINDOW_RESIZED handler, which updates SDB, the viewport and the MSAA
+   target. No-op where the platform fixes the window size for us (Android/iOS). */
+void ApplySelectedVideoMode(void)
+{
+#if !defined(FIXED_WINDOW_SIZE)
+    SDL_DisplayID disp;
+    const SDL_DisplayMode *desktop;
+    int w, h;
+
+    if (!window) return;
+
+    disp    = SDL_GetDisplayForWindow(window);
+    desktop = SDL_GetDesktopDisplayMode(disp);
+    w = VideoModeList[CurrentVideoMode].w;
+    h = VideoModeList[CurrentVideoMode].h;
+
+    if (desktop && desktop->w == w && desktop->h == h) {
+        SDL_SetWindowFullscreenMode(window, NULL);
+        SDL_Log("video mode: %dx%d (borderless desktop)", w, h);
+    } else {
+        SDL_DisplayMode closest;
+        if (SDL_GetClosestFullscreenDisplayMode(disp, w, h, 0.0f, false, &closest)) {
+            SDL_SetWindowFullscreenMode(window, &closest);
+            SDL_Log("video mode: %dx%d (exclusive %dx%d @ %.0f Hz)",
+                    w, h, closest.w, closest.h, closest.refresh_rate);
+        } else {
+            SDL_SetWindowFullscreenMode(window, NULL);
+            SDL_Log("video mode: %dx%d unavailable, using borderless desktop", w, h);
+        }
+    }
+    SDL_SyncWindow(window);
+#endif
 }
 
 void SaveDeviceAndVideoModePreferences()
 {
     FILE *fp;
-    
-    fp = OpenGameFile("avp_tempvideo.cfg", FILEMODE_WRITEONLY, FILETYPE_CONFIG);
+    char *contents = NULL;
+    long size = 0;
+
+    /* Read-modify-write. config.cfg is the game's file, not ours — it ships
+       with the game and holds the key bindings — so every line that isn't
+       ours has to come back out unchanged, and OpenGameFile has no
+       update-in-place mode ("wb" truncates). Slurp it, then rewrite it. */
+    fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_READONLY, FILETYPE_CONFIG);
     if (fp != NULL) {
-        fprintf(fp, "%d\n", CurrentVideoMode);
+        if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > 0 && size < (1024 * 1024)) {
+            rewind(fp);
+            contents = (char *)malloc((size_t)size + 1);
+            if (contents != NULL)
+                contents[fread(contents, 1, (size_t)size, fp)] = '\0';
+        }
         fclose(fp);
     }
+
+    fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_WRITEONLY, FILETYPE_CONFIG);
+    if (fp == NULL) {
+        free(contents);
+        return;
+    }
+
+    if (contents != NULL) {
+        char *p = contents;
+        int endedWithNewline = 1;
+
+        while (*p) {
+            char *eol = strchr(p, '\n');
+            size_t len = (eol != NULL) ? (size_t)(eol - p) + 1 : strlen(p);
+
+            /* Drop any previous copy of our line rather than accumulating one
+               per resolution change. */
+            if (!VideoModeConfigLine(p)) {
+                fwrite(p, 1, len, fp);
+                endedWithNewline = (p[len - 1] == '\n');
+            }
+            if (eol == NULL) break;
+            p = eol + 1;
+        }
+
+        /* A file not ending in a newline would otherwise absorb our line. */
+        if (!endedWithNewline) fputc('\n', fp);
+
+        free(contents);
+    }
+
+    VideoMode_WriteConfigLine(fp);
+    fclose(fp);
+
+    /* The setting lives in config.cfg now; retire the file it used to be in. */
+    DeleteGameFile("avp_tempvideo.cfg");
 }
 
 void PreviousVideoMode2()
@@ -3527,9 +3721,21 @@ char *GetVideoModeDescription2()
 char *GetVideoModeDescription3()
 {
     static char buf[64];
-    
-    _snprintf(buf, 64, "%dx%d", VideoModeList[CurrentVideoMode].w, VideoModeList[CurrentVideoMode].h);
-    
+    const SDL_DisplayMode *desktop = SDL_GetDesktopDisplayMode(SDL_GetPrimaryDisplay());
+    int w = VideoModeList[CurrentVideoMode].w;
+    int h = VideoModeList[CurrentVideoMode].h;
+
+    /* Tag the resolution the monitor is actually running at. This is a plain
+       comparison against the desktop mode, NOT VideoModeDefaultIndex(): the
+       two differ when the desktop resolution isn't one of the listed modes, and
+       there the honest answer is that no entry is native. Hardcoded rather than
+       a TEXTSTRING because the shipped language.txt has no such line — as the
+       surrounding "SDL3" and "%dx%d" already are. */
+    if (desktop && desktop->w == w && desktop->h == h)
+        _snprintf(buf, 64, "%dx%d (Native)", w, h);
+    else
+        _snprintf(buf, 64, "%dx%d", w, h);
+
     return buf;
 }
 
@@ -3637,19 +3843,49 @@ int InitSDL()
 	}
 #endif
     
+    /* Mark which of the listed resolutions this display can actually do.
+       Previously every entry was marked available unconditionally (the real
+       detection above is SDL1-era and compiled out), so the menu offered all 29
+       modes up to 8192x4320 whatever the monitor was. */
     {
-        int i;
-        
-        for (i = 0; i < TotalVideoModes; i++) {
-            //if (SDL_VideoModeOK(VideoModeList[i].w, VideoModeList[i].h, 16, SDL_FULLSCREEN | SDL_OPENGL)) {
-            /* assume SDL isn't lying to us */
-            VideoModeList[i].available = 1;
-            
-            //foundit = 1;
-            //}
+        int i, j, count = 0, any = 0;
+        SDL_DisplayID disp = SDL_GetPrimaryDisplay();
+        SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(disp, &count);
+        const SDL_DisplayMode *desktop = SDL_GetDesktopDisplayMode(disp);
+
+        for (i = 0; i < TotalVideoModes; i++) VideoModeList[i].available = 0;
+
+        if (modes) {
+            for (i = 0; i < TotalVideoModes; i++)
+                for (j = 0; j < count; j++)
+                    if (modes[j]->w == VideoModeList[i].w &&
+                        modes[j]->h == VideoModeList[i].h) {
+                        VideoModeList[i].available = 1;
+                        break;
+                    }
+            SDL_free(modes);
         }
+
+        /* Always offer the desktop resolution: it is the borderless-fullscreen
+           case and is not guaranteed to appear in the exclusive-mode list. */
+        if (desktop)
+            for (i = 0; i < TotalVideoModes; i++)
+                if (VideoModeList[i].w == desktop->w && VideoModeList[i].h == desktop->h)
+                    VideoModeList[i].available = 1;
+
+        for (i = 0; i < TotalVideoModes; i++) any += VideoModeList[i].available;
+        if (!any) {
+            /* Driver told us nothing usable — fall back to the old behaviour
+               rather than leaving the player with an empty list. */
+            for (i = 0; i < TotalVideoModes; i++) VideoModeList[i].available = 1;
+            any = TotalVideoModes;
+        }
+
+        SDL_Log("desktop mode %dx%d; %d of %d listed resolutions usable (driver reported %d modes)",
+                desktop ? desktop->w : 0, desktop ? desktop->h : 0,
+                any, TotalVideoModes, count);
     }
-    
+
     LoadDeviceAndVideoModePreferences();
 
 #ifdef AVP_XR
@@ -4059,6 +4295,9 @@ static int SetOGLVideoMode(int Width, int Height)
         } else {
             SDL_Log("vsync enabled (swap interval 1)");
         }
+        /* The window was created SDL_WINDOW_FULLSCREEN with no mode set, which
+           SDL3 resolves to borderless desktop. Apply the saved selection now. */
+        ApplySelectedVideoMode();
         {
             /* The rate vsync is capping to, and what the FPS counter shows after
                the "/" on flat builds. */

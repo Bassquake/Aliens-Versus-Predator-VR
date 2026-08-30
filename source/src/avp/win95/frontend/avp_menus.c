@@ -3387,7 +3387,11 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 		{
 			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
 			{
+				extern void ApplySelectedVideoMode(void);
 				SaveDeviceAndVideoModePreferences();
+				/* Apply straight away rather than next launch. The resulting
+				   resize is handled by the SDL_EVENT_WINDOW_RESIZED path. */
+				ApplySelectedVideoMode();
 				SetupNewMenu(elementPtr->b.MenuToGoTo);
 			}
 			break;

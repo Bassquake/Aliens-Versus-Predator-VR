@@ -1383,9 +1383,9 @@ void MakeConnectionSelectMenu()
      - On Android the window is created FULLSCREEN, so the requested size is
        ignored on the phone too.
    In both cases the "video card" half reads the literal string "SDL3"
-   (GetVideoModeDescription2), and selecting a mode only writes
-   avp_tempvideo.cfg for the NEXT launch, since WindowWidth/Height are read from
-   VideoModeList exactly once at startup before the window is created.
+   (GetVideoModeDescription2), and selecting a mode would only record a
+   preference (a '#VIDEOMODE' line in config.cfg) that nothing on those targets
+   ever acts on.
 
    Deliberately NOT compile-time gated on AVP_XR: a PCVR exe running flat, with
    no headset or runtime, presents to a normal window where the control does

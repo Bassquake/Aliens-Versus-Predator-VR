@@ -1372,6 +1372,43 @@ void MakeConnectionSelectMenu()
 	AvPMenu_MultiplayerConnection[pos].ElementID = AVPMENU_ELEMENT_ENDOFMENU;
 }
 
+/* Rebuild the VR "Refresh Rate" row around the rates the headset actually
+   reports, replacing the hardcoded 72/80/90/120 list.
+
+   Uses AVPMENU_ELEMENT_TEXTSLIDER_POINTER, which already exists and takes an
+   array of strings rather than a first-TEXTSTRING index — so the labels can be
+   generated at runtime ("144 Hz") with no langenum.h entries and no new element
+   type. Called from the XR session-ready path once enumeration has succeeded;
+   if it never runs, the row keeps its static list and behaves as before.
+
+   Both AV-options menus are scanned by TextDescription rather than by index, so
+   this cannot drift as rows are added or removed per target. */
+extern void PatchRefreshRateMenuFromHeadset(void)
+{
+	extern int    VR_GetRefreshRateCount(void);
+	extern char **VR_GetRefreshRateLabels(void);
+
+	int    count  = VR_GetRefreshRateCount();
+	char **labels = VR_GetRefreshRateLabels();
+	AVPMENU_ELEMENT *menus[2] = { AvPMenu_InGameAVOptions, AvPMenu_MainMenuAVOptions };
+	int m;
+
+	if (count <= 0 || !labels) return;
+
+	for (m = 0; m < 2; m++) {
+		AVPMENU_ELEMENT *e = menus[m];
+		while (e->ElementID != AVPMENU_ELEMENT_ENDOFMENU) {
+			if (e->a.TextDescription == TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE) {
+				e->ElementID                 = AVPMENU_ELEMENT_TEXTSLIDER_POINTER;
+				e->b.MaxSliderValue          = count - 1;
+				e->d.TextSliderStringPointer = labels;
+				break;
+			}
+			e++;
+		}
+	}
+}
+
 extern void PatchCDVolumeMenuForNoMusic()
 {
 	static char no_music_label[] = "No CD music found";

@@ -36,6 +36,8 @@ extern int AutoWeaponChangeOn;
 extern int ShowCrosshair;
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
+extern int VRRefreshRateHz;
+extern int VR_GetRefreshRateIndexForHz(float hz);
 extern int MSAASampleIndex;
 extern int AnisotropicFilterIndex;
 extern int TextureFilterIndex;
@@ -270,6 +272,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	ShowCrosshair = 1;
 	ShowFrameRate = 0;
 	VRRefreshRateIndex = 0;
+	VRRefreshRateHz = 0;    /* unset; resolved against the headset's list at session start */
 	MSAASampleIndex = 1; /* 2x by default */
 	VRTurnMode = 0; /* snap turn by default */
 	VRSnapAngleIndex = 1; /* 45 degrees by default */
@@ -327,7 +330,15 @@ extern void GetSettingsFromUserProfile(void)
 	AutoWeaponChangeOn = 			!UserProfilePtr->AutoWeaponChangeDisabled;
 	ShowCrosshair =				!UserProfilePtr->ShowCrosshairDisabled;
 	ShowFrameRate =				!UserProfilePtr->ShowFrameRateDisabled;
-	VRRefreshRateIndex =			UserProfilePtr->VRRefreshRateIndex;
+	/* The RATE is the stored value; the slider index is derived from it against
+	   whatever list this headset reports. Do NOT round-trip the index through
+	   the legacy VRRefreshRateIndex field: it is a 2-bit bitfield, so any index
+	   above 3 wraps to 0 on save and the setting silently reverts to the lowest
+	   rate (120 Hz is index 4 on a Quest 2, which reports 60/72/80/90/120).
+	   VR_GetRefreshRateIndexForHz returns 0 before enumeration has run, and the
+	   session-ready path recomputes it once the list is known. */
+	VRRefreshRateHz =			UserProfilePtr->VRRefreshRateHz;
+	VRRefreshRateIndex =			VR_GetRefreshRateIndexForHz((float)VRRefreshRateHz);
 	MSAASampleIndex =			UserProfilePtr->MSAASampleIndex;
 	AnisotropicFilterIndex =		UserProfilePtr->AnisotropicFilterIndex;
 	TextureFilterIndex =			UserProfilePtr->TextureFilterIndex;
@@ -372,7 +383,10 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->AutoWeaponChangeDisabled =	!AutoWeaponChangeOn;
 	profilePtr->ShowCrosshairDisabled =	!ShowCrosshair;
 	profilePtr->ShowFrameRateDisabled =	!ShowFrameRate;
-	profilePtr->VRRefreshRateIndex =	VRRefreshRateIndex;
+	/* Only the rate is stored. The legacy 2-bit index field is left at 0 — see
+	   the note in GetSettingsFromUserProfile. */
+	profilePtr->VRRefreshRateIndex =	0;
+	profilePtr->VRRefreshRateHz =	(unsigned char)(VRRefreshRateHz > 255 ? 255 : VRRefreshRateHz);
 	profilePtr->MSAASampleIndex =		MSAASampleIndex;
 	profilePtr->AnisotropicFilterIndex =	AnisotropicFilterIndex;
 	profilePtr->TextureFilterIndex =	TextureFilterIndex;

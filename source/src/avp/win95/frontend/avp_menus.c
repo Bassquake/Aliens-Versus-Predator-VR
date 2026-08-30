@@ -95,6 +95,7 @@ int CloudTable[128][128];
 extern char MP_Config_Name[];
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
+extern int VRRefreshRateHz;
 extern int MSAASampleIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
@@ -338,6 +339,7 @@ int AvP_MainMenus(void)
 		{
 			int savedShowFrameRate = ShowFrameRate;
 			int savedVRRefreshRateIndex = VRRefreshRateIndex;
+			int savedVRRefreshRateHz = VRRefreshRateHz;   /* the rate is the stored value; the index is derived */
 			int savedMSAASampleIndex = MSAASampleIndex;
 			int savedVRTurnMode = VRTurnMode;
 			int savedVRSnapAngleIndex = VRSnapAngleIndex;
@@ -354,6 +356,7 @@ int AvP_MainMenus(void)
 					GetSettingsFromUserProfile();
 					savedShowFrameRate = ShowFrameRate;
 					savedVRRefreshRateIndex = VRRefreshRateIndex;
+					savedVRRefreshRateHz = VRRefreshRateHz;
 					savedMSAASampleIndex = MSAASampleIndex;
 					savedVRTurnMode = VRTurnMode;
 					savedVRSnapAngleIndex = VRSnapAngleIndex;
@@ -375,6 +378,7 @@ int AvP_MainMenus(void)
 
 			ShowFrameRate = savedShowFrameRate;
 			VRRefreshRateIndex = savedVRRefreshRateIndex;
+			VRRefreshRateHz = savedVRRefreshRateHz;
 			MSAASampleIndex = savedMSAASampleIndex;
 			VRTurnMode = savedVRTurnMode;
 			VRSnapAngleIndex = savedVRSnapAngleIndex;

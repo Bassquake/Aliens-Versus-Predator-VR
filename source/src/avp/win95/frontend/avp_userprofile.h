@@ -112,7 +112,16 @@ typedef struct
 	unsigned char AnisotropicFilterIndex; //0=16x (default), 1=8x, 2=4x, 3=2x, 4=off (was Padding)
 	unsigned char TextureFilterIndex;     //0=trilinear (default), 1=bilinear, 2=nearest (was Padding)
 	unsigned char NPOTMipmapsEnabled;     //0=off (default), 1=on (was Padding)
-	char Padding[58];
+	/* VR refresh rate as an actual RATE in Hz (72, 90, 120, 144, 240 ... all fit
+	   a byte), NOT as an index into the menu list. The list is enumerated from
+	   the headset now, so it differs per device — an index would silently select
+	   a different rate on a headset with a different list, and would break again
+	   every time Meta adds one. 0 = unset, which picks 72 Hz if offered. The old
+	   2-bit VRRefreshRateIndex bitfield above is now unused; it is left in place
+	   because this struct is written as a raw blob and removing it would shift
+	   every field after it. */
+	unsigned char VRRefreshRateHz;        //0 = unset (was Padding)
+	char Padding[57];
 
 	int CDPlayerVolume;
 

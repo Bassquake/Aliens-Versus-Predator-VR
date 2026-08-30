@@ -202,6 +202,7 @@ static const char * gamedatapath = NULL;
  *     as Quest (it wrongly lived in the Android block before).
  * --------------------------------------------------------------------- */
 int VRRefreshRateIndex  = 0;
+int VRRefreshRateHz     = 0;   /* chosen rate in Hz; 0 = unset. Saved in the profile. */
 int VRTurnMode          = 0;
 int VRSnapAngleIndex    = 1;
 int VRSmoothTurnSpeed   = 5;
@@ -228,6 +229,10 @@ int   VR_IsBatterySaverActive(void) { return 0; }
    It used to return 60.0f. Matches the real implementation further down, which
    already returns 0 when there is no XR frame state — a PCVR exe running flat. */
 float VR_GetTargetHz(void)          { return 0.0f; }
+int    VR_GetRefreshRateCount(void)          { return 0; }
+char **VR_GetRefreshRateLabels(void)         { return 0; }
+float  VR_GetRefreshRateByIndex(int i)       { (void)i; return 0.0f; }
+int    VR_GetRefreshRateIndexForHz(float hz) { (void)hz; return 0; }
 #endif /* !AVP_XR */
 
 #ifdef AVP_XR
@@ -399,6 +404,8 @@ static PFN_xrGetOpenGLGraphicsRequirementsKHR pfn_xrGetOpenGLGraphicsRequirement
 #endif
 static PFN_xrRequestDisplayRefreshRateFB pfn_xrRequestDisplayRefreshRateFB = NULL;
 static PFN_xrGetDisplayRefreshRateFB pfn_xrGetDisplayRefreshRateFB = NULL;
+static PFN_xrEnumerateDisplayRefreshRatesFB pfn_xrEnumerateDisplayRefreshRatesFB = NULL;
+
 /* Set at instance creation: whether XR_FB_display_refresh_rate was actually
  * enabled (Quest yes; SteamVR exposes no such extension, so the refresh-rate
  * option is inert there and its pfn_ pointers stay NULL). */
@@ -412,6 +419,104 @@ static bool xr_has_refresh_rate_ext = false;
 static XrInstance xr_instance = XR_NULL_HANDLE;
 static XrSystemId xr_system_id = XR_NULL_SYSTEM_ID;
 static XrSession xr_session = XR_NULL_HANDLE;
+
+/* --- Headset refresh rates, enumerated from the runtime --------------------
+   XR_FB_display_refresh_rate can report exactly which rates the headset
+   supports, so the AV-options row does not hardcode a list that goes stale as
+   Meta ships new ones (Quest 3 gaining 144/240 Hz).
+
+   Note the caveat recorded on VR_IsBatterySaverActive: this call reports every
+   HARDWARE-supported rate regardless of a Battery Saver cap, which is what makes
+   it useless as a cap detector — but it is exactly right for "what can this
+   headset actually do", which is what the menu needs. */
+#define VR_MAX_REFRESH_RATES 16
+static float vr_refresh_rates[VR_MAX_REFRESH_RATES];
+static char  vr_refresh_labels[VR_MAX_REFRESH_RATES][12];
+static char *vr_refresh_label_ptrs[VR_MAX_REFRESH_RATES];
+static int   vr_refresh_rate_count = 0;
+
+int    VR_GetRefreshRateCount(void)  { return vr_refresh_rate_count; }
+char **VR_GetRefreshRateLabels(void) { return vr_refresh_label_ptrs; }
+
+float VR_GetRefreshRateByIndex(int i)
+{
+    if (i < 0 || i >= vr_refresh_rate_count) return 0.0f;
+    return vr_refresh_rates[i];
+}
+
+/* Nearest enumerated rate to hz, as an index. Used to turn the rate stored in
+   the profile back into a slider position — the profile stores the RATE, not an
+   index, precisely so a profile carried between headsets with different lists
+   still selects the rate the player asked for rather than whatever happens to
+   sit at that position. 0 (unset) picks 72 Hz if offered, else the lowest. */
+int VR_GetRefreshRateIndexForHz(float hz)
+{
+    int best = 0, i;
+    float bestDelta;
+
+    if (vr_refresh_rate_count <= 0) return 0;
+
+    if (hz <= 0.0f) {
+        for (i = 0; i < vr_refresh_rate_count; i++)
+            if (vr_refresh_rates[i] > 71.0f && vr_refresh_rates[i] < 73.0f) return i;
+        return 0;   /* list is sorted ascending, so [0] is the lowest */
+    }
+
+    bestDelta = -1.0f;
+    for (i = 0; i < vr_refresh_rate_count; i++) {
+        float d = vr_refresh_rates[i] - hz;
+        if (d < 0.0f) d = -d;
+        if (bestDelta < 0.0f || d < bestDelta) { bestDelta = d; best = i; }
+    }
+    return best;
+}
+
+/* Ask the runtime what it supports, sort ascending and build the menu labels.
+   Called once the session is running (the call needs a live XrSession). */
+static void vr_enumerate_refresh_rates(void)
+{
+    uint32_t count = 0, got = 0;
+    int i, j;
+
+    if (vr_refresh_rate_count > 0) return;               /* already done */
+    if (!pfn_xrEnumerateDisplayRefreshRatesFB || !xr_session) return;
+
+    if (XR_FAILED(pfn_xrEnumerateDisplayRefreshRatesFB(xr_session, 0, &count, NULL))
+        || count == 0)
+        return;
+
+    if (count > VR_MAX_REFRESH_RATES) count = VR_MAX_REFRESH_RATES;
+    if (XR_FAILED(pfn_xrEnumerateDisplayRefreshRatesFB(xr_session, count, &got,
+                                                       vr_refresh_rates))
+        || got == 0)
+        return;
+    if (got > VR_MAX_REFRESH_RATES) got = VR_MAX_REFRESH_RATES;
+
+    /* The runtime is not required to return these in order, and the menu reads
+       far better ascending. Insertion sort — the list is a handful of entries. */
+    for (i = 1; i < (int)got; i++) {
+        float v = vr_refresh_rates[i];
+        for (j = i - 1; j >= 0 && vr_refresh_rates[j] > v; j--)
+            vr_refresh_rates[j + 1] = vr_refresh_rates[j];
+        vr_refresh_rates[j + 1] = v;
+    }
+
+    for (i = 0; i < (int)got; i++) {
+        SDL_snprintf(vr_refresh_labels[i], sizeof(vr_refresh_labels[i]),
+                     "%.0f Hz", vr_refresh_rates[i]);
+        vr_refresh_label_ptrs[i] = vr_refresh_labels[i];
+    }
+    vr_refresh_rate_count = (int)got;
+
+    {
+        char list[128]; int n = 0;
+        for (i = 0; i < vr_refresh_rate_count && n < (int)sizeof(list) - 12; i++)
+            n += SDL_snprintf(list + n, sizeof(list) - n, "%s%.0f",
+                              i ? ", " : "", vr_refresh_rates[i]);
+        SDL_Log("XR: headset supports %d refresh rate(s): %s Hz",
+                vr_refresh_rate_count, list);
+    }
+}
 static XrSpace xr_local_space = XR_NULL_HANDLE;
 
 /* Input action state */
@@ -506,6 +611,7 @@ float vr_vignette_strength = 0.0f;
 /* VR display refresh rate setting: 0=72, 1=80, 2=90, 3=120 Hz.
  * Written by the AV options menu; applied at frame begin via xrRequestDisplayRefreshRateFB. */
 int VRRefreshRateIndex = 0;
+int VRRefreshRateHz    = 0;   /* chosen rate in Hz; 0 = unset. Saved in the profile. */
 
 /* Set by the one-time startup Battery Saver probe (in apply_refresh_rate_if_changed):
  * 1 if requesting 90 Hz didn't take (panel stayed ≤72), i.e. Battery Saver is on even
@@ -905,6 +1011,8 @@ static bool load_xr_functions(void)
             (PFN_xrVoidFunction*)&pfn_xrRequestDisplayRefreshRateFB);
         pfn_xrGetInstanceProcAddr(xr_instance, "xrGetDisplayRefreshRateFB",
             (PFN_xrVoidFunction*)&pfn_xrGetDisplayRefreshRateFB);
+        pfn_xrGetInstanceProcAddr(xr_instance, "xrEnumerateDisplayRefreshRatesFB",
+            (PFN_xrVoidFunction*)&pfn_xrEnumerateDisplayRefreshRatesFB);
     }
 
 #undef XR_LOAD
@@ -1665,7 +1773,23 @@ static void handle_xr_events(void)
                         if (XR_SUCCEEDED(result)) {
                             SDL_Log("XR Session begun!");
                             xr_session_running = true;
-                            
+
+                            /* Now that there is a live session, ask the runtime
+                               which refresh rates this headset supports and
+                               rebuild the AV-options row around them. Also turn
+                               the rate saved in the profile back into a slider
+                               position (see VR_GetRefreshRateIndexForHz). */
+                            {
+                                extern int VRRefreshRateHz;
+                                extern void PatchRefreshRateMenuFromHeadset(void);
+                                vr_enumerate_refresh_rates();
+                                if (vr_refresh_rate_count > 0) {
+                                    VRRefreshRateIndex =
+                                        VR_GetRefreshRateIndexForHz((float)VRRefreshRateHz);
+                                    PatchRefreshRateMenuFromHeadset();
+                                }
+                            }
+
                             /* Create swapchains now that session is ready */
                             if (!create_swapchains()) {
                                 SDL_Log("Failed to create swapchains");
@@ -1876,9 +2000,16 @@ int VR_IsBatterySaverActive(void)
     float actual = 0.0f, requested = 0.0f;
     if (pfn_xrGetDisplayRefreshRateFB && xr_session_running
         && !XR_FAILED(pfn_xrGetDisplayRefreshRateFB(xr_session, &actual)) && actual > 0.0f) {
-        static const float rates[] = { 72.0f, 80.0f, 90.0f, 120.0f };
-        int ri = VRRefreshRateIndex; if (ri < 0) ri = 0; if (ri > 3) ri = 3;
-        requested = rates[ri];
+        static const float fallback[] = { 72.0f, 80.0f, 90.0f, 120.0f };
+        int count = VR_GetRefreshRateCount();
+        int ri = VRRefreshRateIndex; if (ri < 0) ri = 0;
+        if (count > 0) {
+            if (ri >= count) ri = count - 1;
+            requested = VR_GetRefreshRateByIndex(ri);
+        } else {
+            if (ri > 3) ri = 3;
+            requested = fallback[ri];
+        }
     }
     int rate_capped = (actual > 0.0f && requested > 0.0f && actual < requested - 1.0f);
 
@@ -2060,12 +2191,25 @@ static void apply_refresh_rate_if_changed(void)
 
     static int vr_applied_refresh = -1;
     if (VRRefreshRateIndex != vr_applied_refresh && pfn_xrRequestDisplayRefreshRateFB) {
-        static const float rates[] = {72.0f, 80.0f, 90.0f, 120.0f};
-        int idx = VRRefreshRateIndex;
+        /* Rates come from the headset now, not a hardcoded list. The old fixed
+           set survives only as a fallback for a runtime without the extension,
+           so the option still does something sensible there. */
+        static const float fallback[] = {72.0f, 80.0f, 90.0f, 120.0f};
+        int   count = VR_GetRefreshRateCount();
+        int   idx   = VRRefreshRateIndex;
+        float hz;
         if (idx < 0) idx = 0;
-        if (idx > 3) idx = 3;
-        XrResult rr = pfn_xrRequestDisplayRefreshRateFB(xr_session, rates[idx]);
-        SDL_Log("XR: set refresh rate %.0f Hz -> %d", rates[idx], (int)rr);
+        if (count > 0) {
+            if (idx >= count) idx = count - 1;
+            hz = VR_GetRefreshRateByIndex(idx);
+        } else {
+            if (idx > 3) idx = 3;
+            hz = fallback[idx];
+        }
+        /* Persist the RATE, not the index — see VR_GetRefreshRateIndexForHz. */
+        VRRefreshRateHz = (int)(hz + 0.5f);
+        XrResult rr = pfn_xrRequestDisplayRefreshRateFB(xr_session, hz);
+        SDL_Log("XR: set refresh rate %.0f Hz -> %d", hz, (int)rr);
         vr_applied_refresh = VRRefreshRateIndex;
     }
 }

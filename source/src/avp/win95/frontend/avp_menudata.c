@@ -1372,6 +1372,43 @@ void MakeConnectionSelectMenu()
 	AvPMenu_MultiplayerConnection[pos].ElementID = AVPMENU_ELEMENT_ENDOFMENU;
 }
 
+/* Drop the "Video Card & Resolution" row from the main-menu AV options.
+   Removes the row outright rather than blanking it, so no gap is left.
+
+   The row is dead weight on any target that does not present to a resizable
+   desktop window:
+     - In a headset the image is rendered into eye FBOs sized from the OpenXR
+       swapchain (VR_InitEyeFBOs), which WindowWidth/Height never touch. On Quest
+       the companion window isn't visible; on PCVR it only sizes the mirror.
+     - On Android the window is created FULLSCREEN, so the requested size is
+       ignored on the phone too.
+   In both cases the "video card" half reads the literal string "SDL3"
+   (GetVideoModeDescription2), and selecting a mode only writes
+   avp_tempvideo.cfg for the NEXT launch, since WindowWidth/Height are read from
+   VideoModeList exactly once at startup before the window is created.
+
+   Deliberately NOT compile-time gated on AVP_XR: a PCVR exe running flat, with
+   no headset or runtime, presents to a normal window where the control does
+   work. main.c therefore calls this on Android always, and elsewhere only when
+   a headset actually initialised. */
+extern void PatchOutVideoModeMenu(void)
+{
+	AVPMENU_ELEMENT *e = AvPMenu_MainMenuAVOptions;
+
+	while (e->ElementID != AVPMENU_ELEMENT_ENDOFMENU) {
+		if (e->ElementID == AVPMENU_ELEMENT_GOTOMENU
+		 && e->a.TextDescription == TEXTSTRING_VIDEOOPTIONS_TITLE) {
+			AVPMENU_ELEMENT *src = e + 1;
+			for (;;) {
+				*e = *src;
+				if (e->ElementID == AVPMENU_ELEMENT_ENDOFMENU) return;
+				e++; src++;
+			}
+		}
+		e++;
+	}
+}
+
 /* Rebuild the VR "Refresh Rate" row around the rates the headset actually
    reports, replacing the hardcoded 72/80/90/120 list.
 

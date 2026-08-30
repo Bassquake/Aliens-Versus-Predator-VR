@@ -5216,6 +5216,21 @@ int main(int argc, char *argv[])
         if (!CDDA_HasMusicFiles()) PatchCDVolumeMenuForNoMusic();
     }
 
+    /* Drop "Video Card & Resolution" where it cannot do anything (see the note
+       on PatchOutVideoModeMenu). XR init has already run by this point, so
+       VR_HeadsetActive() is valid — which keeps the row for a PCVR exe running
+       flat, where it genuinely sizes the window. */
+    {
+        extern void PatchOutVideoModeMenu(void);
+#ifdef __ANDROID__
+        /* Phone and Quest alike: the window is created FULLSCREEN, so the
+           selected resolution is ignored either way. */
+        PatchOutVideoModeMenu();
+#else
+        if (VR_HeadsetActive()) PatchOutVideoModeMenu();
+#endif
+    }
+
     InitTextStrings();
     SDL_Log("BOOT: InitTextStrings done");
 

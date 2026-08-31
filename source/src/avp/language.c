@@ -122,7 +122,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AVOPTIONS_CROSSHAIR: return "Show Crosshair";
 			case TEXTSTRING_AVOPTIONS_CROSSHAIR_HELP: return "Crosshair helps with aiming.";
 			case TEXTSTRING_AVOPTIONS_FRAMERATE: return "Show FPS";
-			case TEXTSTRING_AVOPTIONS_FRAMERATE_HELP: return "Displays an FPS (Frames Per Second) counter at top left as screens Hz / gameplay fps.";
+			case TEXTSTRING_AVOPTIONS_FRAMERATE_HELP: return "Displays an FPS (Frames Per Second) counter at top left as 'gameplay fps/screen Hz'.";
 			case TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE: return "Refresh Rate";
 			case TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP: return "Sets the refresh rate of the headset.";
 			case TEXTSTRING_VR_REFRESH_72:  return "72 Hz (Default)";
@@ -200,7 +200,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR: return "Predator speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_HELP: return "Slow this enemy type down in Single Player. Full is normal speed, empty stops them (not Skirmish or Multiplayer).";
 			case TEXTSTRING_HUDADJUST: return "Adjust HUD Elements";
-			case TEXTSTRING_HUDADJUST_HELP: return "Pull HUD elements toward the centre of view. Raise this if your headset FOV is too narrow to see them.";
+			case TEXTSTRING_HUDADJUST_HELP: return "Moves HUD elements toward the centre of view. 1 is furthest out, 3 is closer to center of view.";
 			case TEXTSTRING_HUDADJUST_1: return "1 (Default)";
 			case TEXTSTRING_HUDADJUST_2: return "2";
 			case TEXTSTRING_HUDADJUST_3: return "3";

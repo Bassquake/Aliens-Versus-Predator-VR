@@ -35,6 +35,7 @@
    port's video-mode line has to be re-emitted here or a level exit silently
    resets the resolution to the desktop default. */
 extern "C" void VideoMode_WriteConfigLine(FILE *pFile);
+extern "C" void DesktopMirror_WriteConfigLine(FILE *pFile);
 
 /* Version settings ************************************************/
 
@@ -416,6 +417,7 @@ void KeyBinding :: WriteToConfigFile(char* Filename)
 	// Carry the port's video-mode preference across this rewrite (it is a
 	// '#' comment, so the batch processor ignores it on the way back in):
 	VideoMode_WriteConfigLine(pFile);
+	DesktopMirror_WriteConfigLine(pFile);
 
 	fclose(pFile);
 

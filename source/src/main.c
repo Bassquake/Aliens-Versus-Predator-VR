@@ -225,6 +225,11 @@ int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward c
 int ManualReloadEnabled = 0; /* "Manual Reload": 0=off (default), 1=on. Gates the VR knock + desktop R key. */
 
 int MSAASampleIndex = 1;
+
+/* AV Options "Desktop Mirror" (PCVR): 0=every frame (default), 1=every 2nd,
+ * 2=every 3rd, 3=off. Defined on every target because the user profile externs
+ * it unconditionally; only VR_MirrorEyeToWindow reads it. */
+int DesktopMirrorIndex = 0;
 int MSAA_SampleCount(void)
 {
     switch (MSAASampleIndex) { case 1: return 2; case 2: return 4; default: return 0; }
@@ -634,6 +639,11 @@ static int vr_bs_probe_result = 0;
  * Written by the AV options menu; read by the VR eye-FBO renderer (avpview.c). */
 int MSAASampleIndex = 1;
 
+/* AV Options "Desktop Mirror" (PCVR): 0=every frame (default), 1=every 2nd,
+ * 2=every 3rd, 3=off. Defined on every target because the user profile externs
+ * it unconditionally; only VR_MirrorEyeToWindow reads it. */
+int DesktopMirrorIndex = 0;
+
 /* Map the MSAA menu index to a GL sample count (0/2/4). */
 int MSAA_SampleCount(void)
 {
@@ -688,6 +698,11 @@ static GLint  quad_u_mvp    = -1;
 static GLint  quad_u_tex    = -1;
 static GLuint menu_gles_tex = 0;
 static GLuint menu_fbo_2d   = 0;
+
+#ifdef AVP_PCVR
+/* Desktop mirror state (PCVR only) — see VR_MirrorEyeToWindow below. */
+static int    vr_mirror_pending = 0;   /* an eye was mirrored; the window needs a swap */
+#endif
 
 /* Comfort vignette (peripheral tunnel) drawn over each eye while smooth-turning. */
 static GLuint vignette_program = 0;
@@ -959,6 +974,236 @@ void VR_DrawVignette(void)
     if (had_depth)  glEnable(GL_DEPTH_TEST);
     if (had_cull)   glEnable(GL_CULL_FACE);
 }
+
+#ifdef AVP_PCVR
+/* ========================================================================
+ * Desktop mirror (PCVR only)
+ *
+ * The headset is presented by the OpenXR compositor out of xrEndFrame, and
+ * nothing in the XR path ever touched the SDL window — InGameFlipBuffers and
+ * FlipBuffers both returned straight after render_frame(), so the monitor
+ * stayed black for the whole session. This copies the eye image the game has
+ * ALREADY rendered into the window; the swap happens back in those two
+ * functions. Nothing is re-rendered and there is no post-processing pass: one
+ * glBlitFramebuffer, hardware linear filtering, straight to the back buffer.
+ *
+ * Deliberately not SteamVR's vr::VRCompositor()->GetMirrorTextureGL: that is
+ * OpenVR, which this build does not link (it is a pure OpenXR client), and it
+ * would be dead weight under the Oculus runtime, which is what actually serves
+ * OpenXR on this machine. Copying our own eye buffer costs one blit and works
+ * under every runtime.
+ * ======================================================================== */
+
+/* Should the desktop window be updated this frame? Two independent reasons not to,
+ * and BOTH callers must respect it — the 3D mirror below and the 2D software
+ * present — or the frontend would keep presenting at full rate with the setting
+ * off, and the window would flip between fresh menus and a frozen game.
+ *
+ *   1. The "Desktop Mirror" AV option: every frame / every 2nd / every 3rd / off.
+ *      The saving is mostly the SDL_GL_SwapWindow — a desktop present on every VR
+ *      frame makes the compositor do work it otherwise would not — with the blit
+ *      itself the smaller half.
+ *   2. Nobody can see it: minimised, or covered by another window. Free, and it
+ *      needs no setting. SDL_WINDOW_OCCLUDED is best-effort per platform — when a
+ *      backend never reports it the test is simply inert, never wrong.
+ *
+ * The frame counter is stepped before the occlusion test so the phase does not
+ * drift while the window is hidden. */
+static int vr_mirror_frame   = 0;
+static int vr_mirror_blanked = 0;
+
+static int vr_mirror_is_off(void) { return DesktopMirrorIndex == 3; }
+
+/* "Off" means the window LEAVES THE DESKTOP, not that it stops updating. Merely
+ * not presenting leaves it holding whatever frame it last received — the game
+ * frozen mid-scene, which reads as a hang; and a black fullscreen window is still
+ * a window sitting on top of everything else while you are in the headset. So:
+ * paint it black, then hide it.
+ *
+ * The blank before the hide is insurance, not decoration: it means that whenever
+ * the window comes back, it cannot flash the stale frame it was holding before
+ * the first mirrored frame lands. Twice, because it is double-buffered — one
+ * clear+swap leaves the old frame in the other buffer.
+ *
+ * Safe with the window hidden: the GL context stays current and valid (the
+ * window is hidden, never destroyed), and the eye pass renders to FBOs, so
+ * nothing in the frame depends on the window being mapped. Nothing pauses on
+ * focus loss either — SDL_EVENT_WINDOW_FOCUS_LOST is an empty case and no code
+ * gates on focus. The cost is keyboard input: an unfocused window receives none,
+ * so Esc-to-pause is dead while the mirror is off. The VR controller bindings
+ * (X hold = pause) are unaffected, which is what you actually use in a headset.
+ *
+ * Called from both flip paths and cheap to call repeatedly — the flag makes it a
+ * no-op until the setting changes. It deliberately does NOT touch
+ * vr_mirror_frame: the skip phase is a separate decision. */
+static void vr_mirror_park_window(void)
+{
+    if (!vr_mirror_is_off()) {
+        /* Turned back on — put the window back. */
+        if (vr_mirror_blanked && window != NULL) SDL_ShowWindow(window);
+        vr_mirror_blanked = 0;
+        return;
+    }
+    if (vr_mirror_blanked || window == NULL) return;
+
+    GLint had_draw = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &had_draw);
+    GLboolean had_scissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean had_srgb    = glIsEnabled(GL_FRAMEBUFFER_SRGB_EXT);
+    if (had_scissor) glDisable(GL_SCISSOR_TEST);
+    if (had_srgb)    glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    for (int i = 0; i < 2; i++) {
+        glClear(GL_COLOR_BUFFER_BIT);
+        SDL_GL_SwapWindow(window);
+    }
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)had_draw);
+    if (had_srgb)    glEnable(GL_FRAMEBUFFER_SRGB_EXT);
+    if (had_scissor) glEnable(GL_SCISSOR_TEST);
+
+    SDL_HideWindow(window);
+    vr_mirror_blanked = 1;
+}
+
+static int vr_mirror_wanted_this_frame(void)
+{
+    int period;
+    switch (DesktopMirrorIndex) {
+        case 1:  period = 2; break;
+        case 2:  period = 3; break;
+        case 3:  return 0;              /* Off */
+        default: period = 1; break;     /* every frame */
+    }
+
+    int n = vr_mirror_frame++;
+    if (period > 1 && (n % period) != 0) return 0;
+
+    if (window) {
+        SDL_WindowFlags flags = SDL_GetWindowFlags(window);
+        if (flags & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED | SDL_WINDOW_OCCLUDED))
+            return 0;
+    }
+    return 1;
+}
+
+/* Mirror the finished eye image into the desktop window. Called from the eye loop
+ * in avpview.c with the FBO the swapchain texture is attached to — after the MSAA
+ * resolve, before the texture is detached and released. band_lo/band_hi are the
+ * clip-space Y extent of the VR HUD (+1 = top of the eye image); the crop is
+ * framed to keep that band on screen.
+ *
+ * A blit bypasses the fragment pipeline, so there is no blend/depth/program state
+ * to save; only the scissor test (which clips both the clear and the blit) and the
+ * framebuffer bindings. GL_FRAMEBUFFER_SRGB is forced off for the copy: the eye
+ * image is a GL_SRGB8_ALPHA8 swapchain holding values the game has already
+ * gamma-encoded (vr_sc_acquire_wait turns the conversion off precisely so they
+ * store raw), and letting the driver decode them into the plain RGBA8 back buffer
+ * would mirror the game far too dark. */
+void VR_MirrorEyeToWindow(GLuint src_fbo, int src_w, int src_h,
+                          float band_lo, float band_hi)
+{
+    if (!src_fbo || src_w <= 0 || src_h <= 0 || window == NULL) return;
+    if (!vr_mirror_wanted_this_frame()) return;   /* leaves vr_mirror_pending clear,
+                                                     so no swap happens either */
+
+    int win_w = 0, win_h = 0;
+    SDL_GetWindowSizeInPixels(window, &win_w, &win_h);
+    if (win_w <= 0 || win_h <= 0) return;   /* minimised — nothing to mirror to */
+
+    /* The rows the HUD occupies. GL rows count from the bottom and clip_y +1 is the
+       top of the image, so row = (clip + 1) * 0.5 * src_h. */
+    if (band_hi < band_lo) { float t = band_lo; band_lo = band_hi; band_hi = t; }
+    if (band_lo < -1.0f) band_lo = -1.0f;
+    if (band_hi >  1.0f) band_hi =  1.0f;
+    int band_y0 = (int)((band_lo + 1.0f) * 0.5f * (float)src_h);
+    int band_y1 = (int)((band_hi + 1.0f) * 0.5f * (float)src_h + 0.5f);
+    if (band_y0 < 0)     band_y0 = 0;
+    if (band_y1 > src_h) band_y1 = src_h;
+    if (band_y1 <= band_y0) { band_y0 = 0; band_y1 = src_h; }   /* no usable band */
+    int band_h = band_y1 - band_y0;
+
+    /* Crop to fill, framed on the HUD rather than on the middle of the eye image.
+       A headset eye buffer is roughly square (Quest is 1832x1920 per eye), so
+       filling a 16:9 window means showing only about the middle 55% of its height
+       — and the VR HUD spans clip_y -0.60..+0.40 (half the image, sitting low),
+       so a centre-framed crop cuts the bottom row of HUD elements off. Sizing the
+       crop to cover the window and then CENTRING IT ON THE HUD BAND instead shows
+       all of the HUD and still fills the screen; the view just sits ~10% lower,
+       which is the periphery under your feet rather than anything you aim at.
+
+       The crop comes out of the SOURCE rectangle, so the image is never stretched.
+       The headset is not touched by any of this. */
+    int fill_h = (int)((double)src_w * (double)win_h / (double)win_w + 0.5);
+    int rect_w, rect_h, fills;
+    if (fill_h >= band_h) {
+        /* Normal case: a full-width crop is already tall enough for the HUD. */
+        rect_h = fill_h;
+        rect_w = src_w;
+        fills  = 1;
+        if (rect_h > src_h) {          /* window taller than the eye image */
+            rect_h = src_h;
+            rect_w = (int)((double)src_h * (double)win_w / (double)win_h + 0.5);
+            if (rect_w > src_w) rect_w = src_w;
+        }
+    } else {
+        /* Window is so wide that filling it would cut the HUD. Show the whole band
+           and letterbox the remainder — the HUD is worth more than the last few
+           percent of screen area. */
+        rect_h = band_h;
+        rect_w = src_w;
+        fills  = 0;
+    }
+
+    /* Centre on the band vertically (clamped inside the image), on the eye
+       horizontally. */
+    int rect_y = (band_y0 + band_y1) / 2 - rect_h / 2;
+    if (rect_y < 0) rect_y = 0;
+    if (rect_y + rect_h > src_h) rect_y = src_h - rect_h;
+    int rect_x = (src_w - rect_w) / 2;
+
+    int dst_x = 0, dst_y = 0, dst_w = win_w, dst_h = win_h;
+    if (!fills) {
+        dst_h = (int)((double)win_w * (double)rect_h / (double)rect_w + 0.5);
+        if (dst_h > win_h) {
+            dst_h = win_h;
+            dst_w = (int)((double)win_h * (double)rect_w / (double)rect_h + 0.5);
+        }
+        dst_x = (win_w - dst_w) / 2;
+        dst_y = (win_h - dst_h) / 2;
+    }
+
+    GLint had_read = 0, had_draw = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &had_read);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &had_draw);
+    GLboolean had_scissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean had_srgb    = glIsEnabled(GL_FRAMEBUFFER_SRGB_EXT);
+    if (had_scissor) glDisable(GL_SCISSOR_TEST);
+    if (had_srgb)    glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
+    /* Only when the blit leaves bars; the filling case covers every pixel. */
+    if (!fills) {
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+
+    glBlitFramebuffer(rect_x, rect_y, rect_x + rect_w, rect_y + rect_h,
+                      dst_x,  dst_y,  dst_x  + dst_w,  dst_y  + dst_h,
+                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)had_read);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)had_draw);
+    if (had_srgb)    glEnable(GL_FRAMEBUFFER_SRGB_EXT);
+    if (had_scissor) glEnable(GL_SCISSOR_TEST);
+
+    vr_mirror_pending = 1;
+}
+#endif /* AVP_PCVR */
 
 /* ========================================================================
  * OpenXR Function Loading
@@ -3488,18 +3733,76 @@ const int TotalVideoModes = sizeof(VideoModeList) / sizeof(VideoModeList[0]);
 #define VIDEOMODE_CONFIG_FILE "config.cfg"
 #define VIDEOMODE_CONFIG_TAG  "#VIDEOMODE"
 
+/* The desktop mirror rate rides in the same file, for the same reason the video
+   mode does: it has to be known BEFORE anything renders. It is also an AV option
+   stored in the user profile, but a profile is not loaded until the player picks
+   one — so with only the profile copy, the intro FMVs and the profile screen
+   itself still reached the monitor with the mirror set to Off, and the screen
+   only went dark once a profile was chosen. config.cfg seeds it at startup; the
+   profile takes over when it loads (per-profile wins, as with every other AV
+   option) and re-seeds this file on "Use these settings". */
+#define MIRROR_CONFIG_TAG     "#DESKTOPMIRROR"
+
 /* Does this line carry our setting? Case-insensitive so a hand-edited file
    works either way; the console uppercases everything it reads, we don't. */
-static int VideoModeConfigLine(const char *line)
+static int ConfigLineHasTag(const char *line, const char *tag)
 {
-    const char *tag = VIDEOMODE_CONFIG_TAG;
-
     while (*tag) {
         if (toupper((unsigned char)*line) != *tag) return 0;
         line++;
         tag++;
     }
     return (*line == ' ' || *line == '\t');
+}
+
+static int VideoModeConfigLine(const char *line)
+{
+    return ConfigLineHasTag(line, VIDEOMODE_CONFIG_TAG);
+}
+
+static int MirrorConfigLine(const char *line)
+{
+    return ConfigLineHasTag(line, MIRROR_CONFIG_TAG);
+}
+
+/* Either of the two lines this file owns. Everything else in config.cfg belongs
+   to the game and has to survive a rewrite untouched. */
+static int OurConfigLine(const char *line)
+{
+    return VideoModeConfigLine(line) || MirrorConfigLine(line);
+}
+
+/* Seed DesktopMirrorIndex from config.cfg. Leaves it alone if there is no line,
+   which already means "every frame". */
+void LoadDesktopMirrorPreference(void)
+{
+    FILE *fp;
+    char line[256];
+
+    fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_READONLY, FILETYPE_CONFIG);
+    if (fp == NULL) return;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        int v;
+
+        if (!MirrorConfigLine(line)) continue;
+        if (sscanf(line + sizeof(MIRROR_CONFIG_TAG) - 1, "%d", &v) != 1) continue;
+        if (v >= 0 && v <= 3) DesktopMirrorIndex = v;   /* a later line wins */
+    }
+    fclose(fp);
+}
+
+/* Append the mirror setting to an already-open config.cfg. Same contract as
+   VideoMode_WriteConfigLine below, including being called from
+   KeyBinding::WriteToConfigFile — which rebuilds that file from nothing on every
+   level exit and would otherwise drop it. Index 0 is the default, so an absent
+   line already says it and going back to "Every Frame" REMOVES the setting. */
+void DesktopMirror_WriteConfigLine(FILE *fp)
+{
+    if (fp == NULL) return;
+    if (DesktopMirrorIndex <= 0 || DesktopMirrorIndex > 3) return;
+
+    fprintf(fp, "%s %d\n", MIRROR_CONFIG_TAG, DesktopMirrorIndex);
 }
 
 /* The stored mode as an index into VideoModeList, or -1 if config.cfg has no
@@ -3712,9 +4015,9 @@ void SaveDeviceAndVideoModePreferences()
             char *eol = (char *)memchr(p, '\n', (size_t)(end - p));
             size_t len = (eol != NULL) ? (size_t)(eol - p) + 1 : (size_t)(end - p);
 
-            /* Drop any previous copy of our line rather than accumulating one
-               per resolution change. */
-            if (!VideoModeConfigLine(p)) {
+            /* Drop any previous copy of either of our lines rather than
+               accumulating one per change. */
+            if (!OurConfigLine(p)) {
                 fwrite(p, 1, len, fp);
                 endedWithNewline = (p[len - 1] == '\n');
             }
@@ -3729,6 +4032,7 @@ void SaveDeviceAndVideoModePreferences()
     }
 
     VideoMode_WriteConfigLine(fp);
+    DesktopMirror_WriteConfigLine(fp);
     fclose(fp);
 
     /* The setting lives in config.cfg now; retire the file it used to be in. */
@@ -3940,6 +4244,7 @@ int InitSDL()
     }
 
     LoadDeviceAndVideoModePreferences();
+    LoadDesktopMirrorPreference();
 
 #ifdef AVP_XR
     /* On VR builds, always enable controller input and configure left-stick
@@ -4342,6 +4647,22 @@ static int SetOGLVideoMode(int Width, int Height)
            happily spin at several hundred fps, burning a core to draw a static
            screen. Log it so an uncapped frame rate is explainable rather than
            mysterious. */
+#ifdef AVP_PCVR
+        /* PCVR: the mirror window must never pace the headset — with vsync on, a
+           60 Hz monitor caps xrWaitFrame-driven rendering at 60 fps. The runtime
+           owns frame pacing, so the desktop swap chain runs at interval 0.
+           This branch matters on every call AFTER the first: SetOGLVideoMode is
+           re-entered on a video mode change, the XR init below runs only once
+           (it is guarded on !xr_enabled), and without this the request for
+           interval 1 above would quietly put vsync back and cap the headset. */
+        if (xr_enabled) {
+            if (!SDL_GL_SetSwapInterval(0))
+                SDL_Log("WARNING: could not disable vsync for the mirror window (%s)",
+                        SDL_GetError());
+            else
+                SDL_Log("vsync disabled (mirror window; the XR runtime paces frames)");
+        } else
+#endif
         if (!SDL_GL_SetSwapInterval(1)) {
             SDL_Log("WARNING: vsync request refused (%s) - frame rate is uncapped",
                     SDL_GetError());
@@ -4422,8 +4743,14 @@ static int SetOGLVideoMode(int Width, int Height)
 #ifdef AVP_PCVR
             /* The mirror window must never pace the headset: with vsync on, a
              * 60 Hz monitor caps xrWaitFrame-driven rendering at 60 fps. The
-             * runtime paces frames from here on. */
-            SDL_GL_SetSwapInterval(0);
+             * runtime paces frames from here on. This is the first-init case —
+             * the vsync request above ran while xr_enabled was still false; a
+             * later SetOGLVideoMode takes the xr_enabled branch up there. */
+            if (!SDL_GL_SetSwapInterval(0))
+                SDL_Log("WARNING: could not disable vsync for the mirror window (%s)",
+                        SDL_GetError());
+            else
+                SDL_Log("vsync disabled (mirror window; the XR runtime paces frames)");
 #endif
         }
         xr_init_done:;
@@ -4995,6 +5322,10 @@ void CheckForWindowsMessages()
                 break;
             case SDL_EVENT_WINDOW_RESIZED:
                 //printf("test, %d,%d\n", event.window.data1, event.window.data2);
+                /* Hiding and re-showing a fullscreen window can emit a
+                   degenerate size; SetWindowSize and the MSAA target both
+                   divide by these. */
+                if (event.window.data1 <= 0 || event.window.data2 <= 0) break;
                 WindowWidth = event.window.data1;
                 WindowHeight = event.window.data2;
                 if (RenderingMode == RENDERING_MODE_SOFTWARE) {
@@ -5166,79 +5497,32 @@ void CheckForWindowsMessages()
     }
 }
 
-void InGameFlipBuffers(void)
+/* Present the 640x480 software menu/progress surface to the desktop window,
+ * letterboxed. Split out of FlipBuffers so the PCVR mirror can reuse it: in VR
+ * the 2D screens are composited into a headset quad layer by render_frame(),
+ * which leaves the window untouched, so both flip paths call this to put the
+ * same picture on the monitor. Ends in SDL_GL_SwapWindow.
+ *
+ * Sets the viewport explicitly rather than inheriting it: the VR menu path
+ * leaves it sized to the menu swapchain. */
+static void PresentSoftwareSurface(void)
 {
-#if !defined(NDEBUG)
-    check_for_errors();
-    GLenum err;
-    while ((err = glGetError()) != GL_NO_ERROR)
-        SDL_Log("GL error: 0x%04X", err);
-#endif
-#ifdef AVP_XR
-    if (xr_enabled) {
-        handle_xr_events();
-        if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
-            if (xr_2d_mode) {
-                /* Progress screen — 1:1 readback from the 640x480 viewport that
-                   VR_Set2DViewport set in ThisFramesRenderingHasBegun.
-                   No downscaling; only a Y-flip (GL origin is bottom-left). */
-                if (RenderingMode == RENDERING_MODE_OPENGL && surface != NULL) {
-                    static Uint8 *readback_buf = NULL;
-                    if (!readback_buf)
-                        readback_buf = malloc(640 * 480 * 4);
-                    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-                    glReadPixels(0, 0, 640, 480, GL_RGBA, GL_UNSIGNED_BYTE, readback_buf);
-                    Uint16 *dst = (Uint16 *)surface->pixels;
-                    for (int y = 0; y < 480; y++) {
-                        const Uint8 *row = readback_buf + (479 - y) * 640 * 4;
-                        for (int x = 0; x < 640; x++) {
-                            const Uint8 *p = row + x * 4;
-                            *dst++ = ((p[0]>>3)<<11)|((p[1]>>2)<<5)|(p[2]>>3);
-                        }
-                    }
-                    /* Restore native viewport for subsequent frames */
-                    pglViewport(0, 0, ViewportWidth, ViewportHeight);
-                }
-            }
-            /* Always call render_frame — it knows which mode to use */
-            render_frame();
-            return;
-        }
-        /* XR session not running (e.g. 2D panel mode) — fall through to SDL swap */
-    }
+    if (surface == NULL) return;
+
+#ifdef AVP_PCVR
+    /* Turn sRGB write conversion off for the whole present. vr_sc_release()
+       ENABLES GL_FRAMEBUFFER_SRGB on its way out of render_frame(), so on the VR
+       menu path we arrive here with it on — and the menu surface holds values
+       that are already gamma-encoded, exactly like the eye images. Left on, the
+       driver encodes them a second time on the way into the back buffer and the
+       frontend mirrors washed out and far too bright, while gameplay (whose blit
+       forces this off) looks correct. Flat builds never enable it at all. */
+    GLboolean had_srgb = glIsEnabled(GL_FRAMEBUFFER_SRGB_EXT);
+    if (had_srgb) glDisable(GL_FRAMEBUFFER_SRGB_EXT);
 #endif
 
-#ifndef __ANDROID__
-    /* Desktop: if this frame was rendered into the multisampled target, resolve
-       it onto the backbuffer before presenting. No-op when MSAA is off. */
-    MSAA_Resolve();
-#endif
+    glViewport(0, 0, ViewportWidth, ViewportHeight);
 
-    SDL_GL_SwapWindow(window);
-}
-
-void FlipBuffers()
-{
-    // Always let the game render the menu into surface->pixels first
-    // (the existing GL upload below keeps the flat window working too)
-
-#ifndef __ANDROID__
-    /* Safety net: this is the 2D/menu present path. If an in-game frame was begun
-       (multisampled FBO bound) but we ended up here, drop it back to the
-       backbuffer so the menu draws to the window, not the FBO. */
-    MSAA_AbortFrame();
-#endif
-#ifdef AVP_XR
-    if (xr_enabled) {
-        handle_xr_events();
-        if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
-            render_frame();
-            return;
-        }
-        /* XR session not running (e.g. 2D panel mode) — fall through to SDL swap */
-    }
-#endif
-    
     // RESET STATE for software blit - prevent PBO/VAO/VBO issues
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -5289,6 +5573,13 @@ void FlipBuffers()
             x0, y1,  s0, t0,
     };
     
+    /* Restored after the blit. The engine enables GL_BLEND once at init and only
+       ever changes blend FUNC afterwards, so leaving it off here would collapse
+       every later translucent/additive pass — which now matters because the VR
+       menu path reaches this code and then goes back to rendering the world. */
+    GLboolean had_depth = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean had_blend = glIsEnabled(GL_BLEND);
+
     pglClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     pglDisable(GL_DEPTH_TEST);
     pglDisable(GL_BLEND);
@@ -5314,8 +5605,177 @@ void FlipBuffers()
     
     // Restore game shader state for next frame
     RestoreGameShaderState();
+    if (had_depth) pglEnable(GL_DEPTH_TEST);
+    if (had_blend) pglEnable(GL_BLEND);
+#ifdef AVP_PCVR
+    if (had_srgb) glEnable(GL_FRAMEBUFFER_SRGB_EXT);
+#endif
     
     SDL_GL_SwapWindow(window);
+}
+
+void InGameFlipBuffers(void)
+{
+#if !defined(NDEBUG)
+    check_for_errors();
+    GLenum err;
+    while ((err = glGetError()) != GL_NO_ERROR)
+        SDL_Log("GL error: 0x%04X", err);
+#endif
+#ifdef AVP_XR
+    if (xr_enabled) {
+        handle_xr_events();
+        if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
+            if (xr_2d_mode) {
+                /* Progress screen — 1:1 readback from the 640x480 viewport that
+                   VR_Set2DViewport set in ThisFramesRenderingHasBegun.
+                   No downscaling; only a Y-flip (GL origin is bottom-left). */
+                if (RenderingMode == RENDERING_MODE_OPENGL && surface != NULL) {
+                    static Uint8 *readback_buf = NULL;
+                    if (!readback_buf)
+                        readback_buf = malloc(640 * 480 * 4);
+                    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                    glReadPixels(0, 0, 640, 480, GL_RGBA, GL_UNSIGNED_BYTE, readback_buf);
+                    Uint16 *dst = (Uint16 *)surface->pixels;
+                    for (int y = 0; y < 480; y++) {
+                        const Uint8 *row = readback_buf + (479 - y) * 640 * 4;
+                        for (int x = 0; x < 640; x++) {
+                            const Uint8 *p = row + x * 4;
+                            *dst++ = ((p[0]>>3)<<11)|((p[1]>>2)<<5)|(p[2]>>3);
+                        }
+                    }
+                    /* Restore native viewport for subsequent frames */
+                    pglViewport(0, 0, ViewportWidth, ViewportHeight);
+                }
+            }
+            /* Always call render_frame — it knows which mode to use */
+            render_frame();
+#ifdef AVP_PCVR
+            /* Everything below runs AFTER render_frame(), i.e. after xrEndFrame
+               has submitted this frame to the compositor. Nothing that can block
+               on a desktop presentation lock — the swap, and the one-shot
+               blank+hide when the setting is turned off — may precede the submit,
+               or a monitor-side stall would delay headset frame delivery. The
+               only mirror work that runs before it is the eye blit in
+               avpview.c, which is a GPU copy with no present call in it and
+               cannot be moved later: it reads the swapchain image, which is the
+               runtime's again the moment we release it. */
+            vr_mirror_park_window();
+
+            /* Desktop mirror: xrEndFrame presented to the headset, the window
+               still holds last frame. 2D screens live in a headset quad layer,
+               so put the same software surface on the monitor; 3D frames were
+               blitted into the window by VR_MirrorEyeToWindow during the eye
+               pass and only need the swap. Skipping the swap when no eye was
+               mirrored (swapchain image not ready) leaves the last good frame
+               up rather than flipping to an undefined back buffer. */
+            if (xr_2d_mode) {
+                vr_mirror_pending = 0;
+                if (vr_mirror_wanted_this_frame()) PresentSoftwareSurface();
+            } else if (vr_mirror_pending) {
+                vr_mirror_pending = 0;
+                SDL_GL_SwapWindow(window);
+            }
+#endif
+            return;
+        }
+#ifdef AVP_PCVR
+        /* No submit happens on this path (the session is not running), so there
+           is nothing to stay behind. */
+        vr_mirror_park_window();
+
+        /* Before the session reaches READY there are no eye images yet, so the
+           flat present below drives the monitor directly — which is how the intro
+           FMVs and the profile screen still reached it with the mirror off. Bail
+           here instead. Keyed on xr_enabled (we are inside that test), so a PCVR
+           exe running flat, with no runtime or on -noxr, is untouched: there the
+           window IS the game. */
+        if (vr_mirror_is_off()) {
+            /* Resolve before bailing. MSAA_BeginFrame ran this frame — opengl.c
+               only stands it down while VR_SessionActive(), which is false until
+               the session is READY — so returning with the multisampled FBO still
+               bound would leak it into the next frame. Resolve it onto the back
+               buffer as usual and simply never present it. */
+            MSAA_Resolve();
+            return;
+        }
+#endif
+        /* XR session not running (e.g. 2D panel mode) — fall through to SDL swap */
+    }
+#endif
+
+#ifndef __ANDROID__
+    /* Desktop: if this frame was rendered into the multisampled target, resolve
+       it onto the backbuffer before presenting. No-op when MSAA is off. */
+    MSAA_Resolve();
+#endif
+
+    SDL_GL_SwapWindow(window);
+}
+
+void FlipBuffers()
+{
+    // Always let the game render the menu into surface->pixels first
+    // (the existing GL upload below keeps the flat window working too)
+
+#ifndef __ANDROID__
+    /* Safety net: this is the 2D/menu present path. If an in-game frame was begun
+       (multisampled FBO bound) but we ended up here, drop it back to the
+       backbuffer so the menu draws to the window, not the FBO. */
+    MSAA_AbortFrame();
+#endif
+#ifdef AVP_XR
+    if (xr_enabled) {
+        handle_xr_events();
+        if (xr_session_running && view_count > 0 && vr_swapchains != NULL) {
+            render_frame();
+#ifdef AVP_PCVR
+            /* Everything below runs AFTER render_frame(), i.e. after xrEndFrame
+               has submitted this frame to the compositor. Nothing that can block
+               on a desktop presentation lock — the swap, and the one-shot
+               blank+hide when the setting is turned off — may precede the submit,
+               or a monitor-side stall would delay headset frame delivery. The
+               only mirror work that runs before it is the eye blit in
+               avpview.c, which is a GPU copy with no present call in it and
+               cannot be moved later: it reads the swapchain image, which is the
+               runtime's again the moment we release it. */
+            vr_mirror_park_window();
+
+            /* Desktop mirror: xrEndFrame presented to the headset, the window
+               still holds last frame. 2D screens live in a headset quad layer,
+               so put the same software surface on the monitor; 3D frames were
+               blitted into the window by VR_MirrorEyeToWindow during the eye
+               pass and only need the swap. Skipping the swap when no eye was
+               mirrored (swapchain image not ready) leaves the last good frame
+               up rather than flipping to an undefined back buffer. */
+            if (xr_2d_mode) {
+                vr_mirror_pending = 0;
+                if (vr_mirror_wanted_this_frame()) PresentSoftwareSurface();
+            } else if (vr_mirror_pending) {
+                vr_mirror_pending = 0;
+                SDL_GL_SwapWindow(window);
+            }
+#endif
+            return;
+        }
+#ifdef AVP_PCVR
+        /* No submit happens on this path (the session is not running), so there
+           is nothing to stay behind. */
+        vr_mirror_park_window();
+
+        /* Before the session reaches READY there are no eye images yet, so the
+           flat present below drives the monitor directly — which is how the intro
+           FMVs and the profile screen still reached it with the mirror off. Bail
+           here instead. Keyed on xr_enabled (we are inside that test), so a PCVR
+           exe running flat, with no runtime or on -noxr, is untouched: there the
+           window IS the game. */
+        if (vr_mirror_is_off()) return;
+#endif
+        /* XR session not running (e.g. 2D panel mode) — fall through to SDL swap */
+    }
+#endif
+    
+    PresentSoftwareSurface();
 }
 
 char *AvpCDPath = 0;

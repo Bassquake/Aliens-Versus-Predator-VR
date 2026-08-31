@@ -152,6 +152,12 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AVOPTIONS_NPOTMIPS_HELP: return "Mipmaps textures that had to be padded to a power of two, reducing shimmer in the distance.";
 			case TEXTSTRING_AVOPTIONS_NPOTMIPS_OFF:  return "Off (Default)";
 			case TEXTSTRING_AVOPTIONS_NPOTMIPS_ON:   return "On";
+			case TEXTSTRING_AVOPTIONS_MIRROR:        return "Desktop Mirror";
+			case TEXTSTRING_AVOPTIONS_MIRROR_HELP:   return "Copies the headset view to the monitor. A lower rate, or Off, frees a little GPU time and desktop compositing.";
+			case TEXTSTRING_AVOPTIONS_MIRROR_EVERY:  return "Every Frame (Default)";
+			case TEXTSTRING_AVOPTIONS_MIRROR_HALF:   return "Every 2nd Frame";
+			case TEXTSTRING_AVOPTIONS_MIRROR_THIRD:  return "Every 3rd Frame";
+			case TEXTSTRING_AVOPTIONS_MIRROR_OFF:    return "Off";
 			case TEXTSTRING_AVOPTIONS_FSR:              return "FSR Upscaling";
 			case TEXTSTRING_AVOPTIONS_FSR_OFF:          return "Off";
 			case TEXTSTRING_AVOPTIONS_FSR_ULTRAQUALITY: return "Ultra Quality";

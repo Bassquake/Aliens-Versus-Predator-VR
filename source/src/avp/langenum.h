@@ -1411,6 +1411,16 @@ enum TEXTSTRING_ID
 	/* These two must stay consecutive — NPOT Mipmaps TEXTSLIDER (0=Off,1=On). */
 	TEXTSTRING_AVOPTIONS_NPOTMIPS_OFF,
 	TEXTSTRING_AVOPTIONS_NPOTMIPS_ON,
+	TEXTSTRING_AVOPTIONS_MIRROR,
+	TEXTSTRING_AVOPTIONS_MIRROR_HELP,
+	/* These four must stay consecutive — Desktop Mirror TEXTSLIDER adds the
+	   slider value to the first. Index 0 is the default (mirror every frame),
+	   which is required rather than tidy: the profile stores this in a
+	   previously-zero Padding byte, so zero has to mean the old behaviour. */
+	TEXTSTRING_AVOPTIONS_MIRROR_EVERY,
+	TEXTSTRING_AVOPTIONS_MIRROR_HALF,
+	TEXTSTRING_AVOPTIONS_MIRROR_THIRD,
+	TEXTSTRING_AVOPTIONS_MIRROR_OFF,
 	TEXTSTRING_AVOPTIONS_FSR,
 	/* These five must stay consecutive — FSR TEXTSLIDER adds the slider value to the first. */
 	TEXTSTRING_AVOPTIONS_FSR_OFF,

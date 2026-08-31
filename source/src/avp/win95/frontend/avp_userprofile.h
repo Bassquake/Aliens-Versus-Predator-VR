@@ -121,7 +121,11 @@ typedef struct
 	   because this struct is written as a raw blob and removing it would shift
 	   every field after it. */
 	unsigned char VRRefreshRateHz;        //0 = unset (was Padding)
-	char Padding[57];
+	/* AV Options "Desktop Mirror" (PCVR only, but stored on every target so the
+	   blob layout stays identical). Index 0 = every frame, the behaviour before
+	   the option existed, which a zeroed Padding byte has to decode to. */
+	unsigned char DesktopMirrorIndex;     //0=every frame (default), 1=every 2nd, 2=every 3rd, 3=off (was Padding)
+	char Padding[56];
 
 	int CDPlayerVolume;
 

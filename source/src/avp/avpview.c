@@ -106,6 +106,12 @@ int      vr_listener_mat_valid = 0;
 
 /* Per-eye FBO resources — color attachment is the XR swapchain texture (attached per frame) */
 static GLuint eye_fbo[2]      = {0, 0};
+#ifdef AVP_PCVR
+/* Clip-space Y band the VR HUD occupies, captured each frame below and handed to
+ * the desktop mirror so it can frame the HUD rather than the middle of the eye. */
+static float  vr_mirror_hud_lo = -1.0f;
+static float  vr_mirror_hud_hi =  1.0f;
+#endif
 static GLuint eye_depth_rb[2] = {0, 0};
 static int    eye_fbo_w       = 0;
 static int    eye_fbo_h       = 0;
@@ -2547,6 +2553,16 @@ void AvpShowViewsVR(void)
         vr_hud_offset_x   = (eye == 0) ? +VR_HUD_STEREO_DEPTH : -VR_HUD_STEREO_DEPTH;
         vr_hud_offset_y   = -0.10f;//-0.15
         vr_eye_index = eye;
+#ifdef AVP_PCVR
+        /* D3D_HUDQuad_Output maps the full 640x480 HUD rect to
+         *   clip_y = ±vr_hud_clip_scale + vr_hud_offset_y,
+         * and AvP anchors HUD elements to the edges of that rect, so this IS the
+         * extent the mirror has to keep on screen. Captured here rather than read
+         * at mirror time because both values are reset to 1.0/0.0 right after
+         * MaintainHUD, well before the eye pass ends. */
+        vr_mirror_hud_lo = vr_hud_offset_y - vr_hud_clip_scale;
+        vr_mirror_hud_hi = vr_hud_offset_y + vr_hud_clip_scale;
+#endif
         /* Recompute GunMuzzleSightX/Y in HUD-pixel space so the crosshair drawn by
          * MaintainHUD lands at the same clip-space position as the 3D aim point.
          *
@@ -2630,6 +2646,23 @@ void AvpShowViewsVR(void)
             /* Drop the swapchain texture from the resolve FBO — it goes back to
              * the runtime on release below and must not stay attached. */
             glBindFramebuffer(GL_FRAMEBUFFER, eye_resolve_fbo[eye]);
+        }
+#endif
+#ifdef AVP_PCVR
+        /* Mirror the last eye onto the monitor: nothing else ever draws to the
+         * desktop window while a session is presenting, so without this the
+         * screen stays black for the whole game. Here because this is the point
+         * where the image is finished (MSAA already resolved) and the swapchain
+         * texture is still attached to the FBO the blit reads from. Costs one
+         * glBlitFramebuffer and no re-render; main.c does the SDL swap after
+         * xrEndFrame. */
+        if (eye == (int)(view_count - 1)) {
+            extern void VR_MirrorEyeToWindow(GLuint src_fbo, int src_w, int src_h,
+                                             float band_lo, float band_hi);
+            VR_MirrorEyeToWindow((eye_fbo_samples > 0 && msaa_core_available)
+                                     ? eye_resolve_fbo[eye] : eye_fbo[eye],
+                                 eye_fbo_w, eye_fbo_h,
+                                 vr_mirror_hud_lo, vr_mirror_hud_hi);
         }
 #endif
         /* Detach swapchain texture and release — compositor will composite this frame */

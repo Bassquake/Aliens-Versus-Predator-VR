@@ -3549,6 +3549,11 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 			{
 				SetDetailLevelsFromMenu();
 				SaveUserProfile(UserProfilePtr);
+				/* Re-seed the config.cfg copy of the desktop mirror rate. The
+				   profile is the authority once loaded, but it is loaded too
+				   late to govern the intro and the profile screen themselves —
+				   see MIRROR_CONFIG_TAG in main.c. */
+				SaveDeviceAndVideoModePreferences();
 				
 				if(AvPMenus.MenusState == MENUSSTATE_INGAMEMENUS)
 				{

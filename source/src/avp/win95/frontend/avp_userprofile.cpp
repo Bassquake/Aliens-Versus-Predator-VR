@@ -42,6 +42,7 @@ extern int MSAASampleIndex;
 extern int AnisotropicFilterIndex;
 extern int TextureFilterIndex;
 extern int NPOTMipmapsEnabled;
+extern int DesktopMirrorIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
@@ -291,6 +292,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	AnisotropicFilterIndex = 0; /* 16x, matching the old always-maximum behaviour */
 	TextureFilterIndex = 0;     /* trilinear, the old hardcoded min filter */
 	NPOTMipmapsEnabled = 0;     /* NPOT textures were never mipped before */
+	DesktopMirrorIndex = 0;     /* mirror every frame, as it did before the option */
 
 	strcpy(MP_PlayerName, "Player");
 
@@ -343,6 +345,7 @@ extern void GetSettingsFromUserProfile(void)
 	AnisotropicFilterIndex =		UserProfilePtr->AnisotropicFilterIndex;
 	TextureFilterIndex =			UserProfilePtr->TextureFilterIndex;
 	NPOTMipmapsEnabled =			UserProfilePtr->NPOTMipmapsEnabled;
+	DesktopMirrorIndex =			UserProfilePtr->DesktopMirrorIndex;
 	VRTurnMode =				UserProfilePtr->VRTurnMode;
 	VRSnapAngleIndex =			UserProfilePtr->VRSnapAngleIndex;
 	VRSmoothTurnSpeed =			UserProfilePtr->VRSmoothTurnSpeed;
@@ -391,6 +394,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->AnisotropicFilterIndex =	AnisotropicFilterIndex;
 	profilePtr->TextureFilterIndex =	TextureFilterIndex;
 	profilePtr->NPOTMipmapsEnabled =	NPOTMipmapsEnabled;
+	profilePtr->DesktopMirrorIndex =	DesktopMirrorIndex;
 	profilePtr->VRTurnMode =		VRTurnMode;
 	profilePtr->VRSnapAngleIndex =		VRSnapAngleIndex;
 	profilePtr->VRSmoothTurnSpeed =		VRSmoothTurnSpeed;

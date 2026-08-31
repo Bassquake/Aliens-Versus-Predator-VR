@@ -178,6 +178,17 @@ static int WantMouseGrab = 1;
 int WantSound = 1;
 static int WantCDRom = 1;
 static int WantJoystick = 0;
+/* Run a VR-capable build on the flat desktop path (-noxr / --flat / AVP_NO_XR).
+   Needed because the "no headset, fall back to flat" path only covers OpenXR
+   calls that FAIL: xrCreateSession is allowed to block while the runtime brings
+   up a session, and desktop runtimes take that latitude freely. Measured on the
+   Oculus runtime with the service already warm but no headset presenting: 40.5
+   seconds before it returned success, and it has been seen not to return at all
+   — a black screen before the main loop is ever reached.
+   There is no timeout in the API, and the call cannot be moved to a worker
+   thread because the GL graphics binding requires the context to be current on
+   the calling thread. So the only reliable answer is to not make the call. */
+static int WantXR = 1;
 
 static GLuint FullscreenTexture;
 static GLsizei FullscreenTextureWidth;
@@ -1199,6 +1210,29 @@ static bool init_xr_instance(void)
 
     if (!load_xr_functions()) return false;
 
+    /* Name the runtime we actually bound to. Which one that is comes from the
+       loader (XR_RUNTIME_JSON, else the registry ActiveRuntime), never from
+       anything this app does, so on a machine with both SteamVR and Oculus
+       installed the log is the only reliable way to tell them apart. Note a
+       Quest on SteamVR still brings up Meta Link underneath as the transport —
+       seeing both start is expected and does NOT mean the wrong one is bound. */
+    {
+        PFN_xrGetInstanceProperties pfn_props = NULL;
+
+        pfn_xrGetInstanceProcAddr(xr_instance, "xrGetInstanceProperties",
+                                  (PFN_xrVoidFunction*)&pfn_props);
+        if (pfn_props) {
+            XrInstanceProperties props = { XR_TYPE_INSTANCE_PROPERTIES };
+
+            if (XR_SUCCEEDED(pfn_props(xr_instance, &props))) {
+                SDL_Log("XR: runtime \"%s\" version %u.%u.%u", props.runtimeName,
+                        (unsigned)XR_VERSION_MAJOR(props.runtimeVersion),
+                        (unsigned)XR_VERSION_MINOR(props.runtimeVersion),
+                        (unsigned)XR_VERSION_PATCH(props.runtimeVersion));
+            }
+        }
+    }
+
     XrSystemGetInfo sys_info = { XR_TYPE_SYSTEM_GET_INFO };
     sys_info.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     result = pfn_xrGetSystem(xr_instance, &sys_info, &xr_system_id);
@@ -1347,7 +1381,12 @@ static bool init_xr_session(void)
 #endif
 #endif
 
-    SDL_Log("XR: Creating session...");
+    /* This call can BLOCK for a long time while the runtime brings up a session
+       — 40+ seconds measured on the Oculus runtime with no headset presenting,
+       and it has been seen never to return. A log that stops on this line is
+       that, not a crash. There is no timeout in the API; run with -noxr to skip
+       OpenXR and use the desktop path. */
+    SDL_Log("XR: Creating session... (blocks while the runtime starts; -noxr runs flat)");
     XrSessionCreateInfo session_info = { XR_TYPE_SESSION_CREATE_INFO };
     session_info.next     = gfx_next;
     session_info.systemId = xr_system_id;
@@ -4352,7 +4391,11 @@ static int SetOGLVideoMode(int Width, int Height)
 #ifdef AVP_XR
 #ifndef AVP_DISABLE_XR   /* phone (non-VR) build: never touch OpenXR; xr_enabled stays
                            false, so the loop uses AvpShowViews() + SDL_GL_SwapWindow */
-        if (!xr_enabled) {
+        if (!xr_enabled && !WantXR) {
+            /* Asked for flat explicitly. Skip OpenXR entirely rather than
+               relying on the failure fallback below — see WantXR. */
+            SDL_Log("XR: OpenXR init skipped (-noxr / --flat / AVP_NO_XR) — flat desktop path");
+        } else if (!xr_enabled) {
             /* Quest's VR shell launches us with a plain MAIN+LAUNCHER intent —
              * the com.oculus.intent.category.VR category is NOT propagated to
              * the Activity's Intent, even though the system is in IMMERSIVE
@@ -5289,6 +5332,8 @@ static const struct option getopt_long_options[] = {
         { "debug",	0,	NULL,	'd' },
         { "withgl",	1,	NULL,	'g' },
         { "datapath",	1,	NULL,	'p' },
+        { "noxr",	0,	NULL,	'X' },
+        { "flat",	0,	NULL,	'X' },
 /*
 { "loadrifs",	1,	NULL,	'l' },
 { "server",	0,	someval,	1 },
@@ -5314,6 +5359,7 @@ static const char *usage_string =
         "      [-d | --debug]          Enable the debugging/cheat console commands\n"
         "      [-p | --datapath] [x]   Look at [x] for game files\n"
         "      [-g | --withgl] [x]     Accepted and ignored (legacy dlopen-libGL option)\n"
+        "      [--noxr | --flat]       VR builds: skip OpenXR, run on the desktop\n"
 ;
 
 int main(int argc, char *argv[])
@@ -5334,7 +5380,7 @@ int main(int argc, char *argv[])
     int c;
     
     opterr = 0;
-    while ((c = getopt_long(argc, argv, "hvfwscdg:p:", getopt_long_options, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "hvfwscdjg:p:X", getopt_long_options, NULL)) != -1) {
         switch(c) {
             case 'h':
                 printf("%s", usage_string);
@@ -5361,6 +5407,9 @@ int main(int argc, char *argv[])
                 extern int DebuggingCommandsActive;
                 DebuggingCommandsActive = 1;
             }
+                break;
+            case 'X':
+                WantXR = 0;
                 break;
             case 'g':
                 opengl_library = optarg;
@@ -5406,9 +5455,17 @@ int main(int argc, char *argv[])
             DebuggingCommandsActive = 1;
         } else if ((!strcmp(a, "-p") || !strcmp(a, "--datapath")) && (i + 1 < argc)) {
             gamedatapath = argv[++i];
+        } else if (!strcmp(a, "-noxr") || !strcmp(a, "--noxr") ||
+                   !strcmp(a, "-flat")  || !strcmp(a, "--flat")) {
+            WantXR = 0;
         }
     }
 #endif
+
+    /* Same switch as an environment variable, for launchers and shortcuts that
+       cannot pass arguments. Any value counts, including an empty one. */
+    if (SDL_getenv("AVP_NO_XR") != NULL)
+        WantXR = 0;
     SDL_Log("BOOT: InitSDL done");
     //SDL_Log("DEBUG: argv[0] is %s", (argv[0] ? argv[0] : "NULL"));
     //SDL_Log("DEBUG: gamedatapath is %s", (gamedatapath ? gamedatapath : "NULL"));

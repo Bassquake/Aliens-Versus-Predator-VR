@@ -3628,6 +3628,8 @@ void SaveDeviceAndVideoModePreferences()
 {
     FILE *fp;
     char *contents = NULL;
+    size_t contentsLen = 0;
+    int fileExists = 0;
     long size = 0;
 
     /* Read-modify-write. config.cfg is the game's file, not ours — it ships
@@ -3636,14 +3638,23 @@ void SaveDeviceAndVideoModePreferences()
        update-in-place mode ("wb" truncates). Slurp it, then rewrite it. */
     fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_READONLY, FILETYPE_CONFIG);
     if (fp != NULL) {
-        if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > 0 && size < (1024 * 1024)) {
+        fileExists = 1;
+        if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) >= 0 && size < (1024 * 1024)) {
             rewind(fp);
             contents = (char *)malloc((size_t)size + 1);
-            if (contents != NULL)
-                contents[fread(contents, 1, (size_t)size, fp)] = '\0';
+            if (contents != NULL) {
+                contentsLen = fread(contents, 1, (size_t)size, fp);
+                contents[contentsLen] = '\0';
+            }
         }
         fclose(fp);
     }
+
+    /* The file is there but could not be read back — implausibly large, or out
+       of memory. Abandon the save rather than opening it "wb": storing a
+       resolution is not worth any chance of wiping the key bindings. An absent
+       file is a different case and is fine to create. */
+    if (fileExists && contents == NULL) return;
 
     fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_WRITEONLY, FILETYPE_CONFIG);
     if (fp == NULL) {
@@ -3653,11 +3664,14 @@ void SaveDeviceAndVideoModePreferences()
 
     if (contents != NULL) {
         char *p = contents;
+        char *end = contents + contentsLen;
         int endedWithNewline = 1;
 
-        while (*p) {
-            char *eol = strchr(p, '\n');
-            size_t len = (eol != NULL) ? (size_t)(eol - p) + 1 : strlen(p);
+        /* Walked by length, not by strlen/strchr, so the copy-back is exact
+           for any byte the file happens to contain. */
+        while (p < end) {
+            char *eol = (char *)memchr(p, '\n', (size_t)(end - p));
+            size_t len = (eol != NULL) ? (size_t)(eol - p) + 1 : (size_t)(end - p);
 
             /* Drop any previous copy of our line rather than accumulating one
                per resolution change. */

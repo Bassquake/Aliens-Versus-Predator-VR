@@ -1,15 +1,28 @@
 # Aliens Versus Predator: VR and flat (non-VR)
 
-This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. I've ported to Android and for it to use OpenXR for VR headsets like the Meta Quest and PCVR. Confirmed to work with Quest 1 (v50 OS), Quest 2 and Quest 3 running v2.x OS. Game asset files are NOT included. Instructions on how to add them can be found below.
+This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below.
 
 > [!TIP]
 > Check the new 0.7 update on releases page. PCVR support added! More details on the Releases page.
 
-> [!CAUTION]
-> This build is in playable state as Marine and Predator. I'm still looking at how to do the wall climbing on Aliens level. I'm not primarily a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
+Here is list of compatible devices:
+
+| VR                                         |  Flat                                           |
+|--------------------------------------------|-------------------------------------------------|
+| - Quest 1                                  | - Windows x64 (Flat)                            |
+| - Quest 2                                  | - Windows x86 (Flat)                            |
+| - Quest 3                                  | - Windows arm64 (Flat)                          |
+| - Quest 3S                                 | - Linux x64 (Flat)                              |
+| - Quest Pro                                | - Linux x86 (Flat)                              |
+| - SteamVR Windows                          | - Linux arm64 (Flat)                            |
+| - SteamVR Linux                            | - Android 8 and above arm64 (Flat)              |
+|                                            | - Android 8 and above arm (Flat)                |
 
 > [!NOTE]
-> Builds include flat versions so can multiplay on a local LAN against others including Quest/PCVR users!! Mac coming soon.
+> I decided to include flat versions so can multiplay on a local LAN against others including Quest/PCVR users!! Mac coming soon.
+
+> [!CAUTION]
+> This build is in playable state as Marine and Predator. I'm still looking at how to do the wall climbing on Aliens level. I'm not primarily a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
 
 ![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-quest-menu.jpg)
 

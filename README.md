@@ -16,7 +16,7 @@ Here is list of compatible devices:
 | - Quest Pro                                | - Linux x86 (Flat)                              |
 | - SteamVR Windows                          | - Linux arm64 (Flat)                            |
 | - SteamVR Linux                            | - Android 8 and above arm64 (Flat)              |
-|                                            | - Android 8 and above arm (Flat)                |
+| - Pico (Coming soon)                       | - Android 8 and above arm (Flat)                |
 
 > [!NOTE]
 > I decided to include flat versions so can multiplay on a local LAN against others including Quest/PCVR users!! Mac coming soon.

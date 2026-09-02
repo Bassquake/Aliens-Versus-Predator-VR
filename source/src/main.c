@@ -426,6 +426,9 @@ static PFN_xrEnumerateDisplayRefreshRatesFB pfn_xrEnumerateDisplayRefreshRatesFB
  * enabled (Quest yes; SteamVR exposes no such extension, so the refresh-rate
  * option is inert there and its pfn_ pointers stay NULL). */
 static bool xr_has_refresh_rate_ext = false;
+/* XR_BD_controller_interaction: defines Pico's interaction profiles. Enumerated
+ * on Android only; stays false everywhere else, where nothing reads it. */
+static bool xr_has_bd_controller_ext = false;
 
 /* ========================================================================
  * Global XR State
@@ -665,6 +668,21 @@ typedef struct {
     Uint32                         image_count;
     XrExtent2Di                    size;
 } VRSwapchain;
+
+/* Which headset family we are driving. Detected on Android from
+ * Build.MANUFACTURER in init_xr_instance; there is no detection on PCVR and none
+ * is wanted, so QUEST is BOTH the zero value and the explicit initialiser.
+ *
+ * That ordering is load-bearing, not tidiness. With PICO at 0 an uninitialised
+ * global left every desktop build claiming to be a Pico, which suggested
+ * /interaction_profiles/pico/neo3_controller to SteamVR: the oculus/touch
+ * bindings were never sent, so head tracking kept working and every control went
+ * dead — silently, because the suggest result was not checked. The Pico branches
+ * below are additionally compiled out unless __ANDROID__, so PCVR cannot reach
+ * them even if this were wrong again. */
+enum VrHeadset { QUEST, PICO };
+
+static enum VrHeadset vr_headset = QUEST;
 
 VRSwapchain *vr_swapchains = NULL;
 /* Dedicated swapchain for the 2D menu quad layer. Kept separate from the per-eye
@@ -1010,7 +1028,8 @@ void VR_DrawVignette(void)
  * The frame counter is stepped before the occlusion test so the phase does not
  * drift while the window is hidden. */
 static int vr_mirror_frame   = 0;
-static int vr_mirror_blanked = 0;
+static int vr_mirror_blanked = 0;   /* window painted black */
+static int vr_mirror_hidden  = 0;   /* window taken off the desktop */
 
 static int vr_mirror_is_off(void) { return DesktopMirrorIndex == 3; }
 
@@ -1036,36 +1055,68 @@ static int vr_mirror_is_off(void) { return DesktopMirrorIndex == 3; }
  * Called from both flip paths and cheap to call repeatedly — the flag makes it a
  * no-op until the setting changes. It deliberately does NOT touch
  * vr_mirror_frame: the skip phase is a separate decision. */
-static void vr_mirror_park_window(void)
+static void vr_mirror_park_window(int session_presenting)
 {
     if (!vr_mirror_is_off()) {
-        /* Turned back on — put the window back. */
-        if (vr_mirror_blanked && window != NULL) SDL_ShowWindow(window);
+        /* Turned back on - put the window back. */
+        if (vr_mirror_hidden && window != NULL) SDL_ShowWindow(window);
+        vr_mirror_hidden  = 0;
         vr_mirror_blanked = 0;
         return;
     }
-    if (vr_mirror_blanked || window == NULL) return;
+    if (window == NULL) return;
 
-    GLint had_draw = 0;
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &had_draw);
-    GLboolean had_scissor = glIsEnabled(GL_SCISSOR_TEST);
-    GLboolean had_srgb    = glIsEnabled(GL_FRAMEBUFFER_SRGB_EXT);
-    if (had_scissor) glDisable(GL_SCISSOR_TEST);
-    if (had_srgb)    glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+    /* Blanking and hiding are SEPARATE steps on purpose, and the hide waits for
+     * a live session.
+     *
+     * Blanking happens as soon as the setting is off, including during startup,
+     * so no intro or menu content reaches the monitor. Hiding waits until the
+     * headset is actually presenting, because until then the window is the only
+     * evidence the app is alive: with it gone there is no taskbar entry, no
+     * keyboard focus and nothing on screen, so a launch that dies before the
+     * session starts - a runtime that never comes up, an xrCreateSession that
+     * blocks, a headset that is not connected - is completely invisible and
+     * cannot even be closed. A black window during those seconds is the cost of
+     * being able to see and kill a failed launch.
+     *
+     * It is symmetric: if the session later stops, the window comes back rather
+     * than leaving an unreachable process. xr_session_running only moves on
+     * READY and STOPPING, so this cannot flap during play. */
+    if (!vr_mirror_blanked) {
 
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    for (int i = 0; i < 2; i++) {
-        glClear(GL_COLOR_BUFFER_BIT);
-        SDL_GL_SwapWindow(window);
+        GLint had_draw = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &had_draw);
+        GLboolean had_scissor = glIsEnabled(GL_SCISSOR_TEST);
+        GLboolean had_srgb    = glIsEnabled(GL_FRAMEBUFFER_SRGB_EXT);
+        if (had_scissor) glDisable(GL_SCISSOR_TEST);
+        if (had_srgb)    glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        /* Twice: the window is double-buffered, so one clear+swap leaves the
+           stale frame in the other buffer, ready to flash back on any later
+           swap - including the one that follows a re-show. */
+        for (int i = 0; i < 2; i++) {
+            glClear(GL_COLOR_BUFFER_BIT);
+            SDL_GL_SwapWindow(window);
+        }
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)had_draw);
+        if (had_srgb)    glEnable(GL_FRAMEBUFFER_SRGB_EXT);
+        if (had_scissor) glEnable(GL_SCISSOR_TEST);
+
+        vr_mirror_blanked = 1;
     }
 
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)had_draw);
-    if (had_srgb)    glEnable(GL_FRAMEBUFFER_SRGB_EXT);
-    if (had_scissor) glEnable(GL_SCISSOR_TEST);
-
-    SDL_HideWindow(window);
-    vr_mirror_blanked = 1;
+    if (session_presenting) {
+        if (!vr_mirror_hidden) {
+            SDL_HideWindow(window);
+            vr_mirror_hidden = 1;
+        }
+    } else if (vr_mirror_hidden) {
+        SDL_ShowWindow(window);
+        vr_mirror_hidden = 0;
+    }
 }
 
 static int vr_mirror_wanted_this_frame(void)
@@ -1372,17 +1423,85 @@ static bool init_xr_instance(void)
     (*env)->GetJavaVM(env, &vm);
     jobject activity = (jobject)SDL_GetAndroidActivity();
 
+    /* Headset family, from Build.MANUFACTURER. Every step is null-checked and the
+     * whole thing falls back to QUEST, because the alternative to knowing is the
+     * oculus/touch profile, which is the one every Android runtime here supports.
+     * The compare is case-INsensitive: Pico has shipped this string as both
+     * "Pico" and "PICO" across PUI versions, and a mismatch would silently hand a
+     * Pico the Quest bindings. */
+    {
+        jclass buildClass = (*env)->FindClass(env, "android/os/Build");
+        if (buildClass) {
+            jfieldID manufacturerField = (*env)->GetStaticFieldID(env, buildClass,
+                                            "MANUFACTURER", "Ljava/lang/String;");
+            jstring manufacturer = manufacturerField
+                ? (jstring)(*env)->GetStaticObjectField(env, buildClass, manufacturerField)
+                : NULL;
+            const char *mfr = manufacturer
+                ? (*env)->GetStringUTFChars(env, manufacturer, NULL)
+                : NULL;
+            if (mfr) {
+                if (SDL_strcasecmp(mfr, "Pico") == 0) vr_headset = PICO;
+                SDL_Log("XR: Build.MANUFACTURER=\"%s\" -> %s", mfr,
+                        vr_headset == PICO ? "PICO" : "QUEST");
+                (*env)->ReleaseStringUTFChars(env, manufacturer, mfr);
+            }
+            if (manufacturer) (*env)->DeleteLocalRef(env, manufacturer);
+            (*env)->DeleteLocalRef(env, buildClass);
+        }
+        /* A pending exception makes every later JNI call undefined, and the two
+         * XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR fields below are JNI handles. */
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+
     XrInstanceCreateInfoAndroidKHR android_info = { XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR };
     android_info.applicationVM       = vm;
     android_info.applicationActivity = activity;
 
-    const char *extensions[] = {
-        XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
-        XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME,
-        XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME,
-    };
-    Uint32 extension_count = 3;
-    xr_has_refresh_rate_ext = true; /* always present on Quest */
+    /* Enumerate rather than assume — same shape as the PCVR branch below, and for
+     * the same reason: requesting an extension the runtime does not have FAILS
+     * xrCreateInstance outright. This list was written when Android meant Quest,
+     * and XR_FB_display_refresh_rate is a META extension: hardcoded, it takes the
+     * whole session down on any headset that lacks it, which is a black screen
+     * rather than a missing menu row. The two KHR extensions stay unconditional —
+     * without them there is no Android XR instance and no GLES rendering at all,
+     * so xrCreateInstance failing is the correct outcome. */
+    const char *extensions[4];
+    Uint32 extension_count = 0;
+    xr_has_refresh_rate_ext = false;
+    {
+        PFN_xrEnumerateInstanceExtensionProperties pfn_xrEnumerateInstanceExtensionProperties = NULL;
+        pfn_xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrEnumerateInstanceExtensionProperties",
+            (PFN_xrVoidFunction*)&pfn_xrEnumerateInstanceExtensionProperties);
+        if (pfn_xrEnumerateInstanceExtensionProperties) {
+            Uint32 avail = 0;
+            pfn_xrEnumerateInstanceExtensionProperties(NULL, 0, &avail, NULL);
+            XrExtensionProperties *props = SDL_calloc(avail, sizeof(XrExtensionProperties));
+            if (props) {
+                for (Uint32 i = 0; i < avail; i++) props[i].type = XR_TYPE_EXTENSION_PROPERTIES;
+                pfn_xrEnumerateInstanceExtensionProperties(NULL, avail, &avail, props);
+                for (Uint32 i = 0; i < avail; i++) {
+                    if (!strcmp(props[i].extensionName, XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME))
+                        xr_has_refresh_rate_ext = true;
+                    else if (!strcmp(props[i].extensionName, XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME))
+                        xr_has_bd_controller_ext = true;
+                }
+                SDL_free(props);
+            }
+        }
+    }
+    extensions[extension_count++] = XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME;
+    extensions[extension_count++] = XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME;
+    if (xr_has_refresh_rate_ext)
+        extensions[extension_count++] = XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME;
+    /* Pico's interaction profile (/interaction_profiles/pico/neo3_controller) is
+     * DEFINED BY this extension, so suggesting bindings for it without enabling
+     * the extension is XR_ERROR_PATH_UNSUPPORTED — and that rejects all 17
+     * bindings together, not just the profile line. */
+    if (xr_has_bd_controller_ext)
+        extensions[extension_count++] = XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME;
+    SDL_Log("XR: extensions available — FB_display_refresh_rate=%d BD_controller_interaction=%d",
+            (int)xr_has_refresh_rate_ext, (int)xr_has_bd_controller_ext);
 #else /* AVP_PCVR */
     /* Requesting an extension the runtime doesn't have FAILS xrCreateInstance,
      * so build the list from what the runtime actually offers. Only
@@ -1757,21 +1876,38 @@ static bool init_xr_session(void)
         /* Suggest bindings for Touch controller profile */
         XrPath profile_path, left_stick_path, right_stick_path, x_path, y_path, menu_path;
         XrPath left_grip_path, right_grip_path, right_trigger_path, right_squeeze_path, a_path, left_stick_click_path, b_path, right_stick_click_path, left_trigger_path, left_squeeze_path, right_haptic_path, left_haptic_path;
-        pfn_xrStringToPath(xr_instance, "/interaction_profiles/oculus/touch_controller", &profile_path);
+        /* Written as "Pico, else touch" rather than one test per headset so the
+         * FALLBACK is the oculus/touch profile — the one every runtime this ships
+         * against understands, SteamVR included. The if/else-if pair it replaces
+         * left these XrPaths uninitialised for any value matching neither arm.
+         * The guard keeps the Pico paths out of the PCVR binary entirely. */
+#ifdef __ANDROID__
+        if (vr_headset == PICO) {
+            /* The Pico Neo3 profile does not accept the bare .../input/trigger
+             * form, and its left-hand menu equivalent is a back click. */
+            pfn_xrStringToPath(xr_instance, "/interaction_profiles/pico/neo3_controller", &profile_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/left/input/trigger/click", &left_trigger_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/right/input/trigger/click",&right_trigger_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/left/input/back/click",    &menu_path);
+        } else
+#endif
+        {
+            pfn_xrStringToPath(xr_instance, "/interaction_profiles/oculus/touch_controller", &profile_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/left/input/trigger",       &left_trigger_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/right/input/trigger",      &right_trigger_path);
+            pfn_xrStringToPath(xr_instance, "/user/hand/left/input/menu/click",    &menu_path);
+        }
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/thumbstick",        &left_stick_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/thumbstick",       &right_stick_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/x/click",           &x_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/y/click",           &y_path);
-        pfn_xrStringToPath(xr_instance, "/user/hand/left/input/menu/click",        &menu_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/grip/pose",         &left_grip_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/grip/pose",        &right_grip_path);
-        pfn_xrStringToPath(xr_instance, "/user/hand/right/input/trigger",          &right_trigger_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/squeeze",          &right_squeeze_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/a/click",          &a_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/thumbstick/click",  &left_stick_click_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/b/click",           &b_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/input/thumbstick/click", &right_stick_click_path);
-        pfn_xrStringToPath(xr_instance, "/user/hand/left/input/trigger",           &left_trigger_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/input/squeeze",           &left_squeeze_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/right/output/haptic",          &right_haptic_path);
         pfn_xrStringToPath(xr_instance, "/user/hand/left/output/haptic",           &left_haptic_path);
@@ -1798,7 +1934,17 @@ static bool init_xr_session(void)
         suggested.interactionProfile     = profile_path;
         suggested.countSuggestedBindings = 17;
         suggested.suggestedBindings      = bindings;
-        pfn_xrSuggestInteractionProfileBindings(xr_instance, &suggested);
+        result = pfn_xrSuggestInteractionProfileBindings(xr_instance, &suggested);
+        if (XR_FAILED(result)) {
+            /* All 17 bindings are accepted or rejected together, so this is the
+             * difference between working controllers and a headset that tracks
+             * your head and ignores everything else — previously with nothing in
+             * the log to say so. Causes: a profile the runtime does not know, a
+             * path that profile does not define, or an extension-defined profile
+             * whose extension was not enabled at instance creation. */
+            SDL_Log("XR: xrSuggestInteractionProfileBindings FAILED (%d) - controllers will be dead",
+                    (int)result);
+        }
 
         XrSessionActionSetsAttachInfo attach_info = { XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO };
         attach_info.countActionSets = 1;
@@ -1809,12 +1955,30 @@ static bool init_xr_session(void)
         /* Create action spaces for grip poses (must be after xrAttachSessionActionSets) */
         if (pfn_xrCreateActionSpace) {
             XrActionSpaceCreateInfo grip_space_info = { XR_TYPE_ACTION_SPACE_CREATE_INFO };
-            grip_space_info.poseInActionSpace.orientation.w = 1.0f;
             grip_space_info.subactionPath = XR_NULL_PATH;
+            grip_space_info.poseInActionSpace.orientation.w = 1.0f;
 
             grip_space_info.action = xr_left_grip_action;
             result = pfn_xrCreateActionSpace(xr_session, &grip_space_info, &xr_left_grip_space);
             if (XR_FAILED(result)) SDL_Log("XR: failed to create left grip space: %d", (int)result);
+
+            /* The right hand holds the weapon, and the Pico grip pose sits at a
+             * different angle to the Oculus one - left alone the gun points about
+             * 20 degrees off. Applied as a pitch about X on the action space
+             * rather than in the aiming code, so everything downstream (muzzle,
+             * crosshair, the two-hand reload gesture) follows automatically.
+             *
+             * A pitch of 0 is the identity quaternion (sin 0 = 0, cos 0 = 1), so
+             * Quest and PCVR get bit-for-bit what they had before these two
+             * branches were collapsed into one. The guard means the desktop
+             * binary cannot pick up a Pico offset even if vr_headset were wrong. */
+            float weapon_pitch_rad = 0.0f;
+#ifdef __ANDROID__
+            if (vr_headset == PICO)
+                weapon_pitch_rad = 20.0f * (3.14159265358979323846f / 180.0f);
+#endif
+            grip_space_info.poseInActionSpace.orientation.x = SDL_sinf(weapon_pitch_rad * 0.5f);
+            grip_space_info.poseInActionSpace.orientation.w = SDL_cosf(weapon_pitch_rad * 0.5f);
 
             grip_space_info.action = xr_right_grip_action;
             result = pfn_xrCreateActionSpace(xr_session, &grip_space_info, &xr_right_grip_space);
@@ -5660,7 +5824,7 @@ void InGameFlipBuffers(void)
                avpview.c, which is a GPU copy with no present call in it and
                cannot be moved later: it reads the swapchain image, which is the
                runtime's again the moment we release it. */
-            vr_mirror_park_window();
+            vr_mirror_park_window(1);   /* xrEndFrame just presented: safe to hide */
 
             /* Desktop mirror: xrEndFrame presented to the headset, the window
                still holds last frame. 2D screens live in a headset quad layer,
@@ -5681,8 +5845,10 @@ void InGameFlipBuffers(void)
         }
 #ifdef AVP_PCVR
         /* No submit happens on this path (the session is not running), so there
-           is nothing to stay behind. */
-        vr_mirror_park_window();
+           is nothing to stay behind - and nothing is presenting to the headset
+           yet either, so this blanks the window but deliberately does NOT hide
+           it. See vr_mirror_park_window. */
+        vr_mirror_park_window(0);
 
         /* Before the session reaches READY there are no eye images yet, so the
            flat present below drives the monitor directly — which is how the intro
@@ -5739,7 +5905,7 @@ void FlipBuffers()
                avpview.c, which is a GPU copy with no present call in it and
                cannot be moved later: it reads the swapchain image, which is the
                runtime's again the moment we release it. */
-            vr_mirror_park_window();
+            vr_mirror_park_window(1);   /* xrEndFrame just presented: safe to hide */
 
             /* Desktop mirror: xrEndFrame presented to the headset, the window
                still holds last frame. 2D screens live in a headset quad layer,
@@ -5760,8 +5926,10 @@ void FlipBuffers()
         }
 #ifdef AVP_PCVR
         /* No submit happens on this path (the session is not running), so there
-           is nothing to stay behind. */
-        vr_mirror_park_window();
+           is nothing to stay behind - and nothing is presenting to the headset
+           yet either, so this blanks the window but deliberately does NOT hide
+           it. See vr_mirror_park_window. */
+        vr_mirror_park_window(0);
 
         /* Before the session reaches READY there are no eye images yet, so the
            flat present below drives the monitor directly — which is how the intro

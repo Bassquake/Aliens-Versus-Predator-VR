@@ -105,5 +105,6 @@
                 <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
             </intent-filter>
         </activity>
+        <meta-data android:name="pvr.app.type" android:value="vr" />
     </application>
 </manifest>

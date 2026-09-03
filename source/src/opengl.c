@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>   /* offsetof, for the streaming VBO attribute offsets */
 
 #include "oglfunc.h"
 
@@ -467,6 +468,50 @@ static ALIGN16 TriangleArray starr[TA_MAXTRIANGLES];
 static TriangleArray *starrp = starr;
 static int starrc;
 
+/* Streaming vertex/index buffers.
+ *
+ * These replace client-side vertex arrays. Previously every draw pointed the
+ * attributes straight at varr/tarr in application memory, which obliges the
+ * driver to copy and validate the whole batch on EVERY glDrawElements - and the
+ * batch breaks on each texture, translucency or filtering change (see
+ * CheckTriangleBuffer), so that is many times a frame. It is also illegal in a
+ * core profile and merely tolerated in the compatibility one.
+ *
+ * The upload uses glBufferData rather than glBufferSubData, which is deliberate
+ * twice over: it is the classic ORPHANING pattern - handing it a fresh pointer
+ * retires the previous storage, so the driver allocates new memory instead of
+ * stalling until the GPU has finished reading the last draw - and glBufferSubData
+ * is not among the entry points oglfunc.c resolves, so using it would mean
+ * loading another one for no gain at this batch size (2048 verts = 64 KB max). */
+static GLuint g_vbo = 0;
+static GLuint g_ibo = 0;
+
+static void OGL_EnsureStreamBuffers(void)
+{
+    /* Idempotent: InitOpenGL runs again on a video mode change, and regenerating
+       the buffers there would leak the old pair. */
+    if (!g_vbo) glGenBuffers(1, &g_vbo);
+    if (!g_ibo) glGenBuffers(1, &g_ibo);
+}
+
+/* Point the three attributes into the VBO. With a buffer bound, the last argument
+   to glVertexAttribPointer is a byte offset into it rather than a client pointer.
+   specular != 0 selects VertexArray::s in place of ::c for the second pass. */
+static void OGL_SetStreamAttribPointers(int specular)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+    glEnableVertexAttribArray(g_aPos);
+    glVertexAttribPointer(g_aPos,   4, GL_FLOAT,         GL_FALSE, sizeof(VertexArray),
+                          (const GLvoid *)offsetof(VertexArray, v));
+    glEnableVertexAttribArray(g_aUV);
+    glVertexAttribPointer(g_aUV,    2, GL_FLOAT,         GL_FALSE, sizeof(VertexArray),
+                          (const GLvoid *)offsetof(VertexArray, t));
+    glEnableVertexAttribArray(g_aColor);
+    glVertexAttribPointer(g_aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(VertexArray),
+                          (const GLvoid *)(specular ? offsetof(VertexArray, s)
+                                                    : offsetof(VertexArray, c)));
+}
+
 void OGL_RegenerateMipmaps(void)
 {
 	glGenerateMipmap(GL_TEXTURE_2D);
@@ -509,15 +554,10 @@ void OGL_ApplyTextureFilterSettings(void)
 // In opengl.c — call this to re-bind game shader attribs after any external blit
 void RestoreGameShaderState(void)
 {
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	glUseProgram(g_prog);
-	glEnableVertexAttribArray(g_aPos);
-	glVertexAttribPointer(g_aPos,   4, GL_FLOAT,         GL_FALSE, sizeof(varr[0]), varr[0].v);
-	glEnableVertexAttribArray(g_aUV);
-	glVertexAttribPointer(g_aUV,    2, GL_FLOAT,         GL_FALSE, sizeof(varr[0]), varr[0].t);
-	glEnableVertexAttribArray(g_aColor);
-	glVertexAttribPointer(g_aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(varr[0]), varr[0].c);
+	OGL_EnsureStreamBuffers();
+	OGL_SetStreamAttribPointers(0);
 	glActiveTexture(GL_TEXTURE0);
 	glUniform1i(g_uNoTex, 0);
 	/* Reset texture filter cache — HUD text rendering leaves
@@ -627,15 +667,9 @@ void InitOpenGL()
 	pglBindTexture(GL_TEXTURE_2D, 0);
 	
 	glUseProgram(g_prog);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
-	
-	glEnableVertexAttribArray(g_aPos);
-	glVertexAttribPointer(g_aPos,   4, GL_FLOAT,         GL_FALSE, sizeof(varr[0]), varr[0].v);
-	glEnableVertexAttribArray(g_aUV);
-	glVertexAttribPointer(g_aUV,    2, GL_FLOAT,         GL_FALSE, sizeof(varr[0]), varr[0].t);
-	glEnableVertexAttribArray(g_aColor);
-	glVertexAttribPointer(g_aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(varr[0]), varr[0].c);
+	OGL_EnsureStreamBuffers();
+	OGL_SetStreamAttribPointers(0);
 	
 	tarrc = 0; tarrp = tarr;
 	varrc = 0; varrp = varr;
@@ -644,21 +678,25 @@ void InitOpenGL()
 
 static void FlushTriangleBuffers(int backup)
 {
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    OGL_EnsureStreamBuffers();
     glBindVertexArray(0);
-    glEnableVertexAttribArray(g_aPos);
-    glVertexAttribPointer(g_aPos,   4, GL_FLOAT,         GL_FALSE, sizeof(varr[0]), varr[0].v);
-    glEnableVertexAttribArray(g_aUV);
-    glVertexAttribPointer(g_aUV,    2, GL_FLOAT,         GL_FALSE, sizeof(varr[0]), varr[0].t);
-    glEnableVertexAttribArray(g_aColor);
-    glVertexAttribPointer(g_aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(varr[0]), varr[0].c);
+
+    /* One vertex upload serves both passes - they share varr and differ only in
+       which colour channel they read - so this has to happen BEFORE the varrc
+       reset inside the first branch below. */
+    glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+    if (varrc)
+        glBufferData(GL_ARRAY_BUFFER, varrc * sizeof(VertexArray), varr, GL_STREAM_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ibo);
+    OGL_SetStreamAttribPointers(0);
 	
 	if (tarrc) {
         glUniform1i(g_uNoTex, CurrentlyBoundTexture == NULL ? 1 : 0);
         glUniform1i(g_uSpecularPass, 0);
 
-        pglDrawElements(GL_TRIANGLES, tarrc*3, GL_UNSIGNED_SHORT, tarr);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, tarrc * sizeof(TriangleArray), tarr, GL_STREAM_DRAW);
+        /* Offset into the bound index buffer now, not a client pointer. */
+        pglDrawElements(GL_TRIANGLES, tarrc*3, GL_UNSIGNED_SHORT, (const GLvoid *)0);
 
         tarrc = 0; tarrp = tarr;
         varrc = 0; varrp = varr;
@@ -666,12 +704,13 @@ static void FlushTriangleBuffers(int backup)
     
     if (starrc) {
         SetSecondPassTranslucencyMode(CurrentTranslucencyMode);
-        glVertexAttribPointer(g_aPos,   4, GL_FLOAT,         GL_FALSE, sizeof(varr[0]), varr[0].v);
-        glVertexAttribPointer(g_aUV,    2, GL_FLOAT,         GL_FALSE, sizeof(varr[0]), varr[0].t);
-        glVertexAttribPointer(g_aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(varr[0]), varr[0].s);
+        /* Vertices are already in the VBO; only the colour attribute moves to
+           VertexArray::s and the indices change. */
+        OGL_SetStreamAttribPointers(1);
         glUniform1i(g_uSpecularPass, 1);
-        pglDrawElements(GL_TRIANGLES, starrc*3, GL_UNSIGNED_SHORT, starr);
-        glVertexAttribPointer(g_aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(varr[0]), varr[0].c);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, starrc * sizeof(TriangleArray), starr, GL_STREAM_DRAW);
+        pglDrawElements(GL_TRIANGLES, starrc*3, GL_UNSIGNED_SHORT, (const GLvoid *)0);
+        OGL_SetStreamAttribPointers(0);
         glUniform1i(g_uSpecularPass, 0);
         SetTranslucencyMode(CurrentTranslucencyMode);
         starrc = 0; starrp = starr;

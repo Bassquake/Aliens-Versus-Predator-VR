@@ -76,12 +76,22 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
         <uses-native-library android:name="libopenxr.google.so" android:required="false" />
-        <!-- Supported Quest devices. NOTE: the old Quest 1 (v50) VR runtime parses this
-             list and HARD-ABORTS on any device token it doesn't know ("Unknown device to
-             support: quest3" -> SIGABRT), and quest3/quest3s postdate that runtime. Listing
-             only tokens the oldest target runtime knows keeps Quest 1 from crashing;
-             sideloaded apps aren't gated by this list, so newer headsets still run it. -->
-        <meta-data android:name="com.oculus.supportedDevices" android:value="quest|quest2|questpro" />
+        <!-- com.oculus.supportedDevices is DELIBERATELY ABSENT. Do not put it back, in any
+             form - it is worse than useless here, in two ways that pull against each other:
+
+               - Present but not listing the headset you are on RESTRICTS it. With
+                 "quest|quest2|questpro" a Quest 3 offered only 72/80/90 Hz; the 120 Hz
+                 option did not exist.
+               - Adding "quest3" fixed that and then HARD-ABORTED Quest 1: its v50-era
+                 runtime parses this list and SIGABRTs on any token it does not know
+                 ("Unknown device to support: quest3"), and quest3/quest3s postdate it.
+
+             Removing the key entirely satisfies both - a Quest 3 keeps 120 Hz and a Quest 1
+             runs - because absence means no restriction rather than nothing supported, and
+             sideloaded apps are not gated by this list at all. One APK serves every headset.
+             Verified on both devices 2026-09-03. Trimming the list back to old-only tokens
+             would also stop the abort, but re-caps the Quest 3 to 90 Hz, so it is not a
+             substitute for deleting it. -->
         <meta-data android:name="com.oculus.openxr.application" android:value="true" />
         <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
         <!--<meta-data android:name="com.oculus.intent.category.2D" android:value="true" />-->

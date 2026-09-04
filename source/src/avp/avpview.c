@@ -1629,7 +1629,17 @@ void AvpShowViewsVR(void)
     static float cached_vr_y_scale = (float)GAME_UNITS_PER_METRE;
     int body_upright = 1;
     if (Player && Player->ObStrategyBlock && Player->ObStrategyBlock->DynPtr)
-        body_upright = (Player->ObStrategyBlock->DynPtr->OrientMat.mat22 > 55000); /* ~0.84*ONE_FIXED => tilt < ~33 deg */
+        /* Near-vertical only. game_eye_to_floor is the VERTICAL feet-to-eye
+           separation, so it shrinks as L*cos(tilt) the moment the body leans -
+           refreshing the scale at any real tilt therefore caches a value that is
+           too small, and every later climb inherits it.
+           Measured (VRCEIL log, 2026-09-04): refS was 1831 on the floor and 1567
+           once climbing. 1567/1831 = 0.856 = cos(31.2 deg) - i.e. the scale had
+           been captured at 31 degrees of tilt, just inside the old ~33 degree
+           window, leaving the eye 264 units (about a foot) out on ceilings.
+           0.99*ONE_FIXED caps that error at ~1% (~18 units); a body tilted past
+           ~8 degrees simply holds the last good scale, which is the intent. */
+        body_upright = (Player->ObStrategyBlock->DynPtr->OrientMat.mat22 > 64881); /* 0.99*ONE_FIXED => tilt < ~8 deg */
     if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright)
         cached_vr_y_scale = (float)game_eye_to_floor / ref_head_y;
     float vr_y_scale = cached_vr_y_scale;
@@ -1899,12 +1909,89 @@ void AvpShowViewsVR(void)
         Global_VDB_Ptr->VDB_World.vz = base_world.vz
             - (int)(phys_dz * vr_y_scale);
 
+        /* --- Climbing: place the eye in the SURFACE frame ---------------------
+         * The assignments above put the eye at an ABSOLUTE stage height:
+         * camera = game_floor - physical_eye_height. That silently assumes the
+         * world's up is the player's up, so on a ceiling it still hangs the eye
+         * "above the floor" - reported on-device 2026-09-04 as "on the ceiling my
+         * vision is still at eye level as if I was on the floor", along with
+         * clipping through the ceiling on the way up.
+         *
+         * Flat's camera is simply Player->ObWorld (UpdateCamera), which the physics
+         * already carries onto the wall or ceiling - which is why flat is right
+         * there - and base_world is exactly that, captured from UpdateCamera at the
+         * top of this function. So express room-tracking as an OFFSET FROM THE
+         * REFERENCE HEAD POSE, rotate it by the same climb tilt the view uses, and
+         * add it to base_world. Standing still at the calibrated height gives a
+         * zero offset and therefore flat's own camera, on any surface; crouching
+         * moves you along the surface's up axis, leaning moves you in its plane.
+         *
+         * The tilt R is used here, NOT the body matrix ObMat. ObMat carries the
+         * body's HEADING as well as its tilt, and the view already gets a full
+         * heading from the HMD - composing both double-counts it (tried on-device
+         * 2026-09-04: the view swung 90 degrees on grabbing a wall, with hands and
+         * movement inheriting the same error). Flat gets away with ObMat because
+         * the term it composes on top is a pure pitch carrying no heading at all.
+         * R is heading-free by construction, so it is the right rotation here.
+         *
+         * RotateVector(v, M) computes M^T * v, so the transpose is passed to apply
+         * R itself. Snap is already folded into phys_dx/phys_dz above, matching the
+         * view's own ordering (tilt outside, snap inside). */
+        /* The hands were built by GRIP_TO_GAME against THIS eye position (same
+         * formula), so keep it: their offset from it is the raw room-space
+         * head->hand vector, which is what re-attaches them below. */
+        VECTORCH vr_eye_unclimbed = Global_VDB_Ptr->VDB_World;
+
+        if (vr_climb_tilt_active) {
+            MATRIXCH climb_RT;
+            climb_RT.mat11 = vr_climb_tilt.mat11; climb_RT.mat12 = vr_climb_tilt.mat21; climb_RT.mat13 = vr_climb_tilt.mat31;
+            climb_RT.mat21 = vr_climb_tilt.mat12; climb_RT.mat22 = vr_climb_tilt.mat22; climb_RT.mat23 = vr_climb_tilt.mat32;
+            climb_RT.mat31 = vr_climb_tilt.mat13; climb_RT.mat32 = vr_climb_tilt.mat23; climb_RT.mat33 = vr_climb_tilt.mat33;
+
+            /* Vertical term = DEVIATION from the calibrated standing height, using
+             * the CACHED vr_y_scale. Confirmed correct on walls on-device
+             * (2026-09-04); a residual ~268 units remains on flat ceilings only,
+             * cause not yet established - do not "fix" it by either of the two
+             * routes already disproved:
+             *
+             *   -pose.y*scale            adds a whole eye height on top of a base
+             *                            that already contains one -> too tall on
+             *                            walls AND ceilings.
+             *   (eye_unclimbed - base)   looks principled but breaks while
+             *                            climbing: eye_unclimbed.vy is anchored to
+             *                            ObWorld (the FEET), and once the body
+             *                            tilts, ObWorld.vy converges on
+             *                            base_world.vy (see the note on
+             *                            game_eye_to_floor collapsing, above), so
+             *                            the difference degenerates into the full
+             *                            eye height -> too tall again.
+             *
+             * The deviation form works because ref_head_y and vr_y_scale are both
+             * frozen from the last upright frame, so it stays anchored to the
+             * standing geometry rather than to the collapsing live one. */
+            VECTORCH off;
+            off.vx =  (int)(phys_dx * vr_y_scale);
+            off.vy =  (int)((ref_head_y - xr_views[eye].pose.position.y) * vr_y_scale);
+            off.vz = -(int)(phys_dz * vr_y_scale);
+            RotateVector(&off, &climb_RT);          /* off = R * off */
+            Global_VDB_Ptr->VDB_World.vx = base_world.vx + off.vx;
+            Global_VDB_Ptr->VDB_World.vy = base_world.vy + off.vy;
+            Global_VDB_Ptr->VDB_World.vz = base_world.vz + off.vz;
+        }
+
         QUAT q;
         q.quatw =  (int)(xr_views[eye].pose.orientation.w * ONE_FIXED);
         q.quatx = -(int)(xr_views[eye].pose.orientation.x * ONE_FIXED);
         q.quaty =  (int)(xr_views[eye].pose.orientation.y * ONE_FIXED);
         q.quatz =  (int)(xr_views[eye].pose.orientation.z * ONE_FIXED);
         QuatToMat(&q, &Global_VDB_Ptr->VDB_Mat);
+
+        /* The view matrix the ORDINARY (off-wall) path produces. Captured before
+         * any climb composition and after the head pose is in place; the snap slot
+         * below is applied to both this and the final matrix identically, so the
+         * only difference between them is the climb tilt itself. This is the
+         * VDB_off in the hand mapping further down. */
+        MATRIXCH vr_vdb_off_pre = Global_VDB_Ptr->VDB_Mat;
 
         /* Climbing Alien: split the head pose so its HEADING (yaw) is applied as a
          * pan AFTER the tilt (below) while its pitch/roll stay before it - so
@@ -1920,19 +2007,26 @@ void AvpShowViewsVR(void)
             float fz = (float)Global_VDB_Ptr->VDB_Mat.mat33;
             float mag = SDL_sqrtf(fx*fx + fz*fz);
             if (mag > 1.0f) {
-                /* forward is row 3 negated (world->view row 3 is the camera's
-                 * backward axis), so negate both to get the true head heading. */
-                int S = -(int)((fx/mag)*65536.0f), C = -(int)((fz/mag)*65536.0f);
+                /* Row 3 IS the camera's forward axis, not its backward one - a
+                 * marker placed 2 m along +row3 renders dead ahead, while the
+                 * -row3 marker sits behind the eye (measured on-device
+                 * 2026-09-04). The negation that used to be here therefore put the
+                 * extracted heading 180 degrees out, and since the split applies
+                 * HeadYaw * R * HeadYaw_inv, a 180 degree error in that
+                 * conjugation FLIPS the tilt axis - which is why head turning and
+                 * looking around on a wall went the wrong way. The code's old
+                 * TUNING note ("if the view faces BACKWARDS, negate both S and C")
+                 * is now answered by measurement rather than by trial. */
+                int S = (int)((fx/mag)*65536.0f), C = (int)((fz/mag)*65536.0f);
                 vr_head_yaw.mat11 =  C; vr_head_yaw.mat12 = 0;         vr_head_yaw.mat13 = -S;
                 vr_head_yaw.mat21 =  0; vr_head_yaw.mat22 = ONE_FIXED; vr_head_yaw.mat23 =  0;
                 vr_head_yaw.mat31 =  S; vr_head_yaw.mat32 = 0;         vr_head_yaw.mat33 =  C;
                 vr_head_yaw_inv.mat11 =  C; vr_head_yaw_inv.mat12 = 0;         vr_head_yaw_inv.mat13 =  S;
                 vr_head_yaw_inv.mat21 =  0; vr_head_yaw_inv.mat22 = ONE_FIXED; vr_head_yaw_inv.mat23 =  0;
                 vr_head_yaw_inv.mat31 = -S; vr_head_yaw_inv.mat32 = 0;         vr_head_yaw_inv.mat33 =  C;
-                MATRIXCH tmp;
-                MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vr_head_yaw_inv, &tmp); /* HeadYaw_inv * VDB_Mat */
-                Global_VDB_Ptr->VDB_Mat = tmp;
-                vr_head_yaw_active = 1;
+                /* DISABLED - see the note on the re-apply below. Left computed so
+                 * the extraction stays available if the split is ever revisited. */
+                vr_head_yaw_active = 0;
             }
         }
 
@@ -1943,7 +2037,7 @@ void AvpShowViewsVR(void)
          * behaviour, kept for the floor and always for Marine/Predator.
          * A climbing Alien handles the snap separately, after the tilt (below),
          * so it pans around the wall instead of rolling. */
-        if (xr_snap_yaw != 0 && !vr_climb_tilt_active) {
+        if (xr_snap_yaw != 0) {
             int snap_s = GetSin(xr_snap_yaw);
             int snap_c = GetCos(xr_snap_yaw);
             MATRIXCH snap_mat;
@@ -1953,88 +2047,212 @@ void AvpShowViewsVR(void)
             MATRIXCH snapped;
             MatrixMultiply(&snap_mat, &Global_VDB_Ptr->VDB_Mat, &snapped); /* VDB_Mat * snap_mat */
             Global_VDB_Ptr->VDB_Mat = snapped;
+            /* Same snap on the off-wall reference, so the pair differ only by tilt. */
+            MatrixMultiply(&snap_mat, &vr_vdb_off_pre, &snapped);
+            vr_vdb_off_pre = snapped;
         }
 
-        /* Apply the wall/ceiling climb tilt as a world-space PRE-rotation of the
-         * scene: VDB_Mat = vr_climb_tilt * VDB_Mat (MatrixMultiply(A,B,C) gives
-         * C = B*A). This rotates the world so the wall's "up" becomes the view's
-         * forward when looking level, instead of a camera-local post-rotation
-         * (VDB_Mat * tilt) which came out inverted / backwards. */
+        /* Apply the climb tilt as a genuine WORLD-space rotation of the scene:
+         *     VDB_Mat = VDB_Mat * R^T
+         *
+         * VDB_Mat is world->view with its ROWS as the view axes (established by the
+         * +row3 marker test, 2026-09-04), so view_coords = VDB_Mat * w. Rotating
+         * the WORLD by Q before viewing is therefore VDB_Mat * Q - a right-multiply
+         * - while a left-multiply (R * VDB_Mat, which this used to do despite its
+         * comment claiming otherwise) is a CAMERA-LOCAL rotation. That made the
+         * tilt depend on where you were looking, which is why looking around on a
+         * wall went wrong in every direction.
+         *
+         * Q = R^T because R maps world-down onto the body-down axis, so R^T maps
+         * the wall normal back onto world-down - i.e. it stands the wall up as the
+         * floor, which is what the view wants.
+         *
+         * Cross-check from the eye: the eye offset is base_world + R*d, and that is
+         * confirmed correct on-device (steady white marker, ceiling no longer
+         * clipped). Requiring a hand/eye offset to render identically on and off
+         * the wall gives VDB_off * R^T * w == VDB_off * d, hence w = R*d - which is
+         * exactly what the eye already does. So the eye implies this form of the
+         * tilt; the two were inconsistent, and the eye was the correct one.
+         *
+         * MatrixMultiply(A,B,C) gives C = B*A, so passing RT first yields
+         * VDB_Mat * R^T. */
         if (vr_climb_tilt_active) {
-            MATRIXCH tilted;
-            MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vr_climb_tilt, &tilted);
+            MATRIXCH climb_RT_view, tilted;
+            climb_RT_view.mat11 = vr_climb_tilt.mat11; climb_RT_view.mat12 = vr_climb_tilt.mat21; climb_RT_view.mat13 = vr_climb_tilt.mat31;
+            climb_RT_view.mat21 = vr_climb_tilt.mat12; climb_RT_view.mat22 = vr_climb_tilt.mat22; climb_RT_view.mat23 = vr_climb_tilt.mat32;
+            climb_RT_view.mat31 = vr_climb_tilt.mat13; climb_RT_view.mat32 = vr_climb_tilt.mat23; climb_RT_view.mat33 = vr_climb_tilt.mat33;
+            MatrixMultiply(&climb_RT_view, &Global_VDB_Ptr->VDB_Mat, &tilted); /* VDB_Mat * R^T */
             Global_VDB_Ptr->VDB_Mat = tilted;
         }
 
-        /* Re-apply the head heading as a pan AFTER the tilt (removed before it,
-         * above) so turning the head pans along the wall instead of rolling. */
-        if (vr_head_yaw_active) {
-            MATRIXCH tmp;
-            MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vr_head_yaw, &tmp); /* HeadYaw * VDB_Mat */
-            Global_VDB_Ptr->VDB_Mat = tmp;
-        }
+        /* HEAD-HEADING SPLIT: DISABLED 2026-09-04.
+         *
+         * The split composed to HeadYaw * R * P - heading applied in WORLD space,
+         * outside the tilt, with pitch/roll inside it. On a 90 degree wall that
+         * hybrid maps the head's pitch axis onto the vertical, which is why head
+         * yaw worked but looking UP AND DOWN turned the view LEFT AND RIGHT
+         * (reported on-device 2026-09-04).
+         *
+         * Without it the composition is simply R * HMD - the whole head
+         * orientation rotated by the surface tilt, i.e. "the wall is now your
+         * floor": room yaw becomes rotation about the wall normal, room pitch
+         * becomes pitch along the wall.
+         *
+         * The split existed only to cure a head-turn ROLL seen in July, but that
+         * observation was made while the heading extraction had its sign 180
+         * degrees out (the negation removed just above, disproved by the +row3
+         * marker test) - and a 180 degree error in HeadYaw * R * HeadYaw_inv flips
+         * the tilt axis, which would produce exactly that roll. So the symptom it
+         * was built to fix was most likely caused by its own bad sign.
+         *
+         * If head-turn roll comes back, re-enable by restoring the two
+         * MatrixMultiply calls (vr_head_yaw_inv before the tilt, vr_head_yaw
+         * after) - the extraction above is still computed. */
 
-        /* Climbing snap turn: yaw about world-vertical (Y), left-multiplied AFTER
-         * the tilt so it pans the tilted view's heading around the wall instead of
-         * rolling it. By elimination: the known-good tilt rotates about the wall's
-         * horizontal tangent (= pitch), rotating about the wall normal was roll
-         * (previous test), so the remaining vertical axis is the pan/heading axis.
-         * The original code applied this same yaw BEFORE the tilt, which is why it
-         * rolled. (If the pan turns the wrong WAY, negate xr_snap_yaw here.) */
-        if (vr_climb_tilt_active && xr_snap_yaw != 0) {
-            int snap_s = GetSin(xr_snap_yaw);
-            int snap_c = GetCos(xr_snap_yaw);
-            MATRIXCH snap_mat;
-            snap_mat.mat11 =  snap_c; snap_mat.mat12 = 0;         snap_mat.mat13 = -snap_s;
-            snap_mat.mat21 = 0;       snap_mat.mat22 = ONE_FIXED; snap_mat.mat23 = 0;
-            snap_mat.mat31 =  snap_s; snap_mat.mat32 = 0;         snap_mat.mat33 =  snap_c;
-            MATRIXCH panned;
-            MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &snap_mat, &panned); /* snap_mat * VDB_Mat */
-            Global_VDB_Ptr->VDB_Mat = panned;
-        }
+        /* SNAP AXIS. The climbing snap used to be applied HERE, outside the tilt
+         * (snap_mat * VDB_Mat), which makes it a yaw about world-vertical Y. On a
+         * wall that axis lies IN the wall plane, so it tumbles you along the wall
+         * instead of turning you on it.
+         *
+         * The on-device log made this unambiguous. With down=(0,0,-1), R maps
+         * (x,y,z) -> (x, z, -y), and across four snap turns the eye moved in X and
+         * Y while Z stayed pinned at -493:
+         *     snap=3004 eye=(1568,-2274,-493)
+         *     snap=3516 eye=(1544,-2309,-493)
+         *     snap=4028 eye=(1505,-2316,-493)
+         * World Y is vertical, so the snap was sliding the eye UP AND DOWN the wall.
+         *
+         * The position offset never had this problem: it applies the snap BEFORE R
+         * (phys_dx/phys_dz are rotated up where they are computed), and since R maps
+         * world-Y onto the body's up axis, a pre-R yaw IS a yaw about the wall
+         * normal - which is what turning on a wall means. So the view and the
+         * position were rotating about different axes; the view now uses the same
+         * inner slot as the position and as the off-wall path above, and there is
+         * no separate climbing snap at all. */
 
-        /* Keep the hands/weapon in front of the face through the climb tilt.
-         * Movement (VR_RotateMoveVelocity in pmove.c) rotates a head-frame velocity
-         * by R (= vr_climb_tilt) to align it with the tilted view, and that works.
-         * A hand is a POSITION in that view - the inverse relationship - so rotate
-         * its offset-from-eye and its orientation by R^T instead. This is the
-         * minimal transform: no reference view, head-heading split or snap folded
-         * in (those all sent the marker behind / orbiting). Done once (eye 0);
-         * GRIP_TO_GAME rebuilds the raw poses next frame so this doesn't accumulate.
-         * (RotateVector(v, M) computes M^T*v, so RotateVector(v, R) gives R^T*v.) */
+        /* Re-attach the hands to the head through the climb tilt.
+         *
+         * Each hand is placed RELATIVE TO THE EYE, not to base_world:
+         *     hand = eye_final + R * (hand_raw - eye_unclimbed)
+         * The bracket is the raw room-space head->hand vector - GRIP_TO_GAME built
+         * both from the same reference and the same formula, so it is exact and
+         * carries no absolute-height assumption. That matters because the eye is
+         * now positioned in the surface frame while GRIP_TO_GAME still uses the old
+         * absolute stage height: pivoting hands about base_world (as this block used
+         * to) left the two on DIFFERENT position models, which is what detached the
+         * hands and the tail on-device 2026-09-04. Anchoring to the eye makes the
+         * head->hand relationship identical on a wall to what it is on the floor,
+         * whatever either absolute model does.
+         *
+         * Orientation composes R on the same side the view does (VDB_Mat =
+         * R * VDB_Mat), rather than the R^T this block used before - the hand should
+         * turn WITH the view, not against it.
+         *
+         * Done once (eye 0); GRIP_TO_GAME rebuilds the raw poses next frame so this
+         * cannot accumulate. RotateVector(v, M) computes M^T * v, so climb_RT is
+         * passed where R itself is wanted. */
         if (eye == 0 && vr_climb_tilt_active) {
-            MATRIXCH RT;   /* R^T = transpose of vr_climb_tilt, for the orientation */
+            MATRIXCH RT;   /* R^T, so RotateVector applies R */
             RT.mat11 = vr_climb_tilt.mat11; RT.mat12 = vr_climb_tilt.mat21; RT.mat13 = vr_climb_tilt.mat31;
             RT.mat21 = vr_climb_tilt.mat12; RT.mat22 = vr_climb_tilt.mat22; RT.mat23 = vr_climb_tilt.mat32;
             RT.mat31 = vr_climb_tilt.mat13; RT.mat32 = vr_climb_tilt.mat23; RT.mat33 = vr_climb_tilt.mat33;
 
+            /* The snap needs no special handling here. The view applies it in the
+             * inner slot (same as off the wall) and the eye offset applies it
+             * before R, so the offset below - which is (hand_raw - eye_unclimbed),
+             * i.e. Snap * d_rel already - just needs R, exactly like the eye.
+             *
+             * Earlier rounds wrapped this in Snap * ... * Snap^T to compensate for
+             * the view snapping about world Y while the position snapped about the
+             * body axis. Fixing that mismatch at its source (see SNAP AXIS above)
+             * makes the wrapper a double-correction, which is what kept the hands
+             * rolling on a snap turn after the eye itself was already steady. */
+
+            /* Map a world offset from the off-wall view frame into the climbed one:
+             *     offset_new = VDB_final^T * VDB_off * offset_old
+             * derived from requiring the hand to land at the SAME view coordinates
+             * in both, VDB_final * offset_new == VDB_off * offset_old.
+             *
+             * This replaces the bare R that was here. The 2026-09-04 marker test
+             * settled the convention that makes this exact: a marker placed along
+             * +row3 renders dead ahead (the white -row3 marker sat behind the eye),
+             * so VDB_Mat is world->view with its ROWS as the view axes - and the
+             * same marker stayed centred on a wall, so the climb composition does
+             * not disturb that. Note the transpose arrangement: VDB_final^T *
+             * VDB_off, NOT VDB_final * VDB_off^T, which is the form tried earlier
+             * and the reason it failed.
+             *
+             * RotateVector(v, M) computes M^T * v, so applying VDB_off means
+             * passing its transpose, and applying VDB_final^T means passing
+             * VDB_final itself. */
+            MATRIXCH vdb_offT;
+            vdb_offT.mat11 = vr_vdb_off_pre.mat11; vdb_offT.mat12 = vr_vdb_off_pre.mat21; vdb_offT.mat13 = vr_vdb_off_pre.mat31;
+            vdb_offT.mat21 = vr_vdb_off_pre.mat12; vdb_offT.mat22 = vr_vdb_off_pre.mat22; vdb_offT.mat23 = vr_vdb_off_pre.mat32;
+            vdb_offT.mat31 = vr_vdb_off_pre.mat13; vdb_offT.mat32 = vr_vdb_off_pre.mat23; vdb_offT.mat33 = vr_vdb_off_pre.mat33;
+
+            /* Orientation counterpart of the position mapping above. A hand's
+             * axes expressed in VIEW coordinates must be the same on the wall as
+             * off it:
+             *     hand_new * VDB_final^T == hand_old * VDB_off^T
+             *   =>  hand_new = hand_old * (VDB_off^T * VDB_final)
+             * so the same pair of matrices drives both, just on the other side.
+             *
+             * Leaving orientation on the old R * hand_mat while position used the
+             * derived mapping is what left the hands correctly placed but stuck at
+             * a fixed 90 degree rotation (on-device 2026-09-04) - a constant error,
+             * which is the signature of a mismatched composition rather than a
+             * mismatched axis.
+             *
+             * MatrixMultiply(A,B,C) gives C = B*A. */
+            MATRIXCH vr_view_change;
+            MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vdb_offT, &vr_view_change); /* VDB_off^T * VDB_final */
+
             if (vr_right_hand_valid) {
                 VECTORCH off;
-                off.vx = vr_right_hand_world.vx - base_world.vx;
-                off.vy = vr_right_hand_world.vy - base_world.vy;
-                off.vz = vr_right_hand_world.vz - base_world.vz;
-                RotateVector(&off, &vr_climb_tilt);            /* off = R^T * off */
-                vr_right_hand_world.vx = base_world.vx + off.vx;
-                vr_right_hand_world.vy = base_world.vy + off.vy;
-                vr_right_hand_world.vz = base_world.vz + off.vz;
+                off.vx = vr_right_hand_world.vx - vr_eye_unclimbed.vx;
+                off.vy = vr_right_hand_world.vy - vr_eye_unclimbed.vy;
+                off.vz = vr_right_hand_world.vz - vr_eye_unclimbed.vz;
+                RotateVector(&off, &vdb_offT);                 /* VDB_off * off */
+                RotateVector(&off, &Global_VDB_Ptr->VDB_Mat);  /* VDB_final^T * that */
+                vr_right_hand_world.vx = Global_VDB_Ptr->VDB_World.vx + off.vx;
+                vr_right_hand_world.vy = Global_VDB_Ptr->VDB_World.vy + off.vy;
+                vr_right_hand_world.vz = Global_VDB_Ptr->VDB_World.vz + off.vz;
                 MATRIXCH hm;
-                MatrixMultiply(&vr_right_hand_mat, &RT, &hm);  /* hm = R^T * hand_mat */
+                MatrixMultiply(&vr_view_change, &vr_right_hand_mat, &hm);  /* hm = hand_mat * (VDB_off^T * VDB_final) */
                 vr_right_hand_mat = hm;
             }
             if (vr_left_hand_valid) {
                 VECTORCH off;
-                off.vx = vr_left_hand_world.vx - base_world.vx;
-                off.vy = vr_left_hand_world.vy - base_world.vy;
-                off.vz = vr_left_hand_world.vz - base_world.vz;
-                RotateVector(&off, &vr_climb_tilt);
-                vr_left_hand_world.vx = base_world.vx + off.vx;
-                vr_left_hand_world.vy = base_world.vy + off.vy;
-                vr_left_hand_world.vz = base_world.vz + off.vz;
+                off.vx = vr_left_hand_world.vx - vr_eye_unclimbed.vx;
+                off.vy = vr_left_hand_world.vy - vr_eye_unclimbed.vy;
+                off.vz = vr_left_hand_world.vz - vr_eye_unclimbed.vz;
+                RotateVector(&off, &vdb_offT);                 /* VDB_off * off */
+                RotateVector(&off, &Global_VDB_Ptr->VDB_Mat);  /* VDB_final^T * that */
+                vr_left_hand_world.vx = Global_VDB_Ptr->VDB_World.vx + off.vx;
+                vr_left_hand_world.vy = Global_VDB_Ptr->VDB_World.vy + off.vy;
+                vr_left_hand_world.vz = Global_VDB_Ptr->VDB_World.vz + off.vz;
                 MATRIXCH hm;
-                MatrixMultiply(&vr_left_hand_mat, &RT, &hm);
+                MatrixMultiply(&vr_view_change, &vr_left_hand_mat, &hm);  /* hm = hand_mat * (VDB_off^T * VDB_final) */
                 vr_left_hand_mat = hm;
             }
         }
+
+        /* The climbing view/hand/eye transforms above were settled on-device with
+         * temporary particle markers and two logs (VRDBG, VRCEIL), removed
+         * 2026-09-04. What they established, so it need not be re-measured:
+         *   - VDB_Mat is world->view with its ROWS as the view axes: a marker 2 m
+         *     along +row3 renders dead ahead, and that holds on a wall as well as
+         *     on the floor. The old "row 3 is the camera's backward axis" comment
+         *     was wrong and had propagated into several transforms.
+         *   - base_world is the EYE, not the feet: on the floor the ordinary
+         *     formula lands within 1 unit of it, while Player->ObWorld sits ~1833
+         *     below (UpdateCamera seeds VDB_World from ObWorld, then
+         *     InteriorType_Body raises it).
+         *   - The engine's camera placement is SYMMETRIC: ObWorld.vy -
+         *     base_world.vy is +1831 on the floor and -1833 on a flat ceiling, so
+         *     hanging a full standing height below a ceiling is the flat
+         *     behaviour, not a VR bug. Sitting closer to the surface would be a
+         *     deliberate divergence (a "hug" factor), not a correction. */
 
         /* Capture the head-tracked orientation (same for both eyes) for 3D audio.
          * This is the full facing the player actually sees — head yaw + snap turn —

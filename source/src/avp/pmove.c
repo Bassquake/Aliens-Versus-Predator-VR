@@ -385,6 +385,51 @@ static void VR_RotateMoveVelocity(DYNAMICSBLOCK *dynPtr)
 	float s = sqrtf(bx*bx + bz*bz);  /* sin(tilt) = horizontal magnitude of down axis */
 	float c = by;                    /* cos(tilt) */
 
+	/* --- Wall/ceiling: move where the player LOOKS ---------------------------
+	 * The code below this anchors "forward" to the wall geometry itself
+	 * (head_sin/head_cos from the toward-wall horizontal), which deliberately
+	 * ignores where the head points AND ignores the snap turn - so after a snap
+	 * you kept walking in the pre-snap direction (reported on-device 2026-09-04).
+	 *
+	 * Now that the climbing VIEW is correct, movement can just follow it.
+	 * vr_listener_mat is the FINAL view matrix, captured in avpview.c after the
+	 * tilt, snap and head pose are all composed (it is the same matrix the 3D
+	 * audio listener uses, read the same way in openal.c). It is world->view with
+	 * its ROWS as the view axes, and RotateVector(v, M) computes M^T * v, so
+	 * passing it maps a view-frame stick direction out into world space.
+	 *
+	 * Then project out the component along the surface normal (the body down
+	 * axis), so pushing forward slides you ALONG the wall rather than into or off
+	 * it when you happen to be looking slightly off-surface. On a floor that
+	 * projection removes the vertical component, which is exactly what the
+	 * yaw-only floor path below already does - so the two agree at the boundary.
+	 *
+	 * Same condition as the view's vr_climb_tilt_active in avpview.c - INCLUDING
+	 * the I_Alien test - so the two can never disagree about whether we are
+	 * climbing. The species gate matters: this function serves the player of any
+	 * species, and the tilt test alone is 0.006 degrees, so without it a Marine or
+	 * Predator on a ramp (or just physics jitter) would be routed through the
+	 * climbing path. Only the Alien wall-crawls, and only the Alien gets the
+	 * matching climb VIEW, so anything else here would move against its own
+	 * camera. */
+	if (AvP.PlayerType == I_Alien && (s > 0.0001f || c < 0.0f)) {
+		extern MATRIXCH vr_listener_mat;
+		extern int      vr_listener_mat_valid;
+		if (vr_listener_mat_valid) {
+			RotateVector(&dynPtr->LinVelocity, &vr_listener_mat);  /* view -> world */
+			{
+				float vx = (float)dynPtr->LinVelocity.vx;
+				float vy = (float)dynPtr->LinVelocity.vy;
+				float vz = (float)dynPtr->LinVelocity.vz;
+				float dot = vx*bx + vy*by + vz*bz;
+				dynPtr->LinVelocity.vx = (int)(vx - dot*bx);
+				dynPtr->LinVelocity.vy = (int)(vy - dot*by);
+				dynPtr->LinVelocity.vz = (int)(vz - dot*bz);
+			}
+			return;
+		}
+	}
+
 	/* 1. Base heading: rotate the stick's body-forward onto a world horizontal
 	   direction, before the surface tilt R below.
 	     - Floor (upright): follow the HMD horizontal heading, so movement tracks

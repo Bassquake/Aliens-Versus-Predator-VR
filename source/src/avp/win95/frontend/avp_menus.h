@@ -292,6 +292,9 @@ typedef struct
 
 #define BRIGHTNESS_OF_HIGHLIGHTED_ELEMENT (ONE_FIXED)
 #define BRIGHTNESS_OF_DARKENED_ELEMENT (ONE_FIXED/4)
+/* Greyed-out rows: settings that do not apply to the current mode. Clearly dimmer
+   than an ordinary unselected row, which is already only a quarter brightness. */
+#define BRIGHTNESS_OF_DISABLED_ELEMENT (ONE_FIXED/12)
 #define BRIGHTNESS_CHANGE_SPEED (RealFrameTime*2)
 
 #define MENU_TOPY		(150)

@@ -1332,6 +1332,57 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 }
 
 
+/* Rows that do not apply to the current Turning Mode: greyed out and skipped by the
+ * cursor, rather than removed from the array.
+ *
+ * Snap and smooth turning share no settings, so one mode's controls are always
+ * inert. Hiding them worked but made every row below jump as the menu grew and
+ * shrank when the mode was toggled; greying keeps the layout fixed.
+ *
+ * Matched on the row's own label rather than its index, for the same reason
+ * MakeInGameMenu scans for its key-config row: a hardcoded position silently
+ * selects the wrong row once anything is inserted above it.
+ *
+ * The wall-walk vignette rows are deliberately NOT included — they fire on the
+ * Alien climb transition, which happens under either turning mode. */
+static int MenuElementIsDisabled(const AVPMENU_ELEMENT *elementPtr)
+{
+	if (AvPMenus.CurrentMenu != AVPMENU_CONTROLLERCONFIG) return 0;
+	{
+		const int smooth = (VRTurnMode == 1);   /* 0 = Snap (default), 1 = Smooth */
+		switch (elementPtr->a.TextDescription)
+		{
+			case TEXTSTRING_VRSNAP_ANGLE:
+				return smooth;
+			case TEXTSTRING_VRSMOOTH_SPEED:
+			case TEXTSTRING_VRSMOOTH_DEADZONE:
+			case TEXTSTRING_VRVIGNETTE:
+			case TEXTSTRING_VRVIGNETTE_STRENGTH:
+				return !smooth;
+			default:
+				return 0;
+		}
+	}
+}
+
+/* Step the cursor by dir (-1 or +1) with wrap, past any greyed-out rows. The guard
+   bounds it to one pass, so a menu whose rows were all disabled (which cannot
+   happen today) would stop rather than spin. */
+static void MoveSelectionSkippingDisabled(int dir)
+{
+	int guard = AvPMenus.NumberOfElementsInMenu;
+	do
+	{
+		AvPMenus.CurrentlySelectedElement += dir;
+		if (AvPMenus.CurrentlySelectedElement < 0)
+			AvPMenus.CurrentlySelectedElement = AvPMenus.NumberOfElementsInMenu-1;
+		else if (AvPMenus.CurrentlySelectedElement >= AvPMenus.NumberOfElementsInMenu)
+			AvPMenus.CurrentlySelectedElement = 0;
+	}
+	while (--guard > 0
+	       && MenuElementIsDisabled(&AvPMenus.MenuElements[AvPMenus.CurrentlySelectedElement]));
+}
+
 static void RenderMenu(void)
 {
 	AVPMENU_ELEMENT *elementPtr = AvPMenus.MenuElements;
@@ -1361,7 +1412,13 @@ static void RenderMenu(void)
 	{
 		int targetBrightness;
 
-		if (e==AvPMenus.CurrentlySelectedElement)
+		if (MenuElementIsDisabled(elementPtr))
+		{
+			/* Tested first: a disabled row stays dim even if the cursor is somehow
+			   on it, so it can never look selectable. */
+			targetBrightness = BRIGHTNESS_OF_DISABLED_ELEMENT;
+		}
+		else if (e==AvPMenus.CurrentlySelectedElement)
 		{
 			targetBrightness = BRIGHTNESS_OF_HIGHLIGHTED_ELEMENT;
 		}
@@ -2642,11 +2699,7 @@ static void ActUponUsersInput(void)
 					}
 					default:
 					{
-						AvPMenus.CurrentlySelectedElement--;
-						if (AvPMenus.CurrentlySelectedElement<0)
-						{
-							AvPMenus.CurrentlySelectedElement= AvPMenus.NumberOfElementsInMenu-1;
-						}
+						MoveSelectionSkippingDisabled(-1);
 						Sound_Play(SID_MENUS_CHANGE_ITEM,"r");
 						break;
 					}
@@ -2686,11 +2739,7 @@ static void ActUponUsersInput(void)
 					}
 					default:
 					{
-						AvPMenus.CurrentlySelectedElement++;
-						if (AvPMenus.CurrentlySelectedElement>=AvPMenus.NumberOfElementsInMenu)
-						{
-							AvPMenus.CurrentlySelectedElement= 0;
-						}
+						MoveSelectionSkippingDisabled(+1);
 						Sound_Play(SID_MENUS_CHANGE_ITEM,"r");
 						break;
 					}
@@ -2778,6 +2827,12 @@ static void ActUponUsersInput(void)
 static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interactionID)
 {
 	AVPMENU_ELEMENT *elementPtr = &AvPMenus.MenuElements[AvPMenus.CurrentlySelectedElement];
+
+	/* A greyed-out row accepts nothing, not even the click sound. Navigation already
+	   skips these, so the cursor should never be on one - this is here so that a
+	   future way of landing on a row directly (a pointer, a default element) cannot
+	   quietly make an inert setting adjustable again. */
+	if (MenuElementIsDisabled(elementPtr)) return;
 
 	if (interactionID==AVPMENU_ELEMENT_INTERACTION_SELECT)
 	{

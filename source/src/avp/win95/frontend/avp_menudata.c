@@ -222,7 +222,11 @@ static AVPMENU_ELEMENT AvPMenu_ControlsOptions[] =
 	{AVPMENU_ELEMENT_ENDOFMENU}
 };
 
-/* Controller Configuration screen — VR controller / turning options. */
+/* Controller Configuration screen — VR controller / turning options.
+ *
+ * Rows that do not apply to the current Turning Mode are greyed out and skipped by
+ * the cursor rather than removed — see MenuElementIsDisabled in avp_menus.c. They
+ * stay in this array so the layout never changes size. */
 static AVPMENU_ELEMENT AvPMenu_ControllerConfig[] =
 {
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRTURN_MODE},	{1}, {&VRTurnMode},		{TEXTSTRING_VRTURN_SNAP},	TEXTSTRING_VRTURN_MODE_HELP},

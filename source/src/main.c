@@ -449,6 +449,15 @@ static XrSession xr_session = XR_NULL_HANDLE;
    it useless as a cap detector — but it is exactly right for "what can this
    headset actually do", which is what the menu needs. */
 #define VR_MAX_REFRESH_RATES 16
+
+/* The rate list used when the runtime's XR_FB_display_refresh_rate enumeration
+ * yields nothing. It MUST be shared by the applier and the resolver: they used to
+ * keep separate ideas of the fallback — apply_refresh_rate_if_changed had this
+ * table while VR_GetRefreshRateIndexForHz just returned 0 — so a stored rate
+ * resolved to index 0 and the applier then played back the lowest rate. That is
+ * what made a saved 90 Hz revert to 72 on every restart (Quest 3, 2026-09-04). */
+static const float vr_fallback_rates[] = {72.0f, 80.0f, 90.0f, 120.0f};
+#define VR_FALLBACK_RATE_COUNT ((int)(sizeof(vr_fallback_rates)/sizeof(vr_fallback_rates[0])))
 static float vr_refresh_rates[VR_MAX_REFRESH_RATES];
 static char  vr_refresh_labels[VR_MAX_REFRESH_RATES][12];
 static char *vr_refresh_label_ptrs[VR_MAX_REFRESH_RATES];
@@ -470,20 +479,25 @@ float VR_GetRefreshRateByIndex(int i)
    sit at that position. 0 (unset) picks 72 Hz if offered, else the lowest. */
 int VR_GetRefreshRateIndexForHz(float hz)
 {
+    const float *list = vr_refresh_rates;
+    int n = vr_refresh_rate_count;
     int best = 0, i;
     float bestDelta;
 
-    if (vr_refresh_rate_count <= 0) return 0;
+    /* Resolve against the fallback table rather than giving up when enumeration
+       produced nothing, so a stored rate still maps to the slider position the
+       applier will play back. See vr_fallback_rates. */
+    if (n <= 0) { list = vr_fallback_rates; n = VR_FALLBACK_RATE_COUNT; }
 
     if (hz <= 0.0f) {
-        for (i = 0; i < vr_refresh_rate_count; i++)
-            if (vr_refresh_rates[i] > 71.0f && vr_refresh_rates[i] < 73.0f) return i;
+        for (i = 0; i < n; i++)
+            if (list[i] > 71.0f && list[i] < 73.0f) return i;
         return 0;   /* list is sorted ascending, so [0] is the lowest */
     }
 
     bestDelta = -1.0f;
-    for (i = 0; i < vr_refresh_rate_count; i++) {
-        float d = vr_refresh_rates[i] - hz;
+    for (i = 0; i < n; i++) {
+        float d = list[i] - hz;
         if (d < 0.0f) d = -d;
         if (bestDelta < 0.0f || d < bestDelta) { bestDelta = d; best = i; }
     }
@@ -500,15 +514,29 @@ static void vr_enumerate_refresh_rates(void)
     if (vr_refresh_rate_count > 0) return;               /* already done */
     if (!pfn_xrEnumerateDisplayRefreshRatesFB || !xr_session) return;
 
-    if (XR_FAILED(pfn_xrEnumerateDisplayRefreshRatesFB(xr_session, 0, &count, NULL))
-        || count == 0)
-        return;
+    /* Log the failures rather than returning silently. When this yields nothing the
+       menu quietly shows vr_fallback_rates instead of the headset's real list, which
+       looks identical to a working enumeration — so without a line here there is no
+       way to tell the two apart from a logcat. */
+    {
+        XrResult er = pfn_xrEnumerateDisplayRefreshRatesFB(xr_session, 0, &count, NULL);
+        if (XR_FAILED(er) || count == 0) {
+            SDL_Log("XR: refresh-rate enumeration returned nothing (rc=%d, count=%u)"
+                    " - using the fixed fallback list", (int)er, count);
+            return;
+        }
+    }
 
     if (count > VR_MAX_REFRESH_RATES) count = VR_MAX_REFRESH_RATES;
-    if (XR_FAILED(pfn_xrEnumerateDisplayRefreshRatesFB(xr_session, count, &got,
-                                                       vr_refresh_rates))
-        || got == 0)
-        return;
+    {
+        XrResult er = pfn_xrEnumerateDisplayRefreshRatesFB(xr_session, count, &got,
+                                                          vr_refresh_rates);
+        if (XR_FAILED(er) || got == 0) {
+            SDL_Log("XR: refresh-rate fetch failed (rc=%d, got=%u of %u)",
+                    (int)er, got, count);
+            return;
+        }
+    }
     if (got > VR_MAX_REFRESH_RATES) got = VR_MAX_REFRESH_RATES;
 
     /* The runtime is not required to return these in order, and the menu reads
@@ -2642,7 +2670,6 @@ static void apply_refresh_rate_if_changed(void)
         /* Rates come from the headset now, not a hardcoded list. The old fixed
            set survives only as a fallback for a runtime without the extension,
            so the option still does something sensible there. */
-        static const float fallback[] = {72.0f, 80.0f, 90.0f, 120.0f};
         int   count = VR_GetRefreshRateCount();
         int   idx   = VRRefreshRateIndex;
         float hz;
@@ -2651,11 +2678,23 @@ static void apply_refresh_rate_if_changed(void)
             if (idx >= count) idx = count - 1;
             hz = VR_GetRefreshRateByIndex(idx);
         } else {
-            if (idx > 3) idx = 3;
-            hz = fallback[idx];
+            if (idx > VR_FALLBACK_RATE_COUNT - 1) idx = VR_FALLBACK_RATE_COUNT - 1;
+            hz = vr_fallback_rates[idx];
         }
-        /* Persist the RATE, not the index — see VR_GetRefreshRateIndexForHz. */
-        VRRefreshRateHz = (int)(hz + 0.5f);
+        /* Persist the RATE, not the index — see VR_GetRefreshRateIndexForHz.
+           But only once something has actually CHOSEN one. This runs long before the
+           menus load a profile, and at that point the index is 0 and VRRefreshRateHz
+           is 0 meaning "unset", so writing the resolved rate here stamped the startup
+           default (72 Hz) into the global as though the player had picked it. The menu
+           code then treated that as a live choice, let it outrank the profile's saved
+           rate, and saved it back — which is why an in-session change held while
+           a full restart always reverted to 72 (Quest 3, 2026-09-04).
+           The rate is still REQUESTED at startup; only the write-back is held, so
+           VRRefreshRateHz == 0 keeps meaning "nothing has chosen a rate yet" until the
+           profile load or the player supplies one. The suppressed case is exactly
+           "unset", so a deliberate pick of index 0 later still persists normally. */
+        if (!(VRRefreshRateHz == 0 && VRRefreshRateIndex == 0))
+            VRRefreshRateHz = (int)(hz + 0.5f);
         XrResult rr = pfn_xrRequestDisplayRefreshRateFB(xr_session, hz);
         SDL_Log("XR: set refresh rate %.0f Hz -> %d", hz, (int)rr);
         vr_applied_refresh = VRRefreshRateIndex;

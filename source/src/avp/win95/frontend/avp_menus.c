@@ -335,6 +335,22 @@ int AvP_MainMenus(void)
 		   ExamineSavedUserProfiles is called again by SetupNewMenu(AVPMENU_USERPROFILESELECT)
 		   and its SetDefaultProfileOptions side-effect resets ShowFrameRate/VRRefreshRateIndex,
 		   so we save and restore them around the SetupNewMenu call. */
+
+		/* AvP_MainMenus is re-entered every time you leave a game (main.c runs it
+		   as `while (AvP_MainMenus())`), so this block runs on EVERY return to the
+		   menu, not just at startup - and it deliberately reloads display settings
+		   from the first saved profile. That discarded a refresh rate chosen from
+		   the in-game AV options: back at the menu it reverted, and re-entering
+		   applied the profile's value (0 = unset = 72 Hz). Reported on Quest 3,
+		   2026-09-04.
+		   Capture the live rate HERE, before ExamineSavedUserProfiles() - that call
+		   resets the globals to defaults via SetDefaultProfileOptions, so the
+		   captures inside the block below already read 0 rather than the live
+		   value. At genuine startup the live rate is 0 and the profile still wins,
+		   which is the intended behaviour. */
+		int liveVRRefreshRateHz    = VRRefreshRateHz;
+		int liveVRRefreshRateIndex = VRRefreshRateIndex;
+
 		ExamineSavedUserProfiles();
 		{
 			int savedShowFrameRate = ShowFrameRate;
@@ -386,6 +402,14 @@ int AvP_MainMenus(void)
 			VRSmoothDeadzone = savedVRSmoothDeadzone;
 			VRVignetteOn = savedVRVignetteOn;
 			VRVignetteStrength = savedVRVignetteStrength;
+		}
+		/* A rate chosen in-game outranks the profile's stored one on re-entry.
+		   Safe because VRRefreshRateHz stays 0 until something actually chooses a
+		   rate — see the guard in apply_refresh_rate_if_changed (main.c). */
+		if (liveVRRefreshRateHz > 0)
+		{
+			VRRefreshRateHz    = liveVRRefreshRateHz;
+			VRRefreshRateIndex = liveVRRefreshRateIndex;
 		}
 		AvPMenus.MenusState = MENUSSTATE_MAINMENUS;
 	}
@@ -896,7 +920,23 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 	{
 		case AVPMENU_MAIN:
 		{
+			/* Returning to the main menu re-loads the profile over the live
+			   settings and immediately re-saves it. That discarded any refresh
+			   rate chosen from the IN-GAME AV options: back at the menu the rate
+			   reverted, and re-entering the game applied the profile's value
+			   (0 = unset = 72 Hz) - reported on Quest 3, 2026-09-04.
+			   Carry the live rate across the reload, then let SaveUserProfile
+			   persist it, so an in-game change survives without the player having
+			   to find "Use these settings". Same save/restore pattern already used
+			   around the profile-select SetupNewMenu further up this file. */
+			int liveVRRefreshRateHz = VRRefreshRateHz;
+			int liveVRRefreshRateIndex = VRRefreshRateIndex;
 			GetSettingsFromUserProfile();
+			if (liveVRRefreshRateHz > 0)
+			{
+				VRRefreshRateHz = liveVRRefreshRateHz;
+				VRRefreshRateIndex = liveVRRefreshRateIndex;
+			}
 			SaveUserProfile(UserProfilePtr);
 			
 			if (DebuggingCommandsActive)

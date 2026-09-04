@@ -38,6 +38,7 @@ extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int VRRefreshRateHz;
 extern int VR_GetRefreshRateIndexForHz(float hz);
+extern int VR_GetRefreshRateCount(void);
 extern int MSAASampleIndex;
 extern int AnisotropicFilterIndex;
 extern int TextureFilterIndex;
@@ -135,7 +136,7 @@ extern int SaveUserProfile(AVP_USER_PROFILE *profilePtr)
 	if (!file) return 0;
 	
 	SaveSettingsToUserProfile(profilePtr);
-	
+
 	fwrite(profilePtr,sizeof(AVP_USER_PROFILE),1,file);
 	fclose(file);
 
@@ -340,6 +341,11 @@ extern void GetSettingsFromUserProfile(void)
 	   VR_GetRefreshRateIndexForHz returns 0 before enumeration has run, and the
 	   session-ready path recomputes it once the list is known. */
 	VRRefreshRateHz =			UserProfilePtr->VRRefreshRateHz;
+	/* Derived unconditionally: VR_GetRefreshRateIndexForHz now resolves against the
+	   applier's fallback table when the headset list is empty, so this no longer
+	   collapses a saved rate to index 0 the way it did before enumeration had run.
+	   If enumeration succeeds later, the session-ready path recomputes the index
+	   from VRRefreshRateHz, which is the value actually stored. */
 	VRRefreshRateIndex =			VR_GetRefreshRateIndexForHz((float)VRRefreshRateHz);
 	MSAASampleIndex =			UserProfilePtr->MSAASampleIndex;
 	AnisotropicFilterIndex =		UserProfilePtr->AnisotropicFilterIndex;

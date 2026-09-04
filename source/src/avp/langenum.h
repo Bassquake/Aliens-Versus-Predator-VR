@@ -1481,6 +1481,15 @@ enum TEXTSTRING_ID
 	TEXTSTRING_MANUALRELOAD_HELP,
 	TEXTSTRING_MANUALRELOAD_OFF, // value 0 (default): must stay immediately before _ON
 	TEXTSTRING_MANUALRELOAD_ON,  // value 1
+	TEXTSTRING_VRCLIMBVIGNETTE,
+	TEXTSTRING_VRCLIMBVIGNETTE_HELP,
+	/* These two must stay consecutive and in this order — the TEXTSLIDER reads
+	   them by offset from the base. Value 0 is On because the setting is stored
+	   inverted (see VRClimbVignetteDisabled in avp_userprofile.h). */
+	TEXTSTRING_VRCLIMBVIGNETTE_OFF, // value 0
+	TEXTSTRING_VRCLIMBVIGNETTE_ON,  // value 1 (default)
+	TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH,
+	TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH_HELP,
 	MAX_NEW_TEXTSTRINGS
 };
 

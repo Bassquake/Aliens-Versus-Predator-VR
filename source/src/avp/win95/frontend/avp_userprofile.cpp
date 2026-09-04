@@ -49,6 +49,8 @@ extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
 extern int VRSmoothDeadzone;
 extern int VRVignetteOn;
+extern int VRClimbVignetteOn;
+extern int VRClimbVignetteStrength;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
@@ -281,6 +283,8 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRSmoothTurnSpeed = 5; /* mid speed by default (0..10) */
 	VRSmoothDeadzone = 4; /* 0.2 deflection by default (0..10) */
 	VRVignetteOn = 1; /* comfort vignette on by default */
+	VRClimbVignetteOn = 1; /* wall-walk transition vignette on by default */
+	VRClimbVignetteStrength = 5;
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
 	GodModeCheatEnabled = 0; /* "god mode" cheat off by default */
@@ -357,6 +361,12 @@ extern void GetSettingsFromUserProfile(void)
 	VRSmoothTurnSpeed =			UserProfilePtr->VRSmoothTurnSpeed;
 	VRSmoothDeadzone =			UserProfilePtr->VRSmoothDeadzone;
 	VRVignetteOn =				UserProfilePtr->VRVignetteOn;
+	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
+	VRClimbVignetteOn =			!UserProfilePtr->VRClimbVignetteDisabled;
+	/* 0 means the byte predates the option; anything else is the value plus one. */
+	VRClimbVignetteStrength =		UserProfilePtr->VRClimbVignetteStrengthPlus1
+						? UserProfilePtr->VRClimbVignetteStrengthPlus1 - 1
+						: 5;
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
 	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
 	GodModeCheatEnabled =			UserProfilePtr->GodModeCheat;
@@ -406,6 +416,8 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRSmoothTurnSpeed =		VRSmoothTurnSpeed;
 	profilePtr->VRSmoothDeadzone =		VRSmoothDeadzone;
 	profilePtr->VRVignetteOn =		VRVignetteOn;
+	profilePtr->VRClimbVignetteDisabled =	!VRClimbVignetteOn;
+	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
 	profilePtr->VRVignetteStrength =	VRVignetteStrength;
 	profilePtr->GiveAllWeaponsCheat =	GiveAllWeaponsCheatEnabled;
 	profilePtr->GodModeCheat =		GodModeCheatEnabled;

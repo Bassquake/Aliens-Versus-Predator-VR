@@ -220,7 +220,10 @@ int VRSmoothTurnSpeed   = 5;
 int VRSmoothDeadzone    = 4;
 int VRVignetteOn        = 1;
 int VRVignetteStrength  = 5;
+int VRClimbVignetteOn   = 1;
+int VRClimbVignetteStrength = 5;
 float vr_vignette_strength = 0.0f;
+float vr_climb_vignette_strength = 0.0f;
 int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
 int ManualReloadEnabled = 0; /* "Manual Reload": 0=off (default), 1=on. Gates the VR knock + desktop R key. */
 
@@ -644,6 +647,15 @@ int VRSmoothDeadzone = 4;
 /* Comfort vignette while smooth-turning: on/off + strength 0..10 (tunnel closure). */
 int VRVignetteOn = 1;
 int VRVignetteStrength = 5;
+/* "Use comfort view on Alien wall walking" (Controller Config): 0=off, 1=on (default).
+ * Independent of VRVignetteOn — the two share the vignette shader and the strength
+ * slider, but each gates its own fade, so switching off the turn vignette does not
+ * disable this one. Set in avpview.c, consumed in VR_DrawVignette. */
+int VRClimbVignetteOn = 1;
+/* Tunnel closure 0..10 for the wall-walk vignette, the counterpart of
+ * VRVignetteStrength. Separate because the two fire in different situations and
+ * want different amounts: a turn is continuous, a wall transition is a brief swing. */
+int VRClimbVignetteStrength = 5;
 /* "Adjust HUD elements" (Controller Config): 0=default layout, 1 and 2 pull the
  * HUD progressively toward the centre of view for narrow-FOV headsets.
  * Consumed in AvpShowViewsVR when setting vr_hud_clip_scale. */
@@ -654,6 +666,11 @@ int ManualReloadEnabled = 0;
 /* Current smoothed vignette opacity 0..1, fades in/out as smooth-turn starts/stops.
  * Updated in the input read each frame; consumed by VR_DrawVignette() per eye. */
 float vr_vignette_strength = 0.0f;
+/* Current smoothed vignette opacity 0..1 for the Alien wall-walk TRANSITION only.
+ * Driven in AvpShowViewsVR from the rate of change of the body's down axis, so it
+ * rises while the view swings onto a wall or ceiling and falls once you have
+ * settled on the surface. */
+float vr_climb_vignette_strength = 0.0f;
 
 /* VR display refresh rate setting: 0=72, 1=80, 2=90, 3=120 Hz.
  * Written by the AV options menu; applied at frame begin via xrRequestDisplayRefreshRateFB. */
@@ -988,11 +1005,22 @@ static bool create_vignette_gles_program(void)
  * faded in. Saves/restores the GL state it touches. */
 void VR_DrawVignette(void)
 {
-    if (!VRVignetteOn || vr_vignette_strength <= 0.001f) return;
+    /* Two independent sources, each gated by its own option: the smooth-turn fade
+       and the Alien wall-walk transition fade. Take the stronger of the two rather
+       than testing VRVignetteOn alone, or switching the turn vignette off would
+       silently disable the climb one as well. */
+    float turn_fade  = VRVignetteOn      ? vr_vignette_strength       : 0.0f;
+    float climb_fade = VRClimbVignetteOn ? vr_climb_vignette_strength : 0.0f;
+    float fade, strength;
+    /* Whichever source is currently stronger also supplies the tunnel size, so the
+       two sliders stay independent when both happen to be up at once. */
+    if (climb_fade > turn_fade) { fade = climb_fade; strength = (float)VRClimbVignetteStrength; }
+    else                        { fade = turn_fade;  strength = (float)VRVignetteStrength; }
+    if (fade <= 0.001f) return;
     if (!vignette_program && !create_vignette_gles_program()) return;
 
     /* Strength 0..10 closes the tunnel: stronger = smaller clear centre. */
-    float s     = (float)VRVignetteStrength / 10.0f;     /* 0..1 */
+    float s     = strength / 10.0f;                      /* 0..1 */
     float inner = 1.05f - s * 0.75f;                     /* 1.05 (subtle) .. 0.30 (strong) */
     float outer = inner + 0.35f;                         /* soft edge width */
 
@@ -1007,7 +1035,7 @@ void VR_DrawVignette(void)
     glDepthMask(GL_FALSE);
 
     glUseProgram(vignette_program);
-    glUniform1f(vignette_u_fade,  vr_vignette_strength);
+    glUniform1f(vignette_u_fade,  fade);
     glUniform1f(vignette_u_inner, inner);
     glUniform1f(vignette_u_outer, outer);
 

@@ -102,6 +102,8 @@ extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
 extern int VRSmoothDeadzone;
 extern int VRVignetteOn;
+extern int VRClimbVignetteOn;
+extern int VRClimbVignetteStrength;
 extern int VRVignetteStrength;
 extern int EnemySpeedAlien;    /* Extra Cheats speed sliders: 10 = 1.0 .. 0 = 0.0 */
 extern int EnemySpeedMarine;
@@ -363,6 +365,8 @@ int AvP_MainMenus(void)
 			int savedVRSmoothDeadzone = VRSmoothDeadzone;
 			int savedVRVignetteOn = VRVignetteOn;
 			int savedVRVignetteStrength = VRVignetteStrength;
+			int savedVRClimbVignetteOn = VRClimbVignetteOn;
+			int savedVRClimbVignetteStrength = VRClimbVignetteStrength;
 			if (NumberOfUserProfiles() > 0)
 			{
 				GetFirstUserProfile(); /* skip "New Profile" placeholder at index 0 */
@@ -380,6 +384,8 @@ int AvP_MainMenus(void)
 					savedVRSmoothDeadzone = VRSmoothDeadzone;
 					savedVRVignetteOn = VRVignetteOn;
 					savedVRVignetteStrength = VRVignetteStrength;
+					savedVRClimbVignetteOn = VRClimbVignetteOn;
+					savedVRClimbVignetteStrength = VRClimbVignetteStrength;
 				}
 			}
 
@@ -402,6 +408,8 @@ int AvP_MainMenus(void)
 			VRSmoothDeadzone = savedVRSmoothDeadzone;
 			VRVignetteOn = savedVRVignetteOn;
 			VRVignetteStrength = savedVRVignetteStrength;
+			VRClimbVignetteOn = savedVRClimbVignetteOn;
+			VRClimbVignetteStrength = savedVRClimbVignetteStrength;
 		}
 		/* A rate chosen in-game outranks the profile's stored one on re-entry.
 		   Safe because VRRefreshRateHz stays 0 until something actually chooses a

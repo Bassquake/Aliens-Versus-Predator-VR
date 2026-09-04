@@ -185,8 +185,14 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_VRVIGNETTE_HELP:     return "Darkens your peripheral vision while smooth turning to reduce motion sickness.";
 			case TEXTSTRING_VRVIGNETTE_OFF:      return "Off";
 			case TEXTSTRING_VRVIGNETTE_ON:       return "On (Default)";
-			case TEXTSTRING_VRVIGNETTE_STRENGTH: return "Vignette Strength";
+			case TEXTSTRING_VRVIGNETTE_STRENGTH: return "Vignette strength";
 			case TEXTSTRING_VRVIGNETTE_STRENGTH_HELP:return "How much the peripheral vision closes in while smooth turning.";
+			case TEXTSTRING_VRCLIMBVIGNETTE:     return "Comfort vignette on Alien climbing";
+			case TEXTSTRING_VRCLIMBVIGNETTE_HELP:return "Darkens your peripheral vision while the view swings onto a wall or ceiling. Clears once you are on the surface.";
+			case TEXTSTRING_VRCLIMBVIGNETTE_OFF: return "Off";
+			case TEXTSTRING_VRCLIMBVIGNETTE_ON:  return "On (Default)";
+			case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH: return "Wall walk vignette strength";
+			case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH_HELP:return "How much the peripheral vision closes in while the view swings onto a wall or ceiling.";
 			case TEXTSTRING_USERPROFILE_HELP_VR: return "Press X or A button to auto-select a name and again to Continue.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press A to select a profile, or B to delete a profile.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";

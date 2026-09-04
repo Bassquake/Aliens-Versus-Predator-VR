@@ -125,7 +125,19 @@ typedef struct
 	   blob layout stays identical). Index 0 = every frame, the behaviour before
 	   the option existed, which a zeroed Padding byte has to decode to. */
 	unsigned char DesktopMirrorIndex;     //0=every frame (default), 1=every 2nd, 2=every 3rd, 3=off (was Padding)
-	char Padding[56];
+	/* "Use comfort view on Alien wall walking" (Controller Config). Stored
+	   INVERTED, like ShowFrameRateDisabled and AutoWeaponChangeDisabled above,
+	   because this byte comes out of Padding: every profile written before the
+	   option existed has a zero here, and the option defaults to ON. Storing it
+	   the natural way round would have every existing profile load as Off. */
+	unsigned char VRClimbVignetteDisabled; //0=on (default), 1=off (was Padding)
+	/* Strength 0..10 for the wall-walk vignette, stored PLUS ONE so that 0 keeps
+	   its "never written" meaning. This byte also comes out of Padding, but unlike
+	   the flags above the default is 5, not 0 — storing it directly would make every
+	   pre-existing profile load at the weakest setting. 0 here means "written
+	   before the option existed", and decodes to the default. */
+	unsigned char VRClimbVignetteStrengthPlus1; //0=unset->5; else value+1 (was Padding)
+	char Padding[54];
 
 	int CDPlayerVolume;
 

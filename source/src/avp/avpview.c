@@ -1824,6 +1824,10 @@ void AvpShowViewsVR(void)
      * pmove.c) so movement stays aligned with this view. */
     MATRIXCH vr_climb_tilt;
     int      vr_climb_tilt_active = 0;
+    /* Wall-walk comfort vignette state (see the tracking block below). */
+    static float vr_climb_prev_bx = 0.0f, vr_climb_prev_by = 1.0f, vr_climb_prev_bz = 0.0f;
+    static int   vr_climb_prev_valid = 0;
+    static float vr_climb_vig_hold = 0.0f;
     /* Alien only: the Marine and Predator never wall-crawl, so their view must be
        left completely untouched (no tilt, and the normal snap composition). */
     if (AvP.PlayerType == I_Alien
@@ -1834,6 +1838,53 @@ void AvpShowViewsVR(void)
         float bz = (float)om->mat23 / 65536.0f;
         float blen = SDL_sqrtf(bx*bx + by*by + bz*bz);
         if (blen > 0.0001f) { bx /= blen; by /= blen; bz /= blen; }
+
+        /* "Use comfort view on Alien wall walking": darken the periphery while the
+         * view is SWINGING onto a wall or ceiling, and clear once you are on it.
+         *
+         * The trigger is the rate of change of the body's down axis, not the fact
+         * of being on a wall. Climbing from floor to wall swings that axis through
+         * ~90 degrees over a few tenths of a second, while crawling along a surface
+         * already reached leaves it constant — so this is non-zero exactly during
+         * the transition, which is what the option asks for. Testing "am I on a
+         * wall" instead would leave the vignette up for the whole climb.
+         *
+         * Tracked whether or not the tilt below is active, so the very first frame
+         * of a floor->wall transition is caught and so the return to the floor
+         * fades out symmetrically. */
+        {
+            extern int   RealFrameTime;
+            extern float vr_climb_vignette_strength;
+            /* ~57 deg/sec. Well under a real transition (a 90 degree swing in half
+               a second is ~180 deg/sec) and well over the jitter from crawling
+               across uneven geometry, which would otherwise flicker the vignette. */
+            const float TRIGGER_RATE = 1.0f;   /* radians/sec */
+            const float HOLD_SECS    = 0.20f;  /* keeps brief dips from flickering */
+            float dt = (float)RealFrameTime / 65536.0f;
+
+            if (dt > 0.0001f) {
+                float target, step;
+                if (vr_climb_prev_valid) {
+                    float dot = bx*vr_climb_prev_bx + by*vr_climb_prev_by + bz*vr_climb_prev_bz;
+                    if (dot >  1.0f) dot =  1.0f;   /* acos domain */
+                    if (dot < -1.0f) dot = -1.0f;
+                    if (SDL_acosf(dot) / dt > TRIGGER_RATE) vr_climb_vig_hold = HOLD_SECS;
+                }
+                vr_climb_prev_bx = bx; vr_climb_prev_by = by; vr_climb_prev_bz = bz;
+                vr_climb_prev_valid = 1;
+
+                if (vr_climb_vig_hold > 0.0f) vr_climb_vig_hold -= dt;
+
+                /* Same ~1/6 s ramp as the smooth-turn vignette, so the two look
+                   like one effect when both happen to be up. */
+                target = (vr_climb_vig_hold > 0.0f) ? 1.0f : 0.0f;
+                step   = 6.0f * dt;
+                if (vr_climb_vignette_strength < target)
+                    vr_climb_vignette_strength = SDL_min(target, vr_climb_vignette_strength + step);
+                else
+                    vr_climb_vignette_strength = SDL_max(target, vr_climb_vignette_strength - step);
+            }
+        }
 
         float s = SDL_sqrtf(bx*bx + bz*bz);  /* sin(tilt) = horizontal magnitude */
         float c = by;                        /* cos(tilt) */
@@ -1867,6 +1918,14 @@ void AvpShowViewsVR(void)
             vr_climb_tilt.mat31 = (int)(R31*65536.0f); vr_climb_tilt.mat32 = (int)(R32*65536.0f); vr_climb_tilt.mat33 = (int)(R33*65536.0f);
             vr_climb_tilt_active = 1;
         }
+    }
+    else {
+        /* Not the Alien (or no player yet): drop the tracked axis so re-entering
+           does not read a stale one and flash the vignette on the first frame. */
+        extern float vr_climb_vignette_strength;
+        vr_climb_prev_valid = 0;
+        vr_climb_vig_hold   = 0.0f;
+        vr_climb_vignette_strength = 0.0f;
     }
 
     /* When the player dies, the game's death view-drop collapses game_eye_to_floor

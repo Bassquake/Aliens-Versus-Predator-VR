@@ -6222,12 +6222,29 @@ void RenderPredatorTargetingSegment(int theta, int scale, int drawInRed)
 		{
 			extern int VR_IsIn3DMode(void);
 			extern DISPLAYBLOCK *SmartTarget_Object;
+			extern void GetTargetingPointOfObject(DISPLAYBLOCK *objectPtr, VECTORCH *targetPtr);
 			if (VR_IsIn3DMode() && SmartTarget_Object)
 			{
-				VECTORCH tv;
-				tv.vx = SmartTarget_Object->ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
-				tv.vy = SmartTarget_Object->ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
-				tv.vz = SmartTarget_Object->ObWorld.vz - Global_VDB_Ptr->VDB_World.vz;
+				VECTORCH tv, targetPoint;
+				/* Aim at the target's CHEST, not ObWorld. ObWorld is the object
+				 * origin, which sits at the feet - so the reticle sat on the
+				 * enemy's feet instead of its upper body.
+				 *
+				 * GetTargetingPointOfObject (targeting.c) calls ProveHModel and
+				 * returns the "chest" section's World_Offset, falling back to the
+				 * top of the hierarchy when a model has no chest. It is the same
+				 * point the shoulder cannon already FIRES at (see the matching fix
+				 * in bh_weap.c), so the reticle and the bolt now agree - previously
+				 * the bolt was corrected and the reticle was not.
+				 *
+				 * World space, like ObWorld, so the RotateVector below is unchanged.
+				 * Deliberately not SmartTarget_GetCofM: that returns a VIEW-space
+				 * offset and depends on section_data_view_init being set by the
+				 * render pass, whereas this is valid whenever it is called. */
+				GetTargetingPointOfObject(SmartTarget_Object, &targetPoint);
+				tv.vx = targetPoint.vx - Global_VDB_Ptr->VDB_World.vx;
+				tv.vy = targetPoint.vy - Global_VDB_Ptr->VDB_World.vy;
+				tv.vz = targetPoint.vz - Global_VDB_Ptr->VDB_World.vz;
 				RotateVector(&tv, &Global_VDB_Ptr->VDB_Mat);
 				if (tv.vz > 0)
 				{

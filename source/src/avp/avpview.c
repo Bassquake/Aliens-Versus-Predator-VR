@@ -263,34 +263,41 @@ int       vr_left_hand_valid = 0;
  * defaults, or edit its row to tune that one gun. Marine/Predator guns use this
  * (the Alien claw rig has its own VR_CLAW_* offsets). */
 #define VR_WPN_DEFAULT \
-    { VR_WEAPON_OFFSET_FORWARD, VR_WEAPON_OFFSET_RIGHT, VR_WEAPON_OFFSET_UP, VR_WEAPON_PITCH_DEG }
+    { VR_WEAPON_OFFSET_FORWARD, VR_WEAPON_OFFSET_RIGHT, VR_WEAPON_OFFSET_UP, \
+      VR_WEAPON_PITCH_DEG, VR_WEAPON_ROLL_DEG, VR_WEAPON_YAW_DEG }
 
-static const VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
+/* Every row spells out all six fields so any of them can be tuned in place, and so a
+ * row pasted out of the in-world tuner (VRTUNE, see below) drops straight in.
+ *
+ * Not const: the tuner writes into these live.
+ *
+ *                                    fwd   right   up  pitch roll  yaw   */
+static VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
     /* --- Marine --- */
-    [WEAPON_PULSERIFLE]       = {-300, 100, 100, 0},
-    [WEAPON_AUTOSHOTGUN]      = VR_WPN_DEFAULT,
-    [WEAPON_SMARTGUN]         = {-250, -100, 0, 0},
-    [WEAPON_FLAMETHROWER]     = {-200, -150, 100, 0},
-    [WEAPON_PLASMAGUN]        = VR_WPN_DEFAULT,
-    [WEAPON_SADAR]            = {-250, 0, 200, 0},
-    [WEAPON_GRENADELAUNCHER]  = {-200, -25, 100, 0},
-    [WEAPON_MINIGUN]          = {-50, -75, -150, 0},
-    [WEAPON_SONICCANNON]      = VR_WPN_DEFAULT,
-    [WEAPON_BEAMCANNON]       = VR_WPN_DEFAULT,
-    [WEAPON_MYSTERYGUN]       = VR_WPN_DEFAULT,
-    [WEAPON_MARINE_PISTOL]    = {-400, -75, 0, 0},
-    [WEAPON_TWO_PISTOLS]      = {-400, -50, 0, 0},
-    [WEAPON_FRISBEE_LAUNCHER] = {-300, 0, 200, 0},
+    [WEAPON_PULSERIFLE]          = { -270,   60,  100,    0,    0,    -8 },
+    [WEAPON_AUTOSHOTGUN]         = VR_WPN_DEFAULT,
+    [WEAPON_SMARTGUN]            = { 70,  -170,    40,    0,    0,    0 },
+    [WEAPON_FLAMETHROWER]        = { -110,  -220,  100,    0,    0,    0 },
+    [WEAPON_PLASMAGUN]           = VR_WPN_DEFAULT,
+    [WEAPON_SADAR]               = { -210,   100,  210,    0,    0,    0 },
+    [WEAPON_GRENADELAUNCHER]     = { -130,   -5,  100,    0,    0,    0 },
+    [WEAPON_MINIGUN]             = {  110,   -105, -150,    0,    0,    0 },
+    [WEAPON_SONICCANNON]         = VR_WPN_DEFAULT,
+    [WEAPON_BEAMCANNON]          = VR_WPN_DEFAULT,
+    [WEAPON_MYSTERYGUN]          = VR_WPN_DEFAULT,
+    [WEAPON_MARINE_PISTOL]       = { -450,   -80,    120,    0,    0,    0 },
+    [WEAPON_TWO_PISTOLS]         = { -450,   -80,    120,    0,    0,    0 },
+    [WEAPON_FRISBEE_LAUNCHER]    = { -140,     0,  250,    0,    0,    0 },
     /* --- Predator --- */
-    [WEAPON_PRED_WRISTBLADE]     = {-520, -300, 0, 0},
-    [WEAPON_PRED_PISTOL]         = {-450, -200, 0, 0},
-    [WEAPON_PRED_RIFLE]          = {-350, -225, 0, 0},
-    [WEAPON_PRED_SHOULDERCANNON] = {-450, -100, -25, 0},
-    [WEAPON_PRED_DISC]           = {-520, -300, 0, 0},
-    [WEAPON_PRED_MEDICOMP]       = {-450, -100, -25, 0},
+    [WEAPON_PRED_WRISTBLADE]     = { -620,  -240,   50,    0,    0,   45 },
+    [WEAPON_PRED_PISTOL]         = { -450,  -200,    0,    0,    0,    0 },
+    [WEAPON_PRED_RIFLE]          = { -230,  -225,    0,    0,    0,    0 },
+    [WEAPON_PRED_SHOULDERCANNON] = { -430,  -180,   65,   20,    -23,    55 },
+    [WEAPON_PRED_DISC]           = { -600,  -250,    120,    -1,    -6,    65 },
+    [WEAPON_PRED_MEDICOMP]       = { -430,  -180,   65,   20,    -23,    55 },
     [WEAPON_PRED_STAFF]          = VR_WPN_DEFAULT,
     /* --- Misc / non-gun (unused by this path, kept at default for safety) --- */
-    [WEAPON_CUDGEL]           = VR_WPN_DEFAULT,
+    [WEAPON_CUDGEL]              = VR_WPN_DEFAULT,
 };
 
 /* Controller-attached weapon transform, shared by the renderer and the shot
@@ -299,6 +306,37 @@ static const VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
  * in the grip's local frame, then the barrel alignment (rotate about local X so
  * the model's +Y barrel points forward). Base rotation is Rx(+90); the weapon's
  * pitch_deg adds extra tilt. */
+/* Rotate m about one of its OWN axes (rows are axes): 0 = X, 1 = Y, 2 = Z.
+   Premultiplying is what keeps this a local-frame rotation, matching the barrel fix
+   in VR_ComputeWeaponAnchor. */
+static void VR_RotateAboutAxis(MATRIXCH *m, int axis, int deg)
+{
+    MATRIXCH r, out;
+    float a, ca, sa;
+    if (deg == 0) return;
+    a  = (float)deg * (SDL_PI_F / 180.0f);
+    ca = SDL_cosf(a); sa = SDL_sinf(a);
+    r.mat11 = ONE_FIXED; r.mat12 = 0; r.mat13 = 0;
+    r.mat21 = 0; r.mat22 = ONE_FIXED; r.mat23 = 0;
+    r.mat31 = 0; r.mat32 = 0; r.mat33 = ONE_FIXED;
+    switch (axis) {
+        case 0:  /* X */
+            r.mat22 = (int)(ca*65536.0f);  r.mat23 = (int)(sa*65536.0f);
+            r.mat32 = (int)(-sa*65536.0f); r.mat33 = (int)(ca*65536.0f);
+            break;
+        case 1:  /* Y */
+            r.mat11 = (int)(ca*65536.0f);  r.mat13 = (int)(-sa*65536.0f);
+            r.mat31 = (int)(sa*65536.0f);  r.mat33 = (int)(ca*65536.0f);
+            break;
+        default: /* Z */
+            r.mat11 = (int)(ca*65536.0f);  r.mat12 = (int)(sa*65536.0f);
+            r.mat21 = (int)(-sa*65536.0f); r.mat22 = (int)(ca*65536.0f);
+            break;
+    }
+    MatrixMultiply(m, &r, &out);   /* out = r * m */
+    *m = out;
+}
+
 void VR_ComputeWeaponAnchor(int weaponID, VECTORCH *out_world, MATRIXCH *out_mat)
 {
     MATRIXCH m = vr_right_hand_mat;
@@ -307,9 +345,25 @@ void VR_ComputeWeaponAnchor(int weaponID, VECTORCH *out_world, MATRIXCH *out_mat
         : (VR_WEAPON_OFFSET)VR_WPN_DEFAULT;
 
     /* Local-frame offset (grip axes): X=right (row1), Y=aim (row2), Z=up (row3).
-     * RotateVector(v, M) = M^T * v maps a controller-local vector into world. */
+     * RotateVector(v, M) = M^T * v maps a controller-local vector into world.
+     *
+     * The offset is carried through the SAME pitch/roll/yaw as the orientation below,
+     * so the weapon turns about the CONTROLLER rather than about its own origin. The
+     * origin sits at hand + offset (a pull-back of several hundred units for most
+     * weapons), and rotating only the orientation swung the model around that point
+     * instead of around the wrist - which is what "the pivot is off kilter" looks like.
+     *
+     * The axes are mapped, not guessed: the barrel fix below sets weapon X = hand X,
+     * weapon Y = -hand Z, weapon Z = hand Y. So a roll about the barrel (weapon Y) is
+     * a rotation about hand Z NEGATED, and a yaw about weapon Z is about hand Y. */
     VECTORCH wofs = { o.right, o.forward, o.up };
-    RotateVector(&wofs, &m);
+    {
+        MATRIXCH mo = m;
+        VR_RotateAboutAxis(&mo, 0,  o.pitch_deg);   /* weapon X  = hand X  */
+        VR_RotateAboutAxis(&mo, 2, -o.roll_deg);    /* weapon Y  = -hand Z */
+        VR_RotateAboutAxis(&mo, 1,  o.yaw_deg);     /* weapon Z  = hand Y  */
+        RotateVector(&wofs, &mo);
+    }
     out_world->vx = vr_right_hand_world.vx + wofs.vx;
     out_world->vy = vr_right_hand_world.vy + wofs.vy;
     out_world->vz = vr_right_hand_world.vz + wofs.vz;
@@ -331,7 +385,655 @@ void VR_ComputeWeaponAnchor(int weaponID, VECTORCH *out_world, MATRIXCH *out_mat
         out_mat->mat32 = (int)(sa * m.mat22 + ca * m.mat32);
         out_mat->mat33 = (int)(sa * m.mat23 + ca * m.mat33);
     }
+
+    /* Roll about the barrel, then yaw about the weapon's up. Both after the barrel
+       fix, so they read as "turn the weapon in the hand" rather than "turn the
+       controller". Shared with the shot-spawn path, so the muzzle and the fire origin
+       stay together. */
+    VR_RotateAboutAxis(out_mat, 1, o.roll_deg);
+    VR_RotateAboutAxis(out_mat, 2, o.yaw_deg);
 }
+
+/* ================= Split VR hands: left arm on the left controller ============
+ *
+ * The first-person rig is ONE HModel rooted at a single transform (the right
+ * controller). This re-roots the left-arm subtree onto the left controller by
+ * rendering the rig TWICE with different roots, showing a different part each time.
+ *
+ * Whether that is possible at all is a property of the MODEL, not the code, and it
+ * differs per species (measured by decompressing the shipped .rif files, which are
+ * Huffman-packed):
+ *   - Predator (pred_hud.rif): fully articulated, symmetric "left arm"/"right arm"
+ *     with bicep, elbow, palm and per-finger joints.
+ *   - Marine (marwep.rif): per weapon. "Two pistol" has "L Pistol arm"/"R Pistol arm",
+ *     each with its own thumb and four fingers.
+ *   - Alien (alien_hud.rif): NOT POSSIBLE. Both arms live inside a single "claws"
+ *     section; left/right exist there only as sequence names. Separating them needs
+ *     the model re-authoring, so the Alien can never appear in the table below.
+ *
+ * Why two passes rather than moving the solved transforms: the solve and the draw are
+ * the same traversal (DoHModel always calls Process_Section with render=1), so there
+ * is no point in between at which a subtree could be re-anchored.
+ */
+
+/* The left limb IS a subtree, and its root is the PALM.
+ *
+ * Dumped from the live Predator rig (VRHIER, 2026-09-05):
+ *     Root
+ *       left palm
+ *         left out knucle -> little/ring fingers
+ *         left in knuckle -> middle/index fingers
+ *         left thumb mid  -> left thumb end
+ *         left arm -> left elbow -> left bicep
+ *                  -> display
+ *       right palm  (mirror of the above)
+ *       Camera Root
+ *
+ * Note "left arm" is a CHILD of "left palm", holding only the elbow and bicep -
+ * anchoring there moved a third of the limb and left the hand on the right
+ * controller. The palm is both the subtree root and the natural grip point.
+ * Note also "display" (the Predator wrist display) hangs off "left arm" and does NOT
+ * follow the left/right naming, so selecting by name prefix missed it and left it
+ * drawn on the right controller; selecting by subtree picks it up automatically.
+ *
+ * A weapon absent from this table renders as a single rig on the right controller
+ * exactly as before, so this is opt-in per weapon. */
+/* ---- LEFT-HAND TRIM: tune where the left hand sits on the controller ----------
+ *
+ * The right hand is tuned through vr_weapon_offset[] above, which is shared with the
+ * shot-spawn path so the muzzle and the fire origin stay aligned. The left hand has
+ * no weapon and no fire path, so it gets its own trim here.
+ *
+ * forward / right / up are in the LEFT CONTROLLER's own frame, so they mean the same
+ * thing whichever way your hand is pointing. Roughly 1700 units = 1 metre, so 100
+ * units is about 6 cm.
+ *   forward  +  push the hand away from you, along the grip
+ *   right    +  toward your right (i.e. inward, across the body)
+ *   up       +  toward the back of your hand
+ *
+ * pitch / roll / yaw are degrees about the controller's own axes, applied after the
+ * anchor orientation - SAME ORDER as vr_weapon_offset[] above, so the two tables read
+ * alike:
+ *   pitch +  tip the fingers up        (about the controller's X, its right axis)
+ *   roll  +  rotate the palm clockwise (about the grip axis)
+ *   yaw   +  swing the hand outward    (about its up axis)
+ *
+ * Rotation here pivots at the palm, because the measured-position step pins the palm
+ * to the target point whatever the orientation - so unlike the weapon table there is
+ * no pivot to get wrong.
+ *
+ * All zero means: palm exactly on the grip, oriented the way the right hand's anchor
+ * would orient it - which is where the Predator started out. */
+typedef struct { int forward, right, up, pitch_deg, roll_deg, yaw_deg; } VR_HAND_TRIM;
+
+static VR_HAND_TRIM vr_left_hand_trim[MAX_NO_OF_WEAPON_TEMPLATES] = {
+    /* --- Marine ---
+       Only weapons listed in VR_LeftArmDescFor() actually split their hands, and of
+       these that is currently WEAPON_TWO_PISTOLS alone - the others are here so they
+       can be tuned the moment one is enabled. Enabling a weapon needs the name of its
+       left-limb subtree root in marwep.rif, which differs per weapon (the dual
+       pistols use "L Pistol arm"); several Marine rigs have no left limb at all. */
+    [WEAPON_PULSERIFLE]          = {-240, 0, -10, 45, -4, 94},
+    [WEAPON_AUTOSHOTGUN]         = {0, 0, 0, 0, 0, 0},
+    [WEAPON_SMARTGUN]            = {0, 0, 0, 6, -27, -77},
+    [WEAPON_FLAMETHROWER]        = {-190, 0, -120, 84, 13, 108},
+    [WEAPON_PLASMAGUN]           = {0, 0, 0, 0, 0, 0},
+    [WEAPON_SADAR]               = {-190, -30, -140, -70, -162, -30},
+    [WEAPON_GRENADELAUNCHER]     = {-260, 0, 0, 54, 0, 97},
+    [WEAPON_MINIGUN]             = {0, 0, 0, 0, 0, 0},
+    [WEAPON_SONICCANNON]         = {0, 0, 0, 0, 0, 0},
+    [WEAPON_BEAMCANNON]          = {0, 0, 0, 0, 0, 0},
+    [WEAPON_MYSTERYGUN]          = {0, 0, 0, 0, 0, 0},
+    [WEAPON_MARINE_PISTOL]       = {-130, 0, 0, 55, 0, 100},
+    [WEAPON_FRISBEE_LAUNCHER]    = {-110, -10, -90, -67, -161, -28},
+    [WEAPON_CUDGEL]              = {0, 0, 0, 0, 0, 0},
+    /* --- Predator --- */
+    [WEAPON_PRED_WRISTBLADE]     = {-80, -40, -50, -7, 3, -48},
+    [WEAPON_PRED_PISTOL]         = {0, 0, 0, 0, 0, 0},
+    [WEAPON_PRED_RIFLE]          = {-140, 0, -30, 59, -22, 86},
+    [WEAPON_PRED_SHOULDERCANNON] = {-100, 0, -90, -26, 13, -103},
+    [WEAPON_PRED_DISC]           = {-130, 10, 0, -3, -20, -32},
+    [WEAPON_PRED_MEDICOMP]       = {-100, 0, -90, -26, 13, -103},
+    [WEAPON_PRED_STAFF]          = {0, 0, 0, 0, 0, 0},
+    [WEAPON_TWO_PISTOLS]         = { 260, 0, 60, 0, 0, 0},
+};
+
+/* Rotate m about its own axes by the trim's pitch/yaw/roll. Rows of a MATRIXCH are
+   its axes, so this premultiplies exactly as VR_ComputeWeaponAnchor's barrel fix
+   does, keeping "positive pitch tips the fingers up" true in both places. */
+#if AVP_VR_HAND_TUNER
+/* ---- in-world hand tuning -------------------------------------------------
+ *
+ * A dev tool for matching the virtual hands to the real ones without a rebuild.
+ * Toggle with CROUCH-CLICK (left stick click) + JUMP (B) - deliberately awkward, so
+ * it cannot fire during play. While active the right stick is taken over: up/down
+ * picks a field, left/right changes it, and normal turning and weapon cycling are
+ * suspended. Every change is written to the live table AND logged, so the final
+ * numbers can be read off logcat and baked into the tables above.
+ *
+ * Values are per weapon, matching the tables, and are lost on exit - this only
+ * shortens the tuning loop, it does not persist anything. */
+int vr_tune_active = 0;
+static int vr_tune_field  = 0;
+static int vr_tune_weapon = -1;
+
+#define VR_TUNE_FIELDS 12
+static const char *vr_tune_names[VR_TUNE_FIELDS] = {
+    "L.fwd", "L.right", "L.up", "L.pitch", "L.roll", "L.yaw",
+    "R.fwd", "R.right", "R.up", "R.pitch", "R.roll", "R.yaw"
+};
+
+void VR_TuneSetWeapon(int weaponID) { vr_tune_weapon = weaponID; }
+
+static int *VR_TuneSlot(int field)
+{
+    int w = vr_tune_weapon;
+    if (w < 0 || w >= MAX_NO_OF_WEAPON_TEMPLATES) return NULL;
+    switch (field) {
+        case  0: return &vr_left_hand_trim[w].forward;
+        case  1: return &vr_left_hand_trim[w].right;
+        case  2: return &vr_left_hand_trim[w].up;
+        case  3: return &vr_left_hand_trim[w].pitch_deg;
+        case  4: return &vr_left_hand_trim[w].roll_deg;
+        case  5: return &vr_left_hand_trim[w].yaw_deg;
+        case  6: return &vr_weapon_offset[w].forward;
+        case  7: return &vr_weapon_offset[w].right;
+        case  8: return &vr_weapon_offset[w].up;
+        case  9: return &vr_weapon_offset[w].pitch_deg;
+        case 10: return &vr_weapon_offset[w].roll_deg;
+        default: return &vr_weapon_offset[w].yaw_deg;
+    }
+}
+
+void VR_TuneCycleField(int dir)
+{
+    vr_tune_field = (vr_tune_field + dir + VR_TUNE_FIELDS) % VR_TUNE_FIELDS;
+}
+
+void VR_TuneAdjustValue(int dir)
+{
+    /* Angles move 1 degree a step, positions 10 units (~6 mm). */
+    int *p    = VR_TuneSlot(vr_tune_field);
+    int  step = ((vr_tune_field % 6) >= 3) ? 1 : 10;
+    if (!p) return;
+    *p += dir * step;
+    SDL_Log("VRTUNE weapon %d  %s = %d", vr_tune_weapon,
+            vr_tune_names[vr_tune_field], *p);
+}
+
+/* Dump both rows in a form that can be pasted straight into the tables. */
+void VR_TuneDumpRows(void)
+{
+    int w = vr_tune_weapon;
+    if (w < 0 || w >= MAX_NO_OF_WEAPON_TEMPLATES) return;
+    SDL_Log("VRTUNE weapon %d  vr_weapon_offset  = {%d, %d, %d, %d, %d, %d}", w,
+            vr_weapon_offset[w].forward, vr_weapon_offset[w].right,
+            vr_weapon_offset[w].up, vr_weapon_offset[w].pitch_deg,
+            vr_weapon_offset[w].roll_deg, vr_weapon_offset[w].yaw_deg);
+    SDL_Log("VRTUNE weapon %d  vr_left_hand_trim = {%d, %d, %d, %d, %d, %d}", w,
+            vr_left_hand_trim[w].forward, vr_left_hand_trim[w].right,
+            vr_left_hand_trim[w].up, vr_left_hand_trim[w].pitch_deg,
+            vr_left_hand_trim[w].roll_deg, vr_left_hand_trim[w].yaw_deg);
+}
+
+/* Drawn next to the frame rate, inside the eye pass, so the numbers are visible
+   while you look at the hand you are adjusting. */
+void VR_TuneRenderHUD(void)
+{
+    int i, y = 40;
+    char line[64];
+    if (!vr_tune_active) return;
+    RenderString("VR HAND TUNING  (stick: up/down field, left/right value)",
+                 20, 24, 0xFF00FF00);
+    for (i = 0; i < VR_TUNE_FIELDS; i++) {
+        int *p = VR_TuneSlot(i);
+        SDL_snprintf(line, sizeof(line), "%s %-8s %d",
+                     (i == vr_tune_field) ? ">" : " ", vr_tune_names[i], p ? *p : 0);
+        RenderString(line, 20, y, (i == vr_tune_field) ? 0xFFFFFF00 : 0xFFFFFFFF);
+        y += 14;
+    }
+}
+
+#else  /* !AVP_VR_HAND_TUNER */
+#define VR_TuneSetWeapon(w)   ((void)0)
+#define VR_TuneRenderHUD()    ((void)0)
+#endif
+
+static void VR_ApplyHandTrimRotation(MATRIXCH *m, const VR_HAND_TRIM *t)
+{
+    VR_RotateAboutAxis(m, 0, t->pitch_deg);  /* X: fingers up   */
+    VR_RotateAboutAxis(m, 1, t->roll_deg);   /* Y: palm rotates */
+    VR_RotateAboutAxis(m, 2, t->yaw_deg);    /* Z: hand outward */
+}
+
+typedef struct { const char *anchor; } VR_LEFT_ARM_DESC;
+
+static int VR_LeftArmDescFor(int weaponID, VR_LEFT_ARM_DESC *out)
+{
+    switch (weaponID) {
+        /* --- Marine ---
+           The rigs name the two hands by ROLE: the trigger hand ("ptrig palm",
+           "flmtrig palm", "R Pistol arm") and the support or pump hand ("ppump palm",
+           "flmpump palm", "gpump palm"). The support hand is the left one, and it
+           hangs off the GUN rather than off Root - so re-rooting it onto the left
+           controller gives a proper two-handed hold with the weapon still in the
+           right hand. Names confirmed from live rig dumps (VRHIER, 2026-09-06).
+
+           A NULL anchor means "find the support hand by name" - see
+           VR_FindSupportHand. That covers the Marine guns not yet dumped, since all
+           three that were follow the same *pump palm convention, and a rig without
+           one simply falls back to the ordinary single-rig draw. */
+        case WEAPON_PULSERIFLE:    out->anchor = "ppump palm";   return 1;
+        case WEAPON_FLAMETHROWER:  out->anchor = "flmpump palm"; return 1;
+        case WEAPON_MARINE_PISTOL: out->anchor = "gpump palm";   return 1;
+        case WEAPON_SMARTGUN:      out->anchor = "srtpump palm"; return 1;
+        /* Two rigs break the *pump palm convention and would be missed by
+           auto-detect, so both are named explicitly:
+             SADAR            - "sadar left palm", under "sadar grip".
+             FRISBEE_LAUNCHER - the "skeeter" in game. Its own sections are all
+                                SD-prefixed (SD body/door/hinge/pop up/sight), but it
+                                BORROWS the SADAR's hand sections, so its left hand is
+                                also "sadar left palm", parented to "SD body". Worth
+                                knowing: a rig's hands need not share its own naming.
+           Both confirmed from live dumps (VRHIER, 2026-09-06). */
+        case WEAPON_SADAR:            out->anchor = "sadar left palm"; return 1;
+        case WEAPON_FRISBEE_LAUNCHER: out->anchor = "sadar left palm"; return 1;
+
+        /* No left hand in the model, so these can never split and correctly fall
+           through to the single-rig draw. Listed so it is documented rather than
+           rediscovered:
+             MINIGUN - "minigun" plus dum flash / ring / button / spew only (dumped).
+             CUDGEL  - right hand only ("Cludgel R palm" and its fingers).
+
+           The remainder auto-detect, which is verified working for the grenade
+           launcher ("gpump palm" under "barrelow"). The rest cannot be obtained
+           anyway: GiveAllWeaponsToPlayer only grants weapons already present in a
+           slot, so even the cheat will not produce the shotgun, plasma gun, sonic
+           cannon, beam cannon, mystery gun or cudgel. */
+        case WEAPON_MINIGUN:
+        case WEAPON_CUDGEL:
+        case WEAPON_AUTOSHOTGUN:
+        case WEAPON_PLASMAGUN:
+        case WEAPON_GRENADELAUNCHER:
+        case WEAPON_SONICCANNON:
+        case WEAPON_BEAMCANNON:
+        case WEAPON_MYSTERYGUN:
+            out->anchor = NULL; return 1;      /* auto-detect the support hand */
+        /* "L Pistol", not "L Pistol arm": the arm is only the limb, while L Pistol is
+           the subtree root carrying the barrel, hammer, mag and slide as well, so the
+           whole left GUN travels with the left hand. */
+        case WEAPON_TWO_PISTOLS:
+            out->anchor = "L Pistol"; return 1;
+        /* Every Predator weapon is listed because pred_hud.rif carries a full
+           symmetric left arm, but it is not necessarily in every hierarchy the
+           Predator uses (Template / pistol / Speargun / disk / staff). Listing them
+           all is safe: a hierarchy without the anchor section falls straight back to
+           the ordinary single-rig draw. */
+        case WEAPON_PRED_WRISTBLADE:
+        case WEAPON_PRED_PISTOL:
+        case WEAPON_PRED_RIFLE:
+        case WEAPON_PRED_SHOULDERCANNON:
+        case WEAPON_PRED_DISC:
+        case WEAPON_PRED_MEDICOMP:
+        case WEAPON_PRED_STAFF:
+            out->anchor = "left palm"; return 1;
+        default:
+            return 0;
+    }
+}
+
+#define VR_SPLIT_MAX_SECTIONS 256
+static struct { SECTION_DATA *sec; int flags; } vr_split_saved[VR_SPLIT_MAX_SECTIONS];
+static int vr_split_saved_count;
+
+static void VR_SplitSaveFlags(SECTION_DATA *s)
+{
+    while (s) {
+        if (vr_split_saved_count < VR_SPLIT_MAX_SECTIONS) {
+            vr_split_saved[vr_split_saved_count].sec   = s;
+            vr_split_saved[vr_split_saved_count].flags = s->flags;
+            vr_split_saved_count++;
+        }
+        VR_SplitSaveFlags(s->First_Child);
+        s = s->Next_Sibling;
+    }
+}
+
+static void VR_SplitRestoreFlags(void)
+{
+    int i;
+    for (i = 0; i < vr_split_saved_count; i++)
+        vr_split_saved[i].sec->flags = vr_split_saved[i].flags;
+    vr_split_saved_count = 0;
+}
+
+/* Suppress the draw of one half of the rig.
+ *   hide_subtree = 0 -> everything EXCEPT the subtree under 'root' is hidden
+ *   hide_subtree = 1 -> only that subtree is hidden
+ *
+ * section_data_notreal suppresses a section's own shape. terminate_here is
+ * deliberately NOT used: the whole tree must still be walked so every section's
+ * transform is computed as usual - only the drawing is suppressed. Flags are only
+ * ever SET here, never cleared, so a section the model authored as hidden stays
+ * hidden in both passes. */
+static void VR_SplitMark(SECTION_DATA *s, SECTION_DATA *root, int hide_subtree,
+                         int inside)
+{
+    while (s) {
+        int in = inside || (s == root);
+        if (in == hide_subtree) s->flags |= section_data_notreal;
+        VR_SplitMark(s->First_Child, root, hide_subtree, in);
+        s = s->Next_Sibling;
+    }
+}
+
+/* Strip the uniform scale from a matrix, leaving a pure rotation, and return the
+   scale as a float. Needed because the transforms below invert matrices with
+   TransposeMatrixCH, which is the inverse ONLY for an orthonormal matrix - and
+   PlayersWeapon.ObMat has the VR_WEAPON_VIEW_SCALE factor baked into it by the block
+   above, which propagates into every section's SecMat. Left un-normalised, the
+   position term comes out wrong by a factor of s^2 and the arm ends up partly
+   following the wrong controller. */
+static float VR_NormaliseRotation(MATRIXCH *m)
+{
+    float r[9], len, inv;
+    int i;
+    r[0]=(float)m->mat11; r[1]=(float)m->mat12; r[2]=(float)m->mat13;
+    r[3]=(float)m->mat21; r[4]=(float)m->mat22; r[5]=(float)m->mat23;
+    r[6]=(float)m->mat31; r[7]=(float)m->mat32; r[8]=(float)m->mat33;
+
+    len = SDL_sqrtf(r[0]*r[0] + r[1]*r[1] + r[2]*r[2]);
+    if (len < 1.0f) return 1.0f;            /* degenerate; leave it alone */
+
+    for (i = 0; i < 3; i++) {
+        float l = SDL_sqrtf(r[i*3]*r[i*3] + r[i*3+1]*r[i*3+1] + r[i*3+2]*r[i*3+2]);
+        if (l < 1.0f) return 1.0f;
+        inv = 65536.0f / l;
+        r[i*3] *= inv; r[i*3+1] *= inv; r[i*3+2] *= inv;
+    }
+    m->mat11=(int)r[0]; m->mat12=(int)r[1]; m->mat13=(int)r[2];
+    m->mat21=(int)r[3]; m->mat22=(int)r[4]; m->mat23=(int)r[5];
+    m->mat31=(int)r[6]; m->mat32=(int)r[7]; m->mat33=(int)r[8];
+    return len / 65536.0f;
+}
+
+/* A SECOND instance of the weapon rig, solved with the left-hand root.
+ *
+ * One controller cannot hold two root-dependent poses. The rig's pose is not a fixed
+ * local chain: delta sequences (Add_Delta_Sequence, weapons.c) are evaluated during
+ * the once-per-frame timer step against whatever root is current, so whichever root
+ * that solve uses gets a correct arm and the other inherits it. Measured both ways on
+ * device: timer solved left-rooted gave a correct left arm and a broken right one,
+ * right-rooted gave the reverse. Hence a second controller over the SAME hierarchy,
+ * solved left-rooted, from which only the left limb is drawn.
+ *
+ * Its animation is mirrored from the primary each frame rather than stepped on its
+ * own, so the two halves cannot drift apart.
+ *
+ * The mirroring must go through InitHModelSequence and NOT a struct copy. The
+ * controller's Sequence_Type/Sub_Sequence are only half the state: each SECTION_DATA
+ * carries its own current_sequence / current_keyframe, resolved across the whole tree
+ * by InitHModelSequence. Copying the controller scalars alone left the secondary
+ * claiming a sequence its tree had never been set up for, and Process_Section then
+ * walked stale sequence pointers - an instant crash entering a Predator level.
+ *
+ * Only the timer is copied, and the rig is left un-Playing with FrameStamp already
+ * stamped, so its solve takes the no-timer path and POSES at the primary's
+ * sequence_timer rather than running a clock of its own.
+ *
+ * Known gaps: delta sequences are not mirrored (they hang off the primary's Deltas
+ * list), so the Marine's FireLeft flourish will not play on the left hand; and a
+ * tween is not reproduced, so the left limb snaps to the target sequence while the
+ * right eases into it. */
+static HMODELCONTROLLER vr_left_hmc;
+static int vr_left_hmc_valid = 0;
+
+static SECTION_DATA *VR_EnsureLeftRig(HMODELCONTROLLER *primary, const char *anchor)
+{
+    if (!primary->Root_Section) return NULL;
+
+    /* (Re)build when the weapon changes, keyed on the source hierarchy. */
+    if (!vr_left_hmc_valid || vr_left_hmc.Root_Section != primary->Root_Section) {
+        if (vr_left_hmc_valid) Dispel_HModel(&vr_left_hmc);
+        Create_HModel(&vr_left_hmc, primary->Root_Section);
+        /* Give the fresh tree a resolved sequence before anything solves it. */
+        {
+            int secs = primary->Seconds_For_Sequence;
+            if (secs <= 0) secs = ONE_FIXED;
+            InitHModelSequence(&vr_left_hmc, primary->Sequence_Type,
+                               primary->Sub_Sequence, secs);
+        }
+        vr_left_hmc_valid = 1;
+    }
+
+    /* Re-resolve the tree's per-section sequence pointers whenever the primary's
+       sequence changes. While tweening, follow where the primary is heading. */
+    {
+        int seqType = primary->Sequence_Type;
+        int seqSub  = primary->Sub_Sequence;
+        if (primary->Tweening != Controller_NoTweening) {
+            seqType = primary->After_Tweening_Sequence_Type;
+            seqSub  = primary->After_Tweening_Sub_Sequence;
+        }
+        if (vr_left_hmc.Sequence_Type != seqType || vr_left_hmc.Sub_Sequence != seqSub) {
+            int secs = primary->Seconds_For_Sequence;
+            if (secs <= 0) secs = ONE_FIXED;
+            InitHModelSequence(&vr_left_hmc, seqType, seqSub, secs);
+        }
+    }
+
+    /* Pose at the primary's point in the sequence; never run a clock of our own. */
+    vr_left_hmc.sequence_timer  = primary->sequence_timer;
+    vr_left_hmc.timer_increment = 0;
+    vr_left_hmc.Playing         = 0;
+    vr_left_hmc.Looped          = primary->Looped;
+    vr_left_hmc.Tweening        = Controller_NoTweening;
+    /* FrameStamp is deliberately NOT pre-stamped. It looks like the way to stop this
+       rig running a clock of its own, but in Process_Section the whole transform
+       composition sits inside
+           if (FrameStamp != GlobalFrameCounter || !section_data_initialised)
+       so stamping it skips the SOLVE as well: the sections keep whatever
+       InitHModelSequence left and the limb never rotates at all (measured - the
+       palm's SecMat was bit-constant while the root swung through 180 degrees).
+       Playing = 0 and timer_increment = 0 already stop the clock, and sequence_timer
+       is re-copied from the primary above, so letting the timer path run is free. */
+
+    return GetThisSectionData(vr_left_hmc.section_data, (char *)anchor);
+}
+
+/* Find a rig's support ("pump") hand by name, for weapons with no explicit anchor.
+   Returns the first section whose name contains "pump palm" - the convention every
+   dumped Marine two-handed rig follows. NULL if the rig has no support hand, which
+   makes the caller fall back to drawing one rig on the right controller. */
+static SECTION_DATA *VR_FindSupportHand(SECTION_DATA *s)
+{
+    while (s) {
+        SECTION_DATA *hit;
+        if (s->sempai && s->sempai->Section_Name
+            && SDL_strstr(s->sempai->Section_Name, "pump palm"))
+            return s;
+        hit = VR_FindSupportHand(s->First_Child);
+        if (hit) return hit;
+        s = s->Next_Sibling;
+    }
+    return NULL;
+}
+
+/* Draw PlayersWeapon with its left arm anchored to the left controller. */
+static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID)
+{
+    extern DISPLAYBLOCK PlayersWeapon;
+    extern void RenderThisDisplayblock(DISPLAYBLOCK *dbPtr);
+
+    HMODELCONTROLLER *hmc = PlayersWeapon.HModelControlBlock;
+    SECTION_DATA *larmR, *larmL;
+    const char *anchorName;
+    VECTORCH ObWorld_A, ObWorld_B, d;
+    MATRIXCH ObMat_A, ObMat_B;
+
+    /* larmR: the left limb in the PRIMARY rig, hidden from the right-hand pass.
+       larmL: the same limb in the SECOND rig, which is all the left-hand pass draws.
+       Both are found by NAME so the two rigs always agree on which limb it is. */
+    if (desc->anchor) {
+        larmR = GetThisSectionData(hmc->section_data, (char *)desc->anchor);
+    } else {
+        larmR = VR_FindSupportHand(hmc->section_data);   /* auto-detect */
+    }
+    if (!larmR || !larmR->sempai || !larmR->sempai->Section_Name) {
+        RenderThisDisplayblock(&PlayersWeapon); return;
+    }
+    anchorName = larmR->sempai->Section_Name;
+
+    ObWorld_A = PlayersWeapon.ObWorld;
+    ObMat_A   = PlayersWeapon.ObMat;
+
+    /* Advance the animation with the RIGHT root, before anything below re-roots the
+     * rig onto the left hand.
+     *
+     * HMTimer_Kernel only runs on the first solve of a frame (FrameStamp), and the
+     * un-split code always made that solve the right-rooted one. The measured-position
+     * step below solves with the LEFT root, so without this it became the frame's
+     * first solve and the timer - including delta sequences, which the Predator rig
+     * uses - was evaluated against the wrong root. */
+    ProveHModel(hmc, &PlayersWeapon);
+
+    larmL = VR_EnsureLeftRig(hmc, anchorName);
+    if (!larmL) { RenderThisDisplayblock(&PlayersWeapon); return; }
+
+    /* Root ORIENTATION for the left pass: built the same way the engine anchors the
+     * rig to the right controller, but fed the LEFT controller instead.
+     *
+     * Deriving it from the solved section matrices instead was tried twice and both
+     * times leaked the right controller's rotation into the result - the arm followed
+     * the left hand's position but rotated with the right (on-device, 2026-09-05).
+     * Reusing VR_ComputeWeaponAnchor removes the derivation altogether: whatever
+     * convention it uses to anchor the rig to a hand is exactly the convention we
+     * want for the other hand, by construction, and it cannot drift from the right
+     * hand's anchoring because it IS that code.
+     *
+     * Swapping the globals is ugly, but the alternative is a second copy of the
+     * anchor maths that could go stale against this one. Restored immediately. */
+    {
+        MATRIXCH savedMat   = vr_right_hand_mat;
+        VECTORCH savedWorld = vr_right_hand_world;
+        VECTORCH ignoredWorld;
+        MATRIXCH RA = ObMat_A;
+        float scale = VR_NormaliseRotation(&RA);   /* the rig's view scale */
+
+        /* Take only the BARREL ALIGNMENT from the anchor, not the weapon's tuned
+           angles: those belong to the right hand, and the left hand has its own in
+           vr_left_hand_trim. Sharing them meant tuning the weapon's pitch/roll/yaw
+           swung the left hand with it. The angles are zeroed across the call and put
+           straight back, so the right hand is unaffected. */
+        int savedPitch = 0, savedRoll = 0, savedYaw = 0;
+        int haveWeapon = (weaponID >= 0 && weaponID < MAX_NO_OF_WEAPON_TEMPLATES);
+        if (haveWeapon) {
+            savedPitch = vr_weapon_offset[weaponID].pitch_deg;
+            savedRoll  = vr_weapon_offset[weaponID].roll_deg;
+            savedYaw   = vr_weapon_offset[weaponID].yaw_deg;
+            vr_weapon_offset[weaponID].pitch_deg = 0;
+            vr_weapon_offset[weaponID].roll_deg  = 0;
+            vr_weapon_offset[weaponID].yaw_deg   = 0;
+        }
+
+        vr_right_hand_mat   = vr_left_hand_mat;
+        vr_right_hand_world = vr_left_hand_world;
+        VR_ComputeWeaponAnchor(weaponID, &ignoredWorld, &ObMat_B);
+        vr_right_hand_mat   = savedMat;
+        vr_right_hand_world = savedWorld;
+
+        if (haveWeapon) {
+            vr_weapon_offset[weaponID].pitch_deg = savedPitch;
+            vr_weapon_offset[weaponID].roll_deg  = savedRoll;
+            vr_weapon_offset[weaponID].yaw_deg   = savedYaw;
+        }
+
+        if (weaponID >= 0 && weaponID < MAX_NO_OF_WEAPON_TEMPLATES)
+            VR_ApplyHandTrimRotation(&ObMat_B, &vr_left_hand_trim[weaponID]);
+
+        /* VR_ComputeWeaponAnchor works from the raw (unscaled) hand matrix, so put
+           the rig's view scale on, or the left arm would be drawn full size next to a
+           shrunken right one. */
+        ObMat_B.mat11 = (int)(ObMat_B.mat11 * scale);
+        ObMat_B.mat12 = (int)(ObMat_B.mat12 * scale);
+        ObMat_B.mat13 = (int)(ObMat_B.mat13 * scale);
+        ObMat_B.mat21 = (int)(ObMat_B.mat21 * scale);
+        ObMat_B.mat22 = (int)(ObMat_B.mat22 * scale);
+        ObMat_B.mat23 = (int)(ObMat_B.mat23 * scale);
+        ObMat_B.mat31 = (int)(ObMat_B.mat31 * scale);
+        ObMat_B.mat32 = (int)(ObMat_B.mat32 * scale);
+        ObMat_B.mat33 = (int)(ObMat_B.mat33 * scale);
+    }
+
+    /* Position: MEASURED, not derived.
+     *
+     * Under a given root orientation the palm always lands at ObWorld + t, where t
+     * depends on the keyframe chain and the orientation but NOT on ObWorld. So solve
+     * once with the root parked at the target, read how far the palm misses by, and
+     * subtract it. That is exact in one step, and it does not care what t actually is.
+     *
+     * This replaces a derivation that was algebraically exact but measured ~250 units
+     * out on device (VRHAND2, 2026-09-05) - the model of the transform chain was
+     * wrong somewhere, and measuring sidesteps the question entirely. */
+    {
+        /* Where the palm should end up: the grip, plus this weapon's trim expressed in
+           the controller's own frame (RotateVector(v,M) = M^T * v maps local -> world,
+           the same step VR_ComputeWeaponAnchor uses for the right hand). */
+        VECTORCH target = vr_left_hand_world;
+        if (weaponID >= 0 && weaponID < MAX_NO_OF_WEAPON_TEMPLATES) {
+            const VR_HAND_TRIM *t = &vr_left_hand_trim[weaponID];
+            if (t->right | t->forward | t->up) {
+                VECTORCH wofs;
+                wofs.vx = t->right; wofs.vy = t->forward; wofs.vz = t->up;
+                RotateVector(&wofs, &vr_left_hand_mat);
+                target.vx += wofs.vx; target.vy += wofs.vy; target.vz += wofs.vz;
+            }
+        }
+
+        PlayersWeapon.HModelControlBlock = &vr_left_hmc;
+        PlayersWeapon.ObMat   = ObMat_B;
+        PlayersWeapon.ObWorld = target;
+        ProveHModel(&vr_left_hmc, &PlayersWeapon);
+        ObWorld_B.vx = target.vx + (target.vx - larmL->World_Offset.vx);
+        ObWorld_B.vy = target.vy + (target.vy - larmL->World_Offset.vy);
+        ObWorld_B.vz = target.vz + (target.vz - larmL->World_Offset.vz);
+    }
+
+
+    /* --- pass 1: the left arm alone, rooted on the left controller --- */
+    vr_split_saved_count = 0;
+    VR_SplitSaveFlags(vr_left_hmc.section_data);
+    VR_SplitMark(vr_left_hmc.section_data, larmL, 0, 0);
+    PlayersWeapon.ObWorld = ObWorld_B;
+    PlayersWeapon.ObMat   = ObMat_B;
+    d.vx = ObWorld_B.vx - Global_VDB_Ptr->VDB_World.vx;
+    d.vy = ObWorld_B.vy - Global_VDB_Ptr->VDB_World.vy;
+    d.vz = ObWorld_B.vz - Global_VDB_Ptr->VDB_World.vz;
+    RotateVector(&d, &Global_VDB_Ptr->VDB_Mat);
+    PlayersWeapon.ObView = d;
+    RenderThisDisplayblock(&PlayersWeapon);
+    VR_SplitRestoreFlags();
+
+    /* --- pass 2: everything else, back on the right controller ---
+       Done SECOND deliberately: the muzzle flash and the shot-spawn path read the
+       section transforms after this returns, and those must be the ordinary
+       right-rooted ones rather than the left-arm solve. */
+    PlayersWeapon.HModelControlBlock = hmc;
+    vr_split_saved_count = 0;
+    VR_SplitSaveFlags(hmc->section_data);
+    VR_SplitMark(hmc->section_data, larmR, 1, 0);
+    PlayersWeapon.ObWorld = ObWorld_A;
+    PlayersWeapon.ObMat   = ObMat_A;
+    d.vx = ObWorld_A.vx - Global_VDB_Ptr->VDB_World.vx;
+    d.vy = ObWorld_A.vy - Global_VDB_Ptr->VDB_World.vy;
+    d.vz = ObWorld_A.vz - Global_VDB_Ptr->VDB_World.vz;
+    RotateVector(&d, &Global_VDB_Ptr->VDB_Mat);
+    PlayersWeapon.ObView = d;
+    RenderThisDisplayblock(&PlayersWeapon);
+    VR_SplitRestoreFlags();
+}
+/* ========================= end split VR hands =============================== */
+
 #endif
 
 void UpdateCamera(void);
@@ -2545,6 +3247,7 @@ void AvpShowViewsVR(void)
             /* Fetch weapon state once; used for recoil shake and muzzle flash. */
             PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
             PLAYER_WEAPON_DATA *wpn = &ps->WeaponSlot[ps->SelectedWeaponSlot];
+            VR_TuneSetWeapon(wpn->WeaponIDNumber);
             TEMPLATE_WEAPON_DATA *tw = &TemplateWeapon[wpn->WeaponIDNumber];
 
             if (PlayersWeapon.ObShape || PlayersWeapon.HModelControlBlock) {
@@ -2735,7 +3438,19 @@ void AvpShowViewsVR(void)
                     wm->mat32 = (int)(wm->mat32 * wscale);
                     wm->mat33 = (int)(wm->mat33 * wscale);
                 }
-                RenderThisDisplayblock(&PlayersWeapon);
+                {
+                    /* Split the hands when this weapon's model actually has a
+                       separate left arm and both controllers are tracking;
+                       otherwise the ordinary single-rig draw. */
+                    VR_LEFT_ARM_DESC desc;
+                    if (VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
+                        && PlayersWeapon.HModelControlBlock
+                        && vr_left_hand_valid && vr_right_hand_valid) {
+                        VR_RenderWeaponSplitHands(&desc, wpn->WeaponIDNumber);
+                    } else {
+                        RenderThisDisplayblock(&PlayersWeapon);
+                    }
+                }
                 if (!is_alien && PlayersWeapon.HModelControlBlock)
                     PlayersWeapon.HModelControlBlock->timer_increment = saved_ti;
 
@@ -2884,6 +3599,12 @@ void AvpShowViewsVR(void)
         }
         MaintainHUD();
         if (ShowFrameRate) RenderString(fps_str, 20, 20, 0xFFFFFFFF);
+#if AVP_VR_HAND_TUNER
+        {   /* live hand-tuning readout */
+            extern void VR_TuneRenderHUD(void);
+            VR_TuneRenderHUD();
+        }
+#endif
         vr_hud_clip_scale = 1.0f;
         vr_hud_offset_x   = 0.0f;
         vr_hud_offset_y   = 0.0f;

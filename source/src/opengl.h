@@ -96,14 +96,35 @@ extern int       vr_left_hand_valid;
  * differently in the hand, so per-weapon overrides live in the
  * vr_weapon_offset[] table in avpview.c — edit a weapon's row there to tune
  * just that gun; anything left at VR_WPN_DEFAULT uses the values below. */
+/* In-world hand tuner: set to 1 to build it in, 0 to leave it out entirely.
+ *
+ * A DEV TOOL, off by default so it cannot be reached in a shipped build. It edits
+ * vr_weapon_offset[] and vr_left_hand_trim[] live from inside the game (toggle with
+ * left stick click + B; right stick picks a field and changes it; the values are
+ * drawn beside the frame rate and logged as VRTUNE lines). It PERSISTS NOTHING -
+ * copy the logged rows back into the tables when you are happy with them.
+ *
+ * Turning it off compiles out the tuner, its HUD readout and its input handling; the
+ * tables themselves stay exactly as written here. */
+#define AVP_VR_HAND_TUNER 0
+
 #define VR_WEAPON_OFFSET_FORWARD  (-300)   /* was VR_WEAPON_PULLBACK = 300 */
 #define VR_WEAPON_OFFSET_RIGHT    0
 #define VR_WEAPON_OFFSET_UP       0
 #define VR_WEAPON_PITCH_DEG       0
+#define VR_WEAPON_ROLL_DEG        0
+#define VR_WEAPON_YAW_DEG         0
 
-/* One weapon's alignment offsets (game units; pitch in degrees). Same meaning
- * as the VR_WEAPON_OFFSET_* defaults above. */
-typedef struct { int forward, right, up, pitch_deg; } VR_WEAPON_OFFSET;
+/* One weapon's alignment offsets (game units; angles in degrees). Same meaning
+ * as the VR_WEAPON_OFFSET_* defaults above.
+ *
+ * All three angles are about the WEAPON's own axes, applied after the barrel fix:
+ *   pitch  tips the muzzle up          (about X, the weapon's right)
+ *   roll   rotates the weapon clockwise about the barrel
+ *   yaw    swings the muzzle outward   (about the weapon's up)
+ * Every row of vr_weapon_offset[] spells out all six fields; a row that stops early
+ * simply gets 0 for the rest, so shortened rows stay valid. */
+typedef struct { int forward, right, up, pitch_deg, roll_deg, yaw_deg; } VR_WEAPON_OFFSET;
 
 /* Fill *out_world / *out_mat with the controller-attached weapon transform for
  * weapon `weaponID` (right-controller pose + that weapon's offsets + barrel

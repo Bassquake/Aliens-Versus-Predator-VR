@@ -3178,6 +3178,53 @@ int axes, balls, hats;
                 ry = rstate.currentState.y;
             }
 
+#if AVP_VR_HAND_TUNER
+            /* In-world hand tuning takes the right stick over entirely: up/down
+               picks a field, left/right changes it. Turning and weapon cycling are
+               suspended while it is on, so the stick cannot do two things at once. */
+            {
+                extern int  vr_tune_active;
+                extern void VR_TuneCycleField(int dir);
+                extern void VR_TuneAdjustValue(int dir);
+                extern void VR_TuneDumpRows(void);
+                extern int  xr_left_thumbstick_click_pressed;
+                extern int  xr_b_button_pressed;
+                static bool tune_toggle_armed = true;
+                static bool tune_field_armed  = true;
+                static Uint64 tune_next_step  = 0;
+
+                /* Toggle: crouch-click + jump. Awkward on purpose. */
+                if (xr_left_thumbstick_click_pressed && xr_b_button_pressed) {
+                    if (tune_toggle_armed) {
+                        tune_toggle_armed = false;
+                        vr_tune_active = !vr_tune_active;
+                        SDL_Log("VRTUNE %s", vr_tune_active ? "ON" : "OFF");
+                        if (!vr_tune_active) VR_TuneDumpRows();
+                    }
+                } else {
+                    tune_toggle_armed = true;
+                }
+
+                if (vr_tune_active) {
+                    Uint64 now = SDL_GetTicks();
+                    if (ry > 0.6f || ry < -0.6f) {
+                        if (tune_field_armed) {
+                            tune_field_armed = false;
+                            VR_TuneCycleField(ry > 0.0f ? -1 : 1);
+                        }
+                    } else {
+                        tune_field_armed = true;
+                    }
+                    if ((rx > 0.5f || rx < -0.5f) && now >= tune_next_step) {
+                        tune_next_step = now + 80;   /* repeat rate while held */
+                        VR_TuneAdjustValue(rx > 0.0f ? 1 : -1);
+                    }
+                    rx = 0.0f;   /* consume: no turning, no weapon cycling */
+                    ry = 0.0f;
+                }
+            }
+#endif
+
             /* X axis: turning */
             bool smooth_turning = false;
             if (VRTurnMode == 1) {

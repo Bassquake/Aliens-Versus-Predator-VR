@@ -896,6 +896,57 @@ static SECTION_DATA *VR_FindSupportHand(SECTION_DATA *s)
 }
 
 /* Draw PlayersWeapon with its left arm anchored to the left controller. */
+/* How far the left arm is driven by the weapon's ANIMATION rather than by the left
+   controller: 0 = controller, 1 = animation. Eased by the weapon render; consumed by
+   VR_RenderWeaponSplitHands below. */
+float vr_left_anim_blend = 0.0f;
+
+/* Blend two rotation-with-uniform-scale matrices.
+ *
+ * Both carry the rig's view scale, so they are normalised before interpolating and the
+ * scale is put back afterwards: lerping two rotations directly shrinks the result as it
+ * passes between them, which squashes the model mid-transition. The result is
+ * re-orthonormalised (rows are axes) because a lerp of two rotations is not one. */
+void VR_BlendMatrixCH(MATRIXCH *out, const MATRIXCH *from, const MATRIXCH *to, float t)
+{
+    float ma[9], mb[9], mo[9];
+    float la, lb, sc, l0, l1, d, cx, cy, cz;
+    float u = 1.0f - t;
+    int i;
+
+    ma[0]=(float)from->mat11; ma[1]=(float)from->mat12; ma[2]=(float)from->mat13;
+    ma[3]=(float)from->mat21; ma[4]=(float)from->mat22; ma[5]=(float)from->mat23;
+    ma[6]=(float)from->mat31; ma[7]=(float)from->mat32; ma[8]=(float)from->mat33;
+    mb[0]=(float)to->mat11;   mb[1]=(float)to->mat12;   mb[2]=(float)to->mat13;
+    mb[3]=(float)to->mat21;   mb[4]=(float)to->mat22;   mb[5]=(float)to->mat23;
+    mb[6]=(float)to->mat31;   mb[7]=(float)to->mat32;   mb[8]=(float)to->mat33;
+
+    la = SDL_sqrtf(ma[0]*ma[0]+ma[1]*ma[1]+ma[2]*ma[2]);
+    lb = SDL_sqrtf(mb[0]*mb[0]+mb[1]*mb[1]+mb[2]*mb[2]);
+    if (!(la > 1.0f && lb > 1.0f)) { *out = *to; return; }
+
+    for (i = 0; i < 9; i++) { ma[i] /= la; mb[i] /= lb; }
+    sc = la * u + lb * t;
+    for (i = 0; i < 9; i++) mo[i] = ma[i]*u + mb[i]*t;
+
+    l0 = SDL_sqrtf(mo[0]*mo[0]+mo[1]*mo[1]+mo[2]*mo[2]);
+    if (l0 < 0.0001f) { *out = *to; return; }
+    mo[0]/=l0; mo[1]/=l0; mo[2]/=l0;
+    d = mo[3]*mo[0] + mo[4]*mo[1] + mo[5]*mo[2];
+    mo[3]-=d*mo[0]; mo[4]-=d*mo[1]; mo[5]-=d*mo[2];
+    l1 = SDL_sqrtf(mo[3]*mo[3]+mo[4]*mo[4]+mo[5]*mo[5]);
+    if (l1 < 0.0001f) { *out = *to; return; }
+    mo[3]/=l1; mo[4]/=l1; mo[5]/=l1;
+    cx = mo[1]*mo[5] - mo[2]*mo[4];
+    cy = mo[2]*mo[3] - mo[0]*mo[5];
+    cz = mo[0]*mo[4] - mo[1]*mo[3];
+    mo[6]=cx; mo[7]=cy; mo[8]=cz;
+
+    out->mat11=(int)(mo[0]*sc); out->mat12=(int)(mo[1]*sc); out->mat13=(int)(mo[2]*sc);
+    out->mat21=(int)(mo[3]*sc); out->mat22=(int)(mo[4]*sc); out->mat23=(int)(mo[5]*sc);
+    out->mat31=(int)(mo[6]*sc); out->mat32=(int)(mo[7]*sc); out->mat33=(int)(mo[8]*sc);
+}
+
 static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID,
                                       int hideLeftArm)
 {
@@ -1038,6 +1089,30 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
                 RotateVector(&wofs, &vr_left_hand_mat);
                 target.vx += wofs.vx; target.vy += wofs.vy; target.vz += wofs.vz;
             }
+        }
+
+        /* Hand the left arm over to the ANIMATION when the weapon is released.
+         *
+         * Both rigs play the same sequence at the same time (the mirroring above), so
+         * their root->palm chains are identical: Process_Section composes
+         * SecMat = RelSecMat . parent_orientation, and RelSecMat depends only on the
+         * keyframes. The left rig therefore reproduces the primary's left arm EXACTLY
+         * when its root matches the primary's root - no derivation needed, which is
+         * what makes this safe where deriving the orientation from solved section
+         * matrices failed twice before.
+         *
+         * So the endpoints are: root orientation -> ObMat_A (the primary's root), and
+         * palm target -> larmR->World_Offset (where the animation puts that palm).
+         * The measured correction below then lands the palm exactly there, as it
+         * already does for the controller target. At blend 1 the split draw and the
+         * un-split draw coincide, so there is nothing left to flip. */
+        if (vr_left_anim_blend > 0.0f && larmR) {
+            float t = vr_left_anim_blend;
+            float u = 1.0f - t;
+            target.vx = (int)(target.vx * u + larmR->World_Offset.vx * t);
+            target.vy = (int)(target.vy * u + larmR->World_Offset.vy * t);
+            target.vz = (int)(target.vz * u + larmR->World_Offset.vz * t);
+            VR_BlendMatrixCH(&ObMat_B, &ObMat_B, &ObMat_A, t);
         }
 
         PlayersWeapon.HModelControlBlock = &vr_left_hmc;
@@ -3559,6 +3634,26 @@ void AvpShowViewsVR(void)
                frozen by the idle-freeze below rather than overwritten by the root. */
             weapon_is_free = (wpn->CurrentState == WEAPONSTATE_RELOAD_PRIMARY
                            || wpn->CurrentState == WEAPONSTATE_RELOAD_SECONDARY);
+
+            /* The Predator's shoulder cannon and medicomp are also released while they
+               are in use, so their animations can play through.
+               Neither is a hand-held gun: the cannon is shoulder-mounted and the
+               medicomp is a device worn on the arm, so pinning either to the right
+               controller was both wrong-looking and enough to overwrite the use
+               animation. The medicomp in particular drives its own sequence directly
+               (InitHModelTweening with PHSS_Attack_Secondary in PlayerUseMedicomp),
+               independent of the weapon state machine, so the test also covers the
+               sequence still running after the state has returned to idle. */
+            if (AvP.PlayerType == I_Predator
+                && (wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
+                 || wpn->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON))
+            {
+                HMODELCONTROLLER *hu = PlayersWeapon.HModelControlBlock;
+                int sq = hu ? hu->Sub_Sequence : (int)PHSS_Stand;
+                if (wpn->CurrentState != WEAPONSTATE_IDLE
+                    || (sq != (int)PHSS_Stand && sq != (int)PHSS_Run))
+                    weapon_is_free = 1;
+            }
             TEMPLATE_WEAPON_DATA *tw = &TemplateWeapon[wpn->WeaponIDNumber];
 
             if (PlayersWeapon.ObShape || PlayersWeapon.HModelControlBlock) {
@@ -3816,6 +3911,132 @@ void AvpShowViewsVR(void)
                     wm->mat32 = (int)(wm->mat32 * wscale);
                     wm->mat33 = (int)(wm->mat33 * wscale);
                 }
+
+                /* Ease between the hand-held pose and the released (animated) pose.
+                 *
+                 * Releasing the weapon swaps its pose from "wherever the controller is"
+                 * to "wherever the game logic put it" in a single frame, which reads as
+                 * a jump into and out of every reload, medicomp use and cannon shot.
+                 * So the LAST DISPLAYED pose is remembered, and on the frame the
+                 * released state flips, the weapon eases from that pose into the new
+                 * one over VR_FREE_BLEND_SECS.
+                 *
+                 * Only during the ease: outside it the target pose is used verbatim, so
+                 * ordinary hand tracking keeps its exact 1:1 response and picks up no
+                 * lag. ObWorld/ObMat are eye-independent, so the blend is advanced on
+                 * eye 0 only and both eyes then draw the same blended pose.
+                 *
+                 * The matrices carry the uniform wscale factor, so they are normalised
+                 * before interpolating and the scale is multiplied back afterwards -
+                 * lerping two rotations directly shrinks the result as it passes
+                 * between them, which would squash the model mid-transition. */
+                {
+                    static int      blend_prev_free = 0;
+                    static int      blend_have_last = 0;
+                    static float    blend_t = 1.0f;
+                    static VECTORCH blend_from_world;
+                    static MATRIXCH blend_from_mat;
+                    static VECTORCH blend_last_world;
+                    static MATRIXCH blend_last_mat;
+
+                    if (eye == 0) {
+                        if (weapon_is_free != blend_prev_free) {
+                            blend_prev_free = weapon_is_free;
+                            if (blend_have_last) {
+                                blend_from_world = blend_last_world;
+                                blend_from_mat   = blend_last_mat;
+                                blend_t = 0.0f;
+                            }
+                        } else if (blend_t < 1.0f) {
+                            blend_t += (NormalFrameTime / 65536.0f) / VR_FREE_BLEND_SECS;
+                            if (blend_t > 1.0f) blend_t = 1.0f;
+                        }
+                    }
+
+                    if (blend_t < 1.0f) {
+                        /* Smoothstep, so it leaves and arrives without a visible kick. */
+                        float t = blend_t * blend_t * (3.0f - 2.0f * blend_t);
+                        float u = 1.0f - t;
+                        MATRIXCH *tm = &PlayersWeapon.ObMat;
+                        float ma[9], mb[9], mo[9];
+                        float la, lb, sc;
+                        int i;
+
+                        PlayersWeapon.ObWorld.vx = (int)(blend_from_world.vx * u + PlayersWeapon.ObWorld.vx * t);
+                        PlayersWeapon.ObWorld.vy = (int)(blend_from_world.vy * u + PlayersWeapon.ObWorld.vy * t);
+                        PlayersWeapon.ObWorld.vz = (int)(blend_from_world.vz * u + PlayersWeapon.ObWorld.vz * t);
+
+                        ma[0]=(float)blend_from_mat.mat11; ma[1]=(float)blend_from_mat.mat12; ma[2]=(float)blend_from_mat.mat13;
+                        ma[3]=(float)blend_from_mat.mat21; ma[4]=(float)blend_from_mat.mat22; ma[5]=(float)blend_from_mat.mat23;
+                        ma[6]=(float)blend_from_mat.mat31; ma[7]=(float)blend_from_mat.mat32; ma[8]=(float)blend_from_mat.mat33;
+                        mb[0]=(float)tm->mat11; mb[1]=(float)tm->mat12; mb[2]=(float)tm->mat13;
+                        mb[3]=(float)tm->mat21; mb[4]=(float)tm->mat22; mb[5]=(float)tm->mat23;
+                        mb[6]=(float)tm->mat31; mb[7]=(float)tm->mat32; mb[8]=(float)tm->mat33;
+
+                        la = SDL_sqrtf(ma[0]*ma[0]+ma[1]*ma[1]+ma[2]*ma[2]);
+                        lb = SDL_sqrtf(mb[0]*mb[0]+mb[1]*mb[1]+mb[2]*mb[2]);
+                        if (la > 1.0f && lb > 1.0f) {
+                            float l0;
+                            for (i = 0; i < 9; i++) { ma[i] /= la; mb[i] /= lb; }
+                            sc = la * u + lb * t;   /* the shared uniform scale */
+                            for (i = 0; i < 9; i++) mo[i] = ma[i]*u + mb[i]*t;
+
+                            /* Re-orthonormalise: rows are axes. */
+                            l0 = SDL_sqrtf(mo[0]*mo[0]+mo[1]*mo[1]+mo[2]*mo[2]);
+                            if (l0 > 0.0001f) {
+                                float d, l1, cx, cy, cz;
+                                mo[0]/=l0; mo[1]/=l0; mo[2]/=l0;
+                                d = mo[3]*mo[0] + mo[4]*mo[1] + mo[5]*mo[2];
+                                mo[3]-=d*mo[0]; mo[4]-=d*mo[1]; mo[5]-=d*mo[2];
+                                l1 = SDL_sqrtf(mo[3]*mo[3]+mo[4]*mo[4]+mo[5]*mo[5]);
+                                if (l1 > 0.0001f) {
+                                    mo[3]/=l1; mo[4]/=l1; mo[5]/=l1;
+                                    cx = mo[1]*mo[5] - mo[2]*mo[4];
+                                    cy = mo[2]*mo[3] - mo[0]*mo[5];
+                                    cz = mo[0]*mo[4] - mo[1]*mo[3];
+                                    mo[6]=cx; mo[7]=cy; mo[8]=cz;
+                                    tm->mat11=(int)(mo[0]*sc); tm->mat12=(int)(mo[1]*sc); tm->mat13=(int)(mo[2]*sc);
+                                    tm->mat21=(int)(mo[3]*sc); tm->mat22=(int)(mo[4]*sc); tm->mat23=(int)(mo[5]*sc);
+                                    tm->mat31=(int)(mo[6]*sc); tm->mat32=(int)(mo[7]*sc); tm->mat33=(int)(mo[8]*sc);
+                                }
+                            }
+                        }
+
+                        /* ObView follows from the blended world position. */
+                        {
+                            VECTORCH ov;
+                            ov.vx = PlayersWeapon.ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
+                            ov.vy = PlayersWeapon.ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
+                            ov.vz = PlayersWeapon.ObWorld.vz - Global_VDB_Ptr->VDB_World.vz;
+                            RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
+                            PlayersWeapon.ObView = ov;
+                        }
+                    }
+
+                    blend_last_world = PlayersWeapon.ObWorld;
+                    blend_last_mat   = PlayersWeapon.ObMat;
+                    blend_have_last  = 1;
+
+                    /* The left arm follows the same ease, for the two weapons whose
+                       animation is largely that arm. Kept separate from the weapon
+                       blend above because that one fires for reloads too, where the
+                       arm should NOT be handed to the animation - the gun leaves both
+                       hands there and the split is dropped outright. */
+                    {
+                        extern float vr_left_anim_blend;
+                        static float left_t = 0.0f;
+                        int want = (weapon_is_free
+                                 && AvP.PlayerType == I_Predator
+                                 && (wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
+                                  || wpn->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON));
+                        if (eye == 0) {
+                            float step = (NormalFrameTime / 65536.0f) / VR_FREE_BLEND_SECS;
+                            if (want) { left_t += step; if (left_t > 1.0f) left_t = 1.0f; }
+                            else      { left_t -= step; if (left_t < 0.0f) left_t = 0.0f; }
+                        }
+                        vr_left_anim_blend = left_t * left_t * (3.0f - 2.0f * left_t);
+                    }
+                }
                 {
                     /* Split the hands when this weapon's model actually has a
                        separate left arm and both controllers are tracking;
@@ -3830,7 +4051,25 @@ void AvpShowViewsVR(void)
                     /* Hiding still needs the split machinery - it is what suppresses the
                        limb - so the left hand being untracked no longer forces the plain
                        single-rig draw when we are hiding. */
-                    if (!weapon_is_free
+                    /* Keep splitting THROUGH the released animation for the two
+                       weapons that are released while merely being USED rather than
+                       reloaded (shoulder cannon, medicomp).
+
+                       The split is normally dropped while the weapon is free, which is
+                       right for a reload - the gun genuinely leaves both hands. But for
+                       these two the left arm was flipping twice per use: it is driven by
+                       the left controller up to the frame the animation starts, becomes
+                       part of the right-controller rig for its duration, then flips back
+                       on the outro. The weapon root eases across that (VR_FREE_BLEND_SECS)
+                       but a rig swap cannot be eased - it is two different draw paths,
+                       not two poses - so the answer is not to swap at all.
+                       Leaving them unsplit instead was tried and is worse: without the
+                       second rig the left arm belongs to the primary rig and so follows
+                       the RIGHT controller, carrying its orientation with it. */
+                    int split_while_free = (AvP.PlayerType == I_Predator
+                                        && (wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
+                                         || wpn->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON));
+                    if ((!weapon_is_free || split_while_free)
                         && VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
                         && PlayersWeapon.HModelControlBlock
                         && (hideLeftArm || (vr_left_hand_valid && vr_right_hand_valid))) {

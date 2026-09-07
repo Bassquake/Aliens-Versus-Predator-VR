@@ -11662,6 +11662,18 @@ DISPLAYBLOCK *MakePistolCasing(VECTORCH *position,MATRIXCH *orient) {
 	m_temp.m_lightarray = NULL;
 	m_temp.m_mapptr = mmbptr;
 	m_temp.m_sbptr = (STRATEGYBLOCK*)NULL;
+	/* MUST be cleared: m_temp is an uninitialised stack local and
+	   AllocateModuleObject copies this straight into dptr->ObEIDPtr, which the
+	   renderer then uses as the pre-lit vertex-intensity array. Every other
+	   creator in the codebase zeroes it; this one did not, so the casing carried
+	   whatever happened to be on the stack.
+
+	   Harmless with stock art only because the stock "Pistol case" shape is not
+	   flagged ShapeFlag_PreLit, so the pointer is never read. An HD texture pack
+	   whose replacement shape IS pre-lit made the renderer dereference it and
+	   killed the app (SIGSEGV on address 0x1 in VertexIntensity_Standard_Opt,
+	   via AddShape <- KRenderItems). */
+	m_temp.m_extraitemdata = (struct extraitemdata *)0;
 	m_temp.m_dptr = NULL;
 	AllocateModuleObject(&m_temp);    
 	dispPtr = m_temp.m_dptr;

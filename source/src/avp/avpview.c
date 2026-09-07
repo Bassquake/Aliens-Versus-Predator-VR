@@ -901,6 +901,7 @@ static SECTION_DATA *VR_FindSupportHand(SECTION_DATA *s)
    VR_RenderWeaponSplitHands below. */
 float vr_left_anim_blend = 0.0f;
 
+
 /* Blend two rotation-with-uniform-scale matrices.
  *
  * Both carry the rig's view scale, so they are normalised before interpolating and the
@@ -3626,6 +3627,17 @@ void AvpShowViewsVR(void)
                fetches a magazine - so the root has to be let go of for any of it to
                show.
 
+               The Predator's MEDICOMP and SHOULDER CANNON were released here too, so
+               their use animations could "play through". That was wrong, and measuring
+               settled it: logged every frame of a medicomp use, the game-logic root
+               moves about 10 units and rotates ~3 degrees across the WHOLE animation
+               (VRANIM, 2026-09-07). There is no root motion to recover - the animation
+               is entirely section motion, which plays perfectly well with the weapon
+               held. Releasing them only introduced problems: a jump to the flat game's
+               camera-relative pose, a left-arm flip as the hand split switched off, and
+               stretched geometry from taking position from the held anchor while taking
+               orientation from the animation - two different frames.
+
                The weapon SWAP states were briefly included here on the assumption that
                they were the same shape of problem. They are not: logging the root every
                frame through a swap showed it essentially STATIC (world moved by 1-2
@@ -3635,25 +3647,48 @@ void AvpShowViewsVR(void)
             weapon_is_free = (wpn->CurrentState == WEAPONSTATE_RELOAD_PRIMARY
                            || wpn->CurrentState == WEAPONSTATE_RELOAD_SECONDARY);
 
-            /* The Predator's shoulder cannon and medicomp are also released while they
-               are in use, so their animations can play through.
-               Neither is a hand-held gun: the cannon is shoulder-mounted and the
-               medicomp is a device worn on the arm, so pinning either to the right
-               controller was both wrong-looking and enough to overwrite the use
-               animation. The medicomp in particular drives its own sequence directly
-               (InitHModelTweening with PHSS_Attack_Secondary in PlayerUseMedicomp),
-               independent of the weapon state machine, so the test also covers the
-               sequence still running after the state has returned to idle. */
+
+            /* The Predator's shoulder cannon and medicomp play their whole sequence
+               in its AUTHORED form, relocated to the right hand.
+               Held normally, the rig's root is pinned to the controller and its left
+               limb to the other one, so the sequence only ever showed as the two hands
+               twitching independently - the arms could not move through it. */
+            int authored_at_hand = 0;
             if (AvP.PlayerType == I_Predator
                 && (wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
                  || wpn->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON))
             {
                 HMODELCONTROLLER *hu = PlayersWeapon.HModelControlBlock;
                 int sq = hu ? hu->Sub_Sequence : (int)PHSS_Stand;
-                if (wpn->CurrentState != WEAPONSTATE_IDLE
-                    || (sq != (int)PHSS_Stand && sq != (int)PHSS_Run))
-                    weapon_is_free = 1;
+                int st = wpn->CurrentState;
+                int want;
+
+                if (wpn->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON) {
+                    /* The cannon takes ONLY its weapon-change animations this way.
+                       Its firing animation must not: releasing the weapon moves it off
+                       the controller for the shot, and since the cannon is aimed by
+                       hand that fights the player mid-fight. Firing therefore keeps the
+                       ordinary held path, where the sections still animate and aim is
+                       untouched. Keyed on the swap states alone rather than "not idle",
+                       so the attack sub-sequence still running after the state returns
+                       to idle cannot pull it in through the back door. */
+                    want = (st == WEAPONSTATE_SWAPPING_IN
+                         || st == WEAPONSTATE_SWAPPING_OUT
+                         || st == WEAPONSTATE_READYING
+                         || st == WEAPONSTATE_UNREADYING);
+                } else {
+                    /* The medicomp's whole point IS its use animation, so it takes both
+                       that and the weapon-change ones. */
+                    want = (st != WEAPONSTATE_IDLE
+                         || (sq != (int)PHSS_Stand && sq != (int)PHSS_Run));
+                }
+
+                if (want) {
+                    weapon_is_free   = 1;
+                    authored_at_hand = 1;
+                }
             }
+
             TEMPLATE_WEAPON_DATA *tw = &TemplateWeapon[wpn->WeaponIDNumber];
 
             if (PlayersWeapon.ObShape || PlayersWeapon.HModelControlBlock) {
@@ -3727,10 +3762,65 @@ void AvpShowViewsVR(void)
                         PlayersWeapon.ObWorld.vy = Global_VDB_Ptr->VDB_World.vy + wo.vy;
                         PlayersWeapon.ObWorld.vz = Global_VDB_Ptr->VDB_World.vz + wo.vz;
                     }
+                } else if (weapon_is_free && authored_at_hand && vr_right_hand_valid
+                           && PlayersWeapon.HModelControlBlock) {
+                    /* Play the sequence exactly as authored, TRANSLATED to the hand.
+                     *
+                     * Orientation and pose come from the animation untouched, so the
+                     * whole rig - both arms, the device, all of it - moves through the
+                     * sequence the way it was built to. Only the whole assembly is
+                     * shifted, so the action happens at your hand instead of in a fixed
+                     * spot in front of your face.
+                     *
+                     * The shift is MEASURED, not derived, exactly as the split-hand code
+                     * measures its left palm: solve the rig where the animation puts it,
+                     * read where the right palm actually landed, and move the root by
+                     * the difference. That keeps position and orientation in the SAME
+                     * frame - taking position from the held-weapon anchor while taking
+                     * orientation from the animation mixes two frames and draws the arms
+                     * from an origin that does not match their orientation, which is
+                     * what looked like stretched geometry (measured 2026-09-07). */
+                    /* Which section is pinned to the controller. Tried in order, first
+                       one the rig actually has wins.
+
+                       The first-person Predator rig runs palm -> arm -> elbow -> bicep
+                       with no separate wrist section (VRHIER dump), and a palm bone's
+                       origin normally sits AT the wrist joint - so "right palm" is
+                       already the wrist in all but name. The wrist-ward names are tried
+                       ahead of it so that a rig which does carry one is used instead,
+                       and so this is one line to change if the anchor wants moving
+                       further up the arm. */
+                    static const char *const anchor_names[] = {
+                        "right wrist", "right arm", "right palm"
+                    };
+                    HMODELCONTROLLER *ha = PlayersWeapon.HModelControlBlock;
+                    SECTION_DATA *rpalm = NULL;
+                    int ai;
+
+                    ProveHModel(ha, &PlayersWeapon);
+                    for (ai = 0; ai < (int)(sizeof(anchor_names)/sizeof(anchor_names[0])); ai++) {
+                        rpalm = GetThisSectionData(ha->section_data, (char *)anchor_names[ai]);
+                        if (rpalm) break;
+                    }
+                    if (rpalm) {
+                        PlayersWeapon.ObWorld.vx += vr_right_hand_world.vx - rpalm->World_Offset.vx;
+                        PlayersWeapon.ObWorld.vy += vr_right_hand_world.vy - rpalm->World_Offset.vy;
+                        PlayersWeapon.ObWorld.vz += vr_right_hand_world.vz - rpalm->World_Offset.vz;
+                    }
+                    {
+                        VECTORCH ov;
+                        ov.vx = PlayersWeapon.ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
+                        ov.vy = PlayersWeapon.ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
+                        ov.vz = PlayersWeapon.ObWorld.vz - Global_VDB_Ptr->VDB_World.vz;
+                        RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
+                        PlayersWeapon.ObView = ov;
+                    }
                 } else if (weapon_is_free) {
                     /* Released: keep PositionPlayersWeapon's pose (set by the state
                        machine this tick) and only bring it into this eye's view space,
-                       so the animation's root motion survives. */
+                       so the animation's root motion survives. This is the RELOAD case:
+                       there the gun genuinely leaves your hands, so the flat game's
+                       camera-relative pose is what is wanted. */
                     VECTORCH diff;
                     diff.vx = PlayersWeapon.ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
                     diff.vy = PlayersWeapon.ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
@@ -4025,10 +4115,7 @@ void AvpShowViewsVR(void)
                     {
                         extern float vr_left_anim_blend;
                         static float left_t = 0.0f;
-                        int want = (weapon_is_free
-                                 && AvP.PlayerType == I_Predator
-                                 && (wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
-                                  || wpn->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON));
+                        int want = authored_at_hand;
                         if (eye == 0) {
                             float step = (NormalFrameTime / 65536.0f) / VR_FREE_BLEND_SECS;
                             if (want) { left_t += step; if (left_t > 1.0f) left_t = 1.0f; }
@@ -4066,10 +4153,12 @@ void AvpShowViewsVR(void)
                        Leaving them unsplit instead was tried and is worse: without the
                        second rig the left arm belongs to the primary rig and so follows
                        the RIGHT controller, carrying its orientation with it. */
-                    int split_while_free = (AvP.PlayerType == I_Predator
-                                        && (wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
-                                         || wpn->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON));
-                    if ((!weapon_is_free || split_while_free)
+                    /* No split while an authored sequence is playing: the left arm is
+                       PART of that sequence, so re-rooting it onto the left controller
+                       would cut it back out again. vr_left_anim_blend eases the arm
+                       between the controller and the animation so the handover is not a
+                       one-frame flip - see VR_RenderWeaponSplitHands. */
+                    if (!weapon_is_free
                         && VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
                         && PlayersWeapon.HModelControlBlock
                         && (hideLeftArm || (vr_left_hand_valid && vr_right_hand_valid))) {

@@ -17,6 +17,7 @@
 #define UseLocalAssert Yes
 #include "ourasert.h"
 #include "avp_menus.h"
+#include "avp_version.h"
 
 
 #ifdef AVP_DEBUG_VERSION
@@ -197,6 +198,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_MARINELEFTARM_HELP: return "Off hides the Marine's left arm on every weapon except the dual pistols, where it holds the second gun.";
 			case TEXTSTRING_MARINELEFTARM_OFF:  return "Off";
 			case TEXTSTRING_MARINELEFTARM_ON:   return "On (Default)";
+			case TEXTSTRING_VERSION:            return "Version";
+			case TEXTSTRING_VERSION_VALUE:      return AVP_VERSION_STRING;
 			case TEXTSTRING_USERPROFILE_HELP_VR: return "Press X or A button to auto-select a name and again to Continue.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press A to select a profile, or B to delete a profile.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";

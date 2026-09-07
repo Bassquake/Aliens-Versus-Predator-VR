@@ -859,6 +859,11 @@ static AVPMENU_ELEMENT AvPMenu_BriefingBonus[] =
 
 /* Cheats menu (main menu -> Cheats). Single-player only; the cheats here are
    deliberately not offered for Skirmish or Multiplayer. */
+/* Fixed at 0: the version row's slider index, so it always shows the one string it
+   has. Not static - MenuElementIsDisabled has no need of it, but keeping the storage
+   here next to the row it serves. */
+static int MenuVersionValue = 0;
+
 static AVPMENU_ELEMENT AvPMenu_Cheats[] =
 {
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_CHEATS_GIVEALLWEAPONS},	{1}, {&GiveAllWeaponsCheatEnabled}, {TEXTSTRING_CHEATS_GIVEALLWEAPONS_OFF}, TEXTSTRING_CHEATS_GIVEALLWEAPONS_HELP},
@@ -869,6 +874,12 @@ static AVPMENU_ELEMENT AvPMenu_Cheats[] =
 	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR},{10}, {&EnemySpeedPredator},	{0}, TEXTSTRING_CHEATS_ENEMYSPEED_HELP},
 
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
+	/* Read-only: a one-entry TEXTSLIDER whose value never moves, greyed out and
+	   skipped by the cursor via MenuElementIsDisabled (which matches on the
+	   TEXTSTRING_VERSION label, so the row is inert wherever it is placed). There is
+	   no display-only element type in this menu system, and a slider that cannot
+	   slide is the least invasive way to get one. */
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VERSION},	{0}, {&MenuVersionValue},	{TEXTSTRING_VERSION_VALUE}},
 	{AVPMENU_ELEMENT_ENDOFMENU}
 };
 

@@ -1336,6 +1336,14 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 }
 
 
+/* A row that is only ever a label - never selectable, never changeable, but still
+   meant to be legible. Kept apart from MenuElementIsDisabled so the two can render at
+   different brightnesses while sharing the cursor-skipping. */
+static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
+{
+	return (elementPtr->a.TextDescription == TEXTSTRING_VERSION);
+}
+
 /* Rows that do not apply to the current Turning Mode: greyed out and skipped by the
  * cursor, rather than removed from the array.
  *
@@ -1351,6 +1359,11 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
  * Alien climb transition, which happens under either turning mode. */
 static int MenuElementIsDisabled(const AVPMENU_ELEMENT *elementPtr)
 {
+	/* Read-only labels are inert in whichever menu they appear, so they are tested
+	   before the Controller Config gate below. They render brighter than a greyed
+	   row - see the brightness selection in RenderMenu. */
+	if (MenuElementIsReadOnlyLabel(elementPtr)) return 1;
+
 	if (AvPMenus.CurrentMenu != AVPMENU_CONTROLLERCONFIG) return 0;
 	{
 		const int smooth = (VRTurnMode == 1);   /* 0 = Snap (default), 1 = Smooth */
@@ -1416,7 +1429,12 @@ static void RenderMenu(void)
 	{
 		int targetBrightness;
 
-		if (MenuElementIsDisabled(elementPtr))
+		if (MenuElementIsReadOnlyLabel(elementPtr))
+		{
+			/* Inert, but readable: ordinary unselected brightness. */
+			targetBrightness = BRIGHTNESS_OF_READONLY_ELEMENT;
+		}
+		else if (MenuElementIsDisabled(elementPtr))
 		{
 			/* Tested first: a disabled row stays dim even if the cursor is somehow
 			   on it, so it can never look selectable. */

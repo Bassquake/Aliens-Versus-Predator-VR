@@ -295,6 +295,11 @@ typedef struct
 /* Greyed-out rows: settings that do not apply to the current mode. Clearly dimmer
    than an ordinary unselected row, which is already only a quarter brightness. */
 #define BRIGHTNESS_OF_DISABLED_ELEMENT (ONE_FIXED/12)
+/* Read-only labels (the version row): non-interactive like a disabled row, but meant
+   to be READ, so they sit at the ordinary unselected brightness rather than the
+   greyed-out one - at ONE_FIXED/12 the version was three times fainter than the text
+   around it and barely legible in the headset. */
+#define BRIGHTNESS_OF_READONLY_ELEMENT (ONE_FIXED/4)
 #define BRIGHTNESS_CHANGE_SPEED (RealFrameTime*2)
 
 #define MENU_TOPY		(150)

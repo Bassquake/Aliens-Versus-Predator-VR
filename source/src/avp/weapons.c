@@ -812,7 +812,14 @@ void UpdateWeaponStateMachine(void)
 			#ifdef AVP_XR
 			/* In VR, weapon changes feel sluggish. Speed up only the weapon-change
 			   phases (swap out/in, ready/unready) by draining their timeout faster,
-			   so firing and reload timings are left untouched. */
+			   so firing and reload timings are left untouched.
+
+			   This was 3x while the swap ANIMATION was frozen (see the idle-freeze
+			   note in avpview.c): with nothing to watch, the state was dead time and
+			   the shorter the better. Now that the animation plays and is fitted to
+			   the state's length, the state duration IS the animation's duration, and
+			   3x ran it visibly too fast. 3/2 keeps the change snappier than stock
+			   (~0.5 s per half instead of ~1 s) while leaving the animation legible. */
 			switch (weaponPtr->CurrentState)
 			{
 				case WEAPONSTATE_SWAPPING_IN:
@@ -820,7 +827,7 @@ void UpdateWeaponStateMachine(void)
 				case WEAPONSTATE_READYING:
 				case WEAPONSTATE_UNREADYING:
 					if (timeOutRate != WEAPONSTATE_INSTANTTIMEOUT)
-						timeOutRate *= 3;   /* ~3x quicker weapon change */
+						timeOutRate = (timeOutRate * 3) / 2;   /* 1.5x quicker */
 					break;
 				case WEAPONSTATE_RECOIL_PRIMARY:
 					/* Wristblade only: the primary swing normally recovers instantly

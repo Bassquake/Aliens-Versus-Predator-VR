@@ -3526,28 +3526,39 @@ void AvpShowViewsVR(void)
              * the gun-specific barrel pitch / muzzle flash / idle-freeze don't apply. */
             const int is_alien = (AvP.PlayerType == I_Alien);
 
-            /* While reloading, let go of the controller and let the weapon animate.
+            /* For some states, let go of the controller and let the weapon animate.
              *
-             * The reload animation was running all along (state 3, sub-sequence
-             * MHSS_Standard_Reload, tweening, timer advancing - measured on device),
-             * but most of it is ROOT motion: the gun drops, comes across, takes a
-             * magazine. Pinning the root to the controller every frame overwrites all
-             * of that, leaving only whatever the sections do relative to the root -
-             * which reads as "no reload animation".
+             * These animations were running all along (measured on device: the state
+             * advances, the sub-sequence changes, the timer moves), but most of what
+             * they do is ROOT motion - the gun drops and fetches a magazine, or lowers
+             * out of view while the next weapon rises. Pinning the root to the
+             * controller every frame overwrites all of that, leaving only what the
+             * sections do RELATIVE to the root, which reads as "the animation never
+             * played": an instant reload, an instant weapon swap.
              *
              * UpdateWeaponStateMachine still calls PositionPlayersWeapon() each tick,
              * so the ordinary game-logic pose is sitting there ready to use; skipping
-             * the controller attach for these two states lets the animation play as it
+             * the controller attach for these states lets the animation play as it
              * does in the flat game. The trade is that the gun leaves your hand for
-             * the duration of the reload. */
-            int is_reloading = 0;
+             * the duration, which is the point - you cannot aim mid-swap either. */
+            int weapon_is_free = 0;
 
             /* Fetch weapon state once; used for recoil shake and muzzle flash. */
             PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
             PLAYER_WEAPON_DATA *wpn = &ps->WeaponSlot[ps->SelectedWeaponSlot];
             VR_TuneSetWeapon(wpn->WeaponIDNumber);
-            is_reloading = (wpn->CurrentState == WEAPONSTATE_RELOAD_PRIMARY
-                         || wpn->CurrentState == WEAPONSTATE_RELOAD_SECONDARY);
+            /* Reloads only. Their animation is mostly ROOT motion - the gun drops and
+               fetches a magazine - so the root has to be let go of for any of it to
+               show.
+
+               The weapon SWAP states were briefly included here on the assumption that
+               they were the same shape of problem. They are not: logging the root every
+               frame through a swap showed it essentially STATIC (world moved by 1-2
+               units across the whole 330 ms), so releasing it gained nothing and only
+               cost hand tracking. The swap animation is section motion, and it was
+               frozen by the idle-freeze below rather than overwritten by the root. */
+            weapon_is_free = (wpn->CurrentState == WEAPONSTATE_RELOAD_PRIMARY
+                           || wpn->CurrentState == WEAPONSTATE_RELOAD_SECONDARY);
             TEMPLATE_WEAPON_DATA *tw = &TemplateWeapon[wpn->WeaponIDNumber];
 
             if (PlayersWeapon.ObShape || PlayersWeapon.HModelControlBlock) {
@@ -3621,8 +3632,8 @@ void AvpShowViewsVR(void)
                         PlayersWeapon.ObWorld.vy = Global_VDB_Ptr->VDB_World.vy + wo.vy;
                         PlayersWeapon.ObWorld.vz = Global_VDB_Ptr->VDB_World.vz + wo.vz;
                     }
-                } else if (is_reloading) {
-                    /* Reloading: keep PositionPlayersWeapon's pose (set by the state
+                } else if (weapon_is_free) {
+                    /* Released: keep PositionPlayersWeapon's pose (set by the state
                        machine this tick) and only bring it into this eye's view space,
                        so the animation's root motion survives. */
                     VECTORCH diff;
@@ -3669,12 +3680,20 @@ void AvpShowViewsVR(void)
                     }
                 }
                 /* Freeze HModel bone animation during idle poses only: suppresses
-                 * walk/sway on weapon but lets fire/reload sub-sequences play.
+                 * walk/sway on weapon but lets fire/reload/swap sub-sequences play.
                  * Rules:
                  *   - Never freeze during tweening — the tween timer must advance
                  *     or the transition to the fire sequence never completes.
                  *   - Marine/Predator sub-sequence enums share integer values so
-                 *     the idle check must be gated on AvP.PlayerType. */
+                 *     the idle check must be gated on AvP.PlayerType.
+                 *   - **Come and Go are NOT idle poses.** They are the weapon draw and
+                 *     holster animations played on a weapon change, and listing them
+                 *     here froze every weapon swap: measured on device, SWAPPING_IN sat
+                 *     on sequence_timer 0 for its whole 330 ms, and SWAPPING_OUT only
+                 *     advanced while a tween happened to be running (which bypasses
+                 *     this freeze) then stuck the instant it ended. The swap looked
+                 *     instant, and no amount of releasing the weapon root helped
+                 *     because the animation itself was never running. */
                 /* Only restore what was actually frozen. Saving and restoring
                    unconditionally clobbers any timer_increment the render itself sets:
                    when a tween ends inside DoHModel, HMTimer_Kernel runs
@@ -3691,16 +3710,55 @@ void AvpShowViewsVR(void)
                         int sq = hmc->Sub_Sequence;
                         if (AvP.PlayerType == I_Marine)
                             is_idle = (sq == (int)MHSS_Stationary || sq == (int)MHSS_Fidget
-                                    || sq == (int)MHSS_Come      || sq == (int)MHSS_Go
                                     || sq == (int)MHSS_Right_Out || sq == (int)MHSS_Left_Out);
                         else
-                            is_idle = (sq == (int)PHSS_Stand || sq == (int)PHSS_Run
-                                    || sq == (int)PHSS_Come  || sq == (int)PHSS_Go);
+                            is_idle = (sq == (int)PHSS_Stand || sq == (int)PHSS_Run);
                     }
                     if (is_idle) {
                         saved_ti = hmc->timer_increment;
                         hmc->timer_increment = 0;
                         froze_ti = 1;
+                    }
+
+                    /* Fit a swap animation into the time its state actually has.
+                     *
+                     * The state and the sequence are timed independently and they do
+                     * not agree. GenericMarineWeapon_SwapIn asks for the sequence to
+                     * last the state's duration, but a tween runs first and, when it
+                     * completes inside DoHModel, HMTimer_Kernel re-inits the target
+                     * sequence at ITS OWN default rate - measured on device: the tween
+                     * ate 57 ms, then the sequence restarted at timer=978 with
+                     * ti=69905 (about a 1 s rate) with only ~276 ms of state left. It
+                     * therefore reached roughly a third before the state ended and the
+                     * weapon snapped to idle, which reads as the animation skipping
+                     * midway.
+                     *
+                     * So re-derive the rate each frame from what is actually left:
+                     * finish the remaining sequence in the remaining state time. The
+                     * state's remaining time is StateTimeOutCounter/TimeOutRateForState
+                     * seconds, so the rate is remaining_seq * rate / counter (the fixed
+                     * point cancels; a full sequence at 1/8 s gives 8*ONE_FIXED, which
+                     * is what the engine asks for in the first place). */
+                    if (!froze_ti
+                        && hmc->Tweening == Controller_NoTweening
+                        && (wpn->CurrentState == WEAPONSTATE_SWAPPING_IN
+                         || wpn->CurrentState == WEAPONSTATE_SWAPPING_OUT
+                         || wpn->CurrentState == WEAPONSTATE_READYING
+                         || wpn->CurrentState == WEAPONSTATE_UNREADYING))
+                    {
+                        int rate = TemplateWeapon[wpn->WeaponIDNumber]
+                                       .TimeOutRateForState[wpn->CurrentState];
+                        int counter = wpn->StateTimeOutCounter;
+                        int remaining = ONE_FIXED - hmc->sequence_timer;
+                        if (rate > 0 && counter > 0 && remaining > 0) {
+                            long long fitted = ((long long)remaining * rate) / counter;
+                            /* Clamp: a nearly-elapsed state would otherwise ask for an
+                               enormous rate on the last frame or two. */
+                            if (fitted > (long long)ONE_FIXED * 64)
+                                fitted = (long long)ONE_FIXED * 64;
+                            if (fitted > 0)
+                                hmc->timer_increment = (int)fitted;
+                        }
                     }
                 }
                 /* --- VR: shrink the first-person arms + weapon in view ------
@@ -3735,7 +3793,7 @@ void AvpShowViewsVR(void)
                      * whole assembly (offset included) about the grip instead, so
                      * the grip stays pinned to the controller and every part keeps a
                      * constant physical offset from the hand at any wscale. */
-                    if (vr_right_hand_valid && !is_reloading) {
+                    if (vr_right_hand_valid && !weapon_is_free) {
                         PlayersWeapon.ObWorld.vx = vr_right_hand_world.vx + (int)((PlayersWeapon.ObWorld.vx - vr_right_hand_world.vx) * wscale);
                         PlayersWeapon.ObWorld.vy = vr_right_hand_world.vy + (int)((PlayersWeapon.ObWorld.vy - vr_right_hand_world.vy) * wscale);
                         PlayersWeapon.ObWorld.vz = vr_right_hand_world.vz + (int)((PlayersWeapon.ObWorld.vz - vr_right_hand_world.vz) * wscale);
@@ -3772,7 +3830,7 @@ void AvpShowViewsVR(void)
                     /* Hiding still needs the split machinery - it is what suppresses the
                        limb - so the left hand being untracked no longer forces the plain
                        single-rig draw when we are hiding. */
-                    if (!is_reloading
+                    if (!weapon_is_free
                         && VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
                         && PlayersWeapon.HModelControlBlock
                         && (hideLeftArm || (vr_left_hand_valid && vr_right_hand_valid))) {

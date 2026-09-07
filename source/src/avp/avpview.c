@@ -313,9 +313,9 @@ static VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
     [WEAPON_PRED_WRISTBLADE]     = { -620,  -240,   50,    0,    0,   45 },
     [WEAPON_PRED_PISTOL]         = { -450,  -200,    0,    0,    0,    0 },
     [WEAPON_PRED_RIFLE]          = { -230,  -225,    0,    0,    0,    0 },
-    [WEAPON_PRED_SHOULDERCANNON] = { -430,  -180,   65,   20,    -23,    55 },
+    [WEAPON_PRED_SHOULDERCANNON] = { -410,  -270,   95,   26,    -27,    70 },
     [WEAPON_PRED_DISC]           = { -600,  -250,    120,    -1,    -6,    65 },
-    [WEAPON_PRED_MEDICOMP]       = { -430,  -180,   65,   20,    -23,    55 },
+    [WEAPON_PRED_MEDICOMP]       = { -410,  -270,   95,   26,    -27,    70 },
     [WEAPON_PRED_STAFF]          = VR_WPN_DEFAULT,
     /* --- Misc / non-gun (unused by this path, kept at default for safety) --- */
     [WEAPON_CUDGEL]              = VR_WPN_DEFAULT,
@@ -511,9 +511,9 @@ static VR_HAND_TRIM vr_left_hand_trim[MAX_NO_OF_WEAPON_TEMPLATES] = {
     /* --- Predator --- */
     [WEAPON_PRED_WRISTBLADE]     = {-80, -40, -50, -7, 3, -48},
     [WEAPON_PRED_PISTOL]         = {0, 0, 0, 0, 0, 0},
-    [WEAPON_PRED_RIFLE]          = {-140, 0, -30, 59, -22, 86},
+    [WEAPON_PRED_RIFLE]          = {-150, 0, -60, 76, -7, 118},
     [WEAPON_PRED_SHOULDERCANNON] = {-100, 0, -90, -26, 13, -103},
-    [WEAPON_PRED_DISC]           = {-130, 10, 0, -3, -20, -32},
+    [WEAPON_PRED_DISC]           = {-130, 10, -60, -3, -20, -32},
     [WEAPON_PRED_MEDICOMP]       = {-100, 0, -90, -26, 13, -103},
     [WEAPON_PRED_STAFF]          = {0, 0, 0, 0, 0, 0},
     [WEAPON_TWO_PISTOLS]         = { 260, 0, 60, 0, 0, 0},
@@ -809,6 +809,21 @@ static float VR_NormaliseRotation(MATRIXCH *m)
 static HMODELCONTROLLER vr_left_hmc;
 static int vr_left_hmc_valid = 0;
 
+/* Non-zero while the left limb is being drawn from the SECOND rig this frame.
+   Anything that reads a left-limb section's transform - the Predator's wrist display,
+   for one - must take it from that rig, because the primary's copy of those sections
+   is still solved against the RIGHT controller and only marked not-drawn. */
+int vr_left_rig_drawn = 0;
+
+/* Look a section up in the left-hand rig. NULL when the split is not running, so
+   callers can fall back to the primary rig. */
+SECTION_DATA *VR_LeftRigSection(const char *name)
+{
+    if (!vr_left_rig_drawn || !vr_left_hmc_valid || !vr_left_hmc.section_data)
+        return NULL;
+    return GetThisSectionData(vr_left_hmc.section_data, (char *)name);
+}
+
 static SECTION_DATA *VR_EnsureLeftRig(HMODELCONTROLLER *primary, const char *anchor)
 {
     if (!primary->Root_Section) return NULL;
@@ -919,6 +934,7 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
      * uses - was evaluated against the wrong root. */
     ProveHModel(hmc, &PlayersWeapon);
 
+    vr_left_rig_drawn = 0;
     if (hideLeftArm) {
         /* "Hide Marine Left Arm" is Off: draw the right-hand pass only. The left limb
            is still marked notreal there, so it simply is not drawn - which is the
@@ -1046,6 +1062,7 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
     RotateVector(&d, &Global_VDB_Ptr->VDB_Mat);
     PlayersWeapon.ObView = d;
     RenderThisDisplayblock(&PlayersWeapon);
+    vr_left_rig_drawn = 1;
     VR_SplitRestoreFlags();
 
     /* --- pass 2: everything else, back on the right controller ---
@@ -3761,6 +3778,7 @@ void AvpShowViewsVR(void)
                         && (hideLeftArm || (vr_left_hand_valid && vr_right_hand_valid))) {
                         VR_RenderWeaponSplitHands(&desc, wpn->WeaponIDNumber, hideLeftArm);
                     } else {
+                        vr_left_rig_drawn = 0;
                         RenderThisDisplayblock(&PlayersWeapon);
                     }
                 }

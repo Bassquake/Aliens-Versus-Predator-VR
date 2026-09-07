@@ -1945,7 +1945,20 @@ void DrawWristDisplay(void)
 
  	char *sectionName[]= {"Dum bar display","Dum 1 display","Dum 2 display","Dum 3 display","Dum 4 display"};
 
- 	sectionPtr=GetThisSectionData(PlayersWeaponHModelController.section_data,sectionName[0]);
+ 	sectionPtr = NULL;
+	#ifdef AVP_XR
+	/* Take the anchor from the LEFT-hand rig when the hands are split. The display
+	   hangs off the left arm, and the primary rig's copy of that limb is still solved
+	   against the RIGHT controller (pass 2 only marks it not-drawn), so reading it
+	   there left the charge bar floating in front of the eye and tracking the right
+	   hand instead of sitting on the amulet. */
+	{
+		extern SECTION_DATA *VR_LeftRigSection(const char *name);
+		sectionPtr = VR_LeftRigSection(sectionName[0]);
+	}
+	#endif
+	if (!sectionPtr)
+		sectionPtr=GetThisSectionData(PlayersWeaponHModelController.section_data,sectionName[0]);
 	if (!sectionPtr) return;
 	
 	RenderPredatorPlasmaCasterCharge(PlayerStatusPtr->PlasmaCasterCharge, &sectionPtr->World_Offset, &sectionPtr->SecMat);

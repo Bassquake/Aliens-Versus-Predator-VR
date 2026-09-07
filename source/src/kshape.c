@@ -6483,7 +6483,30 @@ void RenderPredatorPlasmaCasterCharge(int value, VECTORCH *worldOffsetPtr, MATRI
 			translatedPts[i].vy += worldOffsetPtr->vy;
 			translatedPts[i].vz += worldOffsetPtr->vz;
 			TranslatePointIntoViewspace(&translatedPts[i]);
-		
+
+			#ifdef AVP_XR
+			/* This is world-space 3D geometry drawn during the HUD pass, where the
+			 * virtual SDB is 640x680 (centre 320/340) but VDB_ProjX/Y are still sized
+			 * for the eye-FBO half-width. The projection divides by SDB_CentreX/Y, so
+			 * the view-space offsets overshoot by (eye_fbo_w/2)/320 - barely visible
+			 * dead ahead, growing toward the edges and swinging as the head turns.
+			 * Rescale by SDB/eye_fbo to cancel it, exactly as the Predator lock-on
+			 * reticle does above. */
+			{
+				extern int VR_IsIn3DMode(void);
+				extern int VR_GetEyeFBOWidth(void);
+				extern int VR_GetEyeFBOHeight(void);
+				extern SCREENDESCRIPTORBLOCK ScreenDescriptorBlock;
+				if (VR_IsIn3DMode())
+				{
+					int ew = VR_GetEyeFBOWidth();
+					int eh = VR_GetEyeFBOHeight();
+					if (ew > 0) translatedPts[i].vx = (int)(((long long)translatedPts[i].vx * ScreenDescriptorBlock.SDB_Width)  / ew);
+					if (eh > 0) translatedPts[i].vy = (int)(((long long)translatedPts[i].vy * ScreenDescriptorBlock.SDB_Height) / eh);
+				}
+			}
+			#endif
+
 			VerticesBuffer[i].X	= translatedPts[i].vx;
 			VerticesBuffer[i].Y	= translatedPts[i].vy;
 			VerticesBuffer[i].Z	= translatedPts[i].vz;

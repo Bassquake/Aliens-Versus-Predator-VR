@@ -708,6 +708,20 @@ void PlayerRequestManualReload(void)
 	ammoPtr = &TemplateAmmo[twPtr->PrimaryAmmoID];
 	if (ammoPtr->AmmoPerMagazine<=0) return;
 
+	/* The dual pistols carry two magazines at once, so the gesture has to look at
+	   both: reload if EITHER gun is short, and empty only the gun(s) being replaced.
+	   Without this a dry left pistol could never be reloaded by hand. */
+	if (weaponPtr->WeaponIDNumber==WEAPON_TWO_PISTOLS) {
+		int primaryShort   = (weaponPtr->PrimaryRoundsRemaining   < (unsigned int)ammoPtr->AmmoPerMagazine);
+		int secondaryShort = (weaponPtr->SecondaryRoundsRemaining < (unsigned int)ammoPtr->AmmoPerMagazine);
+		if (!primaryShort && !secondaryShort) return;
+		if (primaryShort   && weaponPtr->PrimaryMagazinesRemaining)   weaponPtr->PrimaryRoundsRemaining = 0;
+		if (secondaryShort && weaponPtr->SecondaryMagazinesRemaining) weaponPtr->SecondaryRoundsRemaining = 0;
+		weaponPtr->CurrentState = WEAPONSTATE_RELOAD_PRIMARY;
+		weaponPtr->StateTimeOutCounter = WEAPONSTATE_INITIALTIMEOUTCOUNT;
+		return;
+	}
+
 	/* nothing to do if the current magazine is already full (or effectively
 	   infinite - such weapons read as 'full' here) */
 	if (weaponPtr->PrimaryRoundsRemaining >= (unsigned int)ammoPtr->AmmoPerMagazine) return;
@@ -910,22 +924,27 @@ void UpdateWeaponStateMachine(void)
 			    {
 			    	/* load a new magazine */
                     TEMPLATE_AMMO_DATA *templateAmmoPtr = &TemplateAmmo[twPtr->PrimaryAmmoID];
-					if (weaponPtr->PrimaryRoundsRemaining==0) {
-						if (weaponPtr->WeaponIDNumber==WEAPON_TWO_PISTOLS) {
-							/* Two pistols reloads BOTH primary and secondary. */
-							if (weaponPtr->PrimaryMagazinesRemaining) {
-			                	weaponPtr->PrimaryRoundsRemaining = templateAmmoPtr->AmmoPerMagazine;
-			                	weaponPtr->PrimaryMagazinesRemaining--;
-							}
-							if (weaponPtr->SecondaryMagazinesRemaining) {
-			                	weaponPtr->SecondaryRoundsRemaining = templateAmmoPtr->AmmoPerMagazine;
-			                	weaponPtr->SecondaryMagazinesRemaining--;
-							}
-						} else {
-							/* Grenade launcher has already reloaded at this point. */
-		                	weaponPtr->PrimaryRoundsRemaining = templateAmmoPtr->AmmoPerMagazine;
-		                	weaponPtr->PrimaryMagazinesRemaining--;
+					if (weaponPtr->WeaponIDNumber==WEAPON_TWO_PISTOLS) {
+						/* Each pistol refills on ITS OWN empty magazine. This used to be
+						   gated on the primary being empty, so a dry gun could not be
+						   reloaded while the other still had rounds - invisible in the
+						   flat game, where the pair alternates and drains evenly, but
+						   very visible in VR where each trigger owns a gun and they
+						   empty independently. */
+						if (weaponPtr->PrimaryRoundsRemaining==0
+						 && weaponPtr->PrimaryMagazinesRemaining) {
+			            	weaponPtr->PrimaryRoundsRemaining = templateAmmoPtr->AmmoPerMagazine;
+			            	weaponPtr->PrimaryMagazinesRemaining--;
 						}
+						if (weaponPtr->SecondaryRoundsRemaining==0
+						 && weaponPtr->SecondaryMagazinesRemaining) {
+			            	weaponPtr->SecondaryRoundsRemaining = templateAmmoPtr->AmmoPerMagazine;
+			            	weaponPtr->SecondaryMagazinesRemaining--;
+						}
+					} else if (weaponPtr->PrimaryRoundsRemaining==0) {
+						/* Grenade launcher has already reloaded at this point. */
+	                	weaponPtr->PrimaryRoundsRemaining = templateAmmoPtr->AmmoPerMagazine;
+	                	weaponPtr->PrimaryMagazinesRemaining--;
 					}
                		weaponPtr->CurrentState = WEAPONSTATE_IDLE;
 			    	weaponPtr->StateTimeOutCounter=0;
@@ -11896,6 +11915,20 @@ int FireMarineTwoPistols(PLAYER_WEAPON_DATA *weaponPtr, int secondary)
 		FireLeft->Active=0;
 	}
 
+	/* In VR each trigger owns a pistol and they fire independently, so a gun that is
+	   out of ammo must simply not fire - it must NOT borrow the other gun's rounds,
+	   which is what the "try the other hand" fallbacks below do. That fallback is
+	   right for the flat game, where the pair is one alternating weapon.
+	   It also guards a quirk that only bites the VR path: with both guns empty the
+	   original code falls out of this whole block and fires anyway. Flat never sees
+	   that because the state machine checks ammo first, but the VR left-gun path
+	   calls this function directly. */
+#ifdef AVP_XR
+	int vr_independent_pistols = VR_IsIn3DMode();
+#else
+	const int vr_independent_pistols = 0;
+#endif
+
 	if (LastHand==0) {
 		/* Look to the left. */
 		if (!DeltaAnimation_IsFinished(FireLeft)) {
@@ -11907,6 +11940,9 @@ int FireMarineTwoPistols(PLAYER_WEAPON_DATA *weaponPtr, int secondary)
 			LastHand=1;
 			PWMFSDP=GetThisSectionData(PlayersWeaponHModelController.section_data,"Dum Flash L");
 		  	weaponPtr->SecondaryRoundsRemaining -= 65536;
+		} else if (vr_independent_pistols) {
+			/* Left is dry: stay dry. */
+			return(0);
 		} else {
 			/* Try the other hand... */
 			if (!DeltaAnimation_IsFinished(FireRight)) {
@@ -11930,6 +11966,9 @@ int FireMarineTwoPistols(PLAYER_WEAPON_DATA *weaponPtr, int secondary)
 			LastHand=0;
 			PWMFSDP=GetThisSectionData(PlayersWeaponHModelController.section_data,"Dum Flash");
 		  	weaponPtr->PrimaryRoundsRemaining -= 65536;
+		} else if (vr_independent_pistols) {
+			/* Right is dry: stay dry. */
+			return(0);
 		} else {
 			/* Try the other hand... */
 			if (!DeltaAnimation_IsFinished(FireLeft)) {

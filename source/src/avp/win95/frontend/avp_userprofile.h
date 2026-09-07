@@ -137,7 +137,11 @@ typedef struct
 	   pre-existing profile load at the weakest setting. 0 here means "written
 	   before the option existed", and decodes to the default. */
 	unsigned char VRClimbVignetteStrengthPlus1; //0=unset->5; else value+1 (was Padding)
-	char Padding[54];
+	/* "Hide Marine Left Arm" (Controller Config). Stored INVERTED, like the flags
+	   above, because this byte comes out of Padding: every profile written before the
+	   option existed has a zero here and the option defaults to On. */
+	unsigned char MarineLeftArmHidden; //0=On/shown (default), 1=Off/hidden (was Padding)
+	char Padding[53];
 
 	int CDPlayerVolume;
 

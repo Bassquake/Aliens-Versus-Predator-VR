@@ -1278,6 +1278,28 @@ static void DrawMarineSights(void)
 	 	BLTGunSightToScreen(GunMuzzleSightX>>16, GunMuzzleSightY>>16, GUNSIGHT_CROSSHAIR);
 	}
 
+	#ifdef AVP_XR
+	/* Second crosshair for the LEFT pistol. The dual pistols fire as two independent
+	   guns in VR, each aimed by its own controller, so one crosshair cannot serve
+	   both. vr_left_sight_valid is only set while that weapon is held. */
+	{
+		extern int vr_left_sight_x, vr_left_sight_y, vr_left_sight_valid;
+		if (vr_left_sight_valid)
+		{
+			if (MIRROR_CHEATMODE)
+			{
+				BLTGunSightToScreen(ScreenDescriptorBlock.SDB_Width - (vr_left_sight_x>>16),
+				                    vr_left_sight_y>>16, GUNSIGHT_CROSSHAIR);
+			}
+			else
+			{
+				BLTGunSightToScreen(vr_left_sight_x>>16, vr_left_sight_y>>16,
+				                    GUNSIGHT_CROSSHAIR);
+			}
+		}
+	}
+	#endif
+
 	/* draw smart target sights if required */
 	{
 	    /* access the extra data hanging off the strategy block */

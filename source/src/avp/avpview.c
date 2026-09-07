@@ -253,6 +253,27 @@ VECTORCH vr_base_world = {0, 0, 0};
 VECTORCH vr_right_hand_world = {0, 0, 0};
 MATRIXCH  vr_right_hand_mat  = {ONE_FIXED,0,0, 0,ONE_FIXED,0, 0,0,ONE_FIXED};
 int       vr_right_hand_valid = 0;
+/* The LEFT pistol's aim, for the Marine's dual pistols, in TWO different spaces.
+ *
+ * They are deliberately separate variables. GunMuzzleSightX/Y gets computed twice a
+ * frame in these same two spaces and overwritten in place, which is fine for it
+ * because each consumer runs immediately after its own computation - but the left
+ * gun's shot and its crosshair are computed and consumed at different points in the
+ * frame, so sharing one pair means whichever ran last wins and the other is wrong.
+ * That produced both a crosshair offset down-right of the impacts, and then the exact
+ * inverse, before they were split.
+ *
+ *   vr_left_aim_*   : FIRING units, as CalculatePlayersTarget expects. Computed just
+ *                     before the shot, in the eye 0 pass only.
+ *   vr_left_sight_* : HUD-PIXEL 16.16 units, as hud.c expects for the crosshair.
+ *                     Computed per eye, late, so it carries that eye's convergence.
+ *   _valid          : 0 whenever the left gun is not in play; gates both. */
+int      vr_left_aim_x = 0;
+int      vr_left_aim_y = 0;
+int      vr_left_sight_x = 0;
+int      vr_left_sight_y = 0;
+int      vr_left_sight_valid = 0;
+
 VECTORCH vr_left_hand_world = {0, 0, 0};
 MATRIXCH  vr_left_hand_mat  = {ONE_FIXED,0,0, 0,ONE_FIXED,0, 0,0,ONE_FIXED};
 int       vr_left_hand_valid = 0;
@@ -860,7 +881,8 @@ static SECTION_DATA *VR_FindSupportHand(SECTION_DATA *s)
 }
 
 /* Draw PlayersWeapon with its left arm anchored to the left controller. */
-static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID)
+static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID,
+                                      int hideLeftArm)
 {
     extern DISPLAYBLOCK PlayersWeapon;
     extern void RenderThisDisplayblock(DISPLAYBLOCK *dbPtr);
@@ -896,6 +918,18 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
      * first solve and the timer - including delta sequences, which the Predator rig
      * uses - was evaluated against the wrong root. */
     ProveHModel(hmc, &PlayersWeapon);
+
+    if (hideLeftArm) {
+        /* "Hide Marine Left Arm" is Off: draw the right-hand pass only. The left limb
+           is still marked notreal there, so it simply is not drawn - which is the
+           point. No second rig is built and no left-hand solve runs. */
+        vr_split_saved_count = 0;
+        VR_SplitSaveFlags(hmc->section_data);
+        VR_SplitMark(hmc->section_data, larmR, 1, 0);
+        RenderThisDisplayblock(&PlayersWeapon);
+        VR_SplitRestoreFlags();
+        return;
+    }
 
     larmL = VR_EnsureLeftRig(hmc, anchorName);
     if (!larmL) { RenderThisDisplayblock(&PlayersWeapon); return; }
@@ -3119,48 +3153,186 @@ void AvpShowViewsVR(void)
         if (eye == 0) {
             /* Inject right-trigger primary fire before the weapon state machine reads it. */
             {
-                extern int RealFrameTime;
-                static int haptic_ms_remaining = 0;
-                static int prev_trigger = 0;
                 if (xr_trigger_right_pressed) {
                     PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
                     ps->Mvt_InputRequests.Flags.Rqst_FirePrimaryWeapon = 1;
-                    haptic_ms_remaining -= RealFrameTime;
-                    if (!prev_trigger || haptic_ms_remaining <= 0) {
-                        XR_Haptic_Right(0.7f, 80.0f);
-                        haptic_ms_remaining = 80;
-                    }
-                } else {
-                    haptic_ms_remaining = 0;
                 }
-                prev_trigger = xr_trigger_right_pressed;
+                /* The rumble is NOT here. Holding the trigger used to rumble on an 80 ms
+                   timer whether or not a shot came out, so an empty weapon kept buzzing.
+                   It is now one burst per shot actually fired - see the block after
+                   UpdateWeaponStateMachine below. */
             }
-            /* Inject right-grip secondary fire. */
+            /* The Marine's dual pistols fire as two INDEPENDENT guns: the right
+             * trigger drives the ordinary state machine, and the left trigger fires
+             * the left gun here, along the LEFT controller's aim, in the same tick.
+             *
+             * The engine treats the pair as one weapon that ALTERNATES hands
+             * (FireMarineTwoPistols picks a gun from LastHand, and the state machine
+             * fires once per tick along one aim), so simultaneous fire cannot come out
+             * of it directly. Instead the left shot calls FireMarineTwoPistols itself
+             * with LastHand forced to 0 - which makes it take the "fire left" branch,
+             * spend SecondaryRoundsRemaining and select the "Dum Flash L" muzzle - and
+             * with GunMuzzleSightX/Y swapped to the left aim, since that is what
+             * CalculatePlayersTarget reads to place the shot. Everything it touches is
+             * saved and restored so the right gun's state machine is undisturbed, and
+             * LastHand is then pinned to 1 so the state machine always fires RIGHT.
+             *
+             * Safe to fire from here because this whole block is inside if (eye == 0):
+             * per-eye it would fire twice a frame. */
+            /* The LEFT pistol's aim in FIRING units. Must be computed HERE, before the
+             * shot below reads it - it used to sit further down, next to the
+             * right-hand equivalent, where the shot picked up the previous frame's
+             * value instead. Identical maths to the right-hand block, read from the
+             * left controller. */
+            vr_left_sight_valid = 0;
+            if (vr_left_hand_valid && AvP.PlayerType == I_Marine) {
+                PLAYER_STATUS *psL = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+                if (psL->WeaponSlot[psL->SelectedWeaponSlot].WeaponIDNumber
+                        == WEAPON_TWO_PISTOLS) {
+                    VECTORCH aim_vs;
+                    aim_vs.vx = vr_left_hand_mat.mat21;
+                    aim_vs.vy = vr_left_hand_mat.mat22;
+                    aim_vs.vz = vr_left_hand_mat.mat23;
+                    RotateVector(&aim_vs, &Global_VDB_Ptr->VDB_Mat);   /* world -> view */
+                    if (aim_vs.vz > 0) {
+                        int px = Global_VDB_Ptr->VDB_ProjX;
+                        int py = Global_VDB_Ptr->VDB_ProjY;
+                        int vz = aim_vs.vz;
+                        vr_left_aim_x = (aim_vs.vx * px / vz) * ONE_FIXED
+                                      + (ScreenDescriptorBlock.SDB_Width  << 15);
+                        vr_left_aim_y = (aim_vs.vy * py * 4 / (vz * 3)) * ONE_FIXED
+                                      + (ScreenDescriptorBlock.SDB_Height << 15);
+                        vr_left_sight_valid = 1;
+                    }
+                }
+            }
+
+            if (AvP.PlayerType == I_Marine && vr_left_hand_valid) {
+                extern int  FireMarineTwoPistols(PLAYER_WEAPON_DATA *weaponPtr, int secondary);
+                extern HMODELCONTROLLER PlayersWeaponHModelController;
+                extern DISPLAYBLOCK *MakePistolCasing(VECTORCH *position, MATRIXCH *orient);
+                extern int  LastHand;
+                extern int  GunMuzzleSightX, GunMuzzleSightY;
+                extern void XR_Haptic_Left(float amplitude, float duration_ms);
+                extern int  xr_left_trigger_gameplay_pressed;
+                PLAYER_STATUS *ps2 = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+                PLAYER_WEAPON_DATA *w2 = &ps2->WeaponSlot[ps2->SelectedWeaponSlot];
+
+                if (w2->WeaponIDNumber == WEAPON_TWO_PISTOLS) {
+                    /* A dry left pistol does NOT start a reload on its own. It used
+                       to, so that the left gun could refill while the right still had
+                       rounds - but a reload takes the whole weapon out of your hands
+                       for its animation, which is jarring when the other gun is still
+                       usable. The engine's automatic reload waits until BOTH are empty
+                       and that is the behaviour wanted here: an empty left gun simply
+                       stays silent until the right runs dry too, then both reload
+                       together. The reload-completion change still refills each gun
+                       from its own magazine, and the manual gesture still tops up
+                       whichever gun is short. */
+                    if (xr_left_trigger_gameplay_pressed && vr_left_sight_valid
+                        && w2->SecondaryRoundsRemaining) {
+                        DELTA_CONTROLLER *fireLeft =
+                            Get_Delta_Sequence(&PlayersWeaponHModelController, "FireLeft");
+                        /* The rate limit IS the delta animation: FireMarineTwoPistols
+                           refuses while it is still running. It is normally started by
+                           the state callback, which will not run for our shot, so it is
+                           started below - without that the left gun fires every frame. */
+                        if (!fireLeft || DeltaAnimation_IsFinished(fireLeft)) {
+                            int savedX = GunMuzzleSightX, savedY = GunMuzzleSightY;
+                            int savedHand = LastHand;
+                            int savedState = w2->CurrentState;
+                            int savedTimeout = w2->StateTimeOutCounter;
+
+                            GunMuzzleSightX = vr_left_aim_x;
+                            GunMuzzleSightY = vr_left_aim_y;
+                            LastHand = 0;          /* take the "fire left" branch */
+
+                            if (FireMarineTwoPistols(w2, 1)) {
+                                if (!fireLeft) {
+                                    fireLeft = Add_Delta_Sequence(&PlayersWeaponHModelController,
+                                                   "FireLeft", HMSQT_MarineHUD,
+                                                   MHSS_Secondary_Fire, ONE_FIXED);
+                                }
+                                int leftSub = (w2->SecondaryRoundsRemaining >= 65536)
+                                                ? (int)MHSS_Secondary_Fire
+                                                : (int)MHSS_Left_Out;
+                                if (fireLeft) {
+                                    Start_Delta_Sequence(fireLeft, HMSQT_MarineHUD, leftSub, -1);
+                                    fireLeft->Playing = 1;
+                                    fireLeft->Active  = 1;
+                                }
+                                /* Same delta on the SECOND rig, which is the one the
+                                   left gun is actually drawn from. Deltas hang off a
+                                   controller, and the second rig has its own list, so
+                                   the primary's FireLeft above animates a limb that is
+                                   never drawn - the recoil would be invisible without
+                                   this. Delta timers advance on their own Playing and
+                                   Active flags, independently of the controller's, and
+                                   HMTimer_Kernel runs for the second rig each frame, so
+                                   it plays without any further mirroring. */
+                                if (vr_left_hmc_valid) {
+                                    DELTA_CONTROLLER *dL =
+                                        Get_Delta_Sequence(&vr_left_hmc, "FireLeft");
+                                    if (!dL) {
+                                        dL = Add_Delta_Sequence(&vr_left_hmc, "FireLeft",
+                                                 HMSQT_MarineHUD, MHSS_Secondary_Fire,
+                                                 ONE_FIXED);
+                                    }
+                                    if (dL) {
+                                        Start_Delta_Sequence(dL, HMSQT_MarineHUD, leftSub, -1);
+                                        dL->Playing = 1;
+                                        dL->Active  = 1;
+                                    }
+                                }
+                                {   /* eject the left casing, as the state callback would */
+                                    SECTION_DATA *casing = GetThisSectionData(
+                                        PlayersWeaponHModelController.section_data,
+                                        "Dum L Pistol round");
+                                    if (casing)
+                                        MakePistolCasing(&casing->World_Offset, &casing->SecMat);
+                                }
+                                XR_Haptic_Left(0.5f, 80.0f);
+                            }
+
+                            GunMuzzleSightX = savedX;
+                            GunMuzzleSightY = savedY;
+                            LastHand = savedHand;
+                            w2->CurrentState = savedState;
+                            w2->StateTimeOutCounter = savedTimeout;
+                        }
+                    }
+                    /* The state machine's shot is always the RIGHT gun. */
+                    LastHand = 1;
+                }
+            }
+
+            /* Inject secondary fire: right grip normally. */
             {
-                extern int RealFrameTime;
-                static int sec_haptic_ms_remaining = 0;
-                static int prev_squeeze = 0;
-                /* Only respond to the grip if the current weapon actually HAS a
-                   secondary; otherwise it just rumbles misleadingly (e.g. the
-                   predator speargun has no secondary). A secondary counts if it
-                   fires via a function or has its own ammo, or drives the
-                   FIRING_SECONDARY state (e.g. the wristblade wind-up uses ammo). */
+
+                /* Only respond if the current weapon actually HAS a secondary;
+                   otherwise it just rumbles misleadingly (e.g. the predator speargun
+                   has no secondary). A secondary counts if it fires via a function or
+                   has its own ammo, or drives the FIRING_SECONDARY state (e.g. the
+                   wristblade wind-up uses ammo). */
                 PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
-                TEMPLATE_WEAPON_DATA *gtw =
-                    &TemplateWeapon[ps->WeaponSlot[ps->SelectedWeaponSlot].WeaponIDNumber];
+                int weaponID = ps->WeaponSlot[ps->SelectedWeaponSlot].WeaponIDNumber;
+                TEMPLATE_WEAPON_DATA *gtw = &TemplateWeapon[weaponID];
                 int has_secondary = (gtw->FireSecondaryFunction != NULL)
                                  || (gtw->SecondaryAmmoID != AMMO_NONE);
-                if (xr_grip_right_squeeze_pressed && has_secondary) {
+                /* Two Marine weapons are excluded:
+                     TWO_PISTOLS   - both guns already fire as primary shots (see the
+                                     independent left-gun block above), so routing the
+                                     grip into secondary would fire a third,
+                                     alternating shot.
+                     MARINE_PISTOL - the single pistol has no secondary worth firing in
+                                     VR; the grip only produced an unwanted extra shot. */
+                int fire_secondary = xr_grip_right_squeeze_pressed
+                                  && (weaponID != WEAPON_TWO_PISTOLS)
+                                  && (weaponID != WEAPON_MARINE_PISTOL);
+                if (fire_secondary && has_secondary) {
                     ps->Mvt_InputRequests.Flags.Rqst_FireSecondaryWeapon = 1;
-                    sec_haptic_ms_remaining -= RealFrameTime;
-                    if (!prev_squeeze || sec_haptic_ms_remaining <= 0) {
-                        XR_Haptic_Right(0.5f, 80.0f);
-                        sec_haptic_ms_remaining = 80;
-                    }
-                } else {
-                    sec_haptic_ms_remaining = 0;
                 }
-                prev_squeeze = xr_grip_right_squeeze_pressed;
+                /* Rumble handled per shot after the state machine, as above. */
             }
             /* VR aiming: set GunMuzzleSightX/Y from the physical controller aim direction so
              * CalculateWhereGunIsPointing (called inside UpdateWeaponStateMachine) derives the
@@ -3193,6 +3365,99 @@ void AvpShowViewsVR(void)
                 }
             }
             UpdateWeaponStateMachine();
+
+            /* Right-hand rumble: ONE burst per shot the weapon actually fired.
+             *
+             * Keyed on the state machine entering a firing state rather than on the
+             * trigger being held, which gives two things for free: an automatic weapon
+             * re-enters FIRING each shot, so the rumble matches the real rate; and a
+             * weapon that cannot fire never enters it, so an empty magazine is silent
+             * instead of buzzing on a timer.
+             *
+             * The left gun is not handled here - it fires outside the state machine and
+             * rumbles the LEFT controller at its own call site. Its brief use of
+             * FIRING_SECONDARY is saved and restored there, so it cannot trip this. */
+            {
+                /* The per-shot signal is the AMMO going down, not the state changing.
+                   A semi-automatic weapon cycles FIRING -> RECOIL -> WAITING -> IDLE so
+                   a state edge catches every shot, but an automatic one such as the
+                   pulse rifle stays in FIRING while held - the edge fires once and then
+                   never again, so the rumble was a single burst instead of keeping time
+                   with the fire rate. Rounds decrementing marks each shot in both cases.
+
+                   The state edge is kept as a fallback for weapons that fire without
+                   spending counted rounds (melee, and anything with infinite ammo), and
+                   only fires when the ammo did not move, so the two cannot double up. */
+                static int prev_fire_state = -1;
+                static unsigned int prev_primary_rounds = 0;
+                static int prev_weapon = -1;
+                static int tick_toggle = 0;
+                PLAYER_STATUS *psH = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+                PLAYER_WEAPON_DATA *wH = &psH->WeaponSlot[psH->SelectedWeaponSlot];
+                int st = wH->CurrentState;
+                int fired = 0;
+
+                if (wH->WeaponIDNumber != prev_weapon) {
+                    /* Swapping weapons changes the count for reasons that are not a
+                       shot; resynchronise rather than rumble. */
+                    prev_weapon = wH->WeaponIDNumber;
+                    prev_primary_rounds = wH->PrimaryRoundsRemaining;
+                    prev_fire_state = st;
+                    tick_toggle = 0;
+                } else {
+                    if (wH->PrimaryRoundsRemaining < prev_primary_rounds) {
+                        /* On a FAST weapon, tick every OTHER round.
+                           FiringRate is rounds/sec in 16.16. Above ~10/sec the shots are
+                           under 100 ms apart, which is too tight for the actuator to
+                           ramp down and back up between taps however short the pulse -
+                           the pulse rifle at ~16.7/sec just smeared. Halving gives it a
+                           ~120 ms gap, which reads as a distinct rapid tapping, and the
+                           longer 20 ms pulse then fits comfortably inside it.
+                           Slower weapons are unchanged and tick on every round: halving
+                           those would drop every second shot's feedback for no gain. */
+                        /* A short, full-amplitude TICK, not a buzz.
+                           The fastest weapon sets the budget: the pulse rifle's
+                           FiringRate is 1000*65536/60, i.e. ~16.7 rounds/sec, so shots
+                           are only ~60 ms apart. 80 ms overlapped the next shot
+                           outright and 35 ms left just 25 ms of silence, which the
+                           actuator's ramp up and down smears into a continuous buzz.
+                           ~12 ms leaves nearly 50 ms clear between taps. Amplitude goes
+                           to full to keep the shorter pulse from feeling weak.
+                           The fallback edges below stay at 80 ms - they only serve
+                           weapons that fire without spending rounds, which are slow. */
+                        {
+                            /* Named outright rather than derived from FiringRate: the
+                               threshold also caught the pistols at 12 rounds/sec, which
+                               then lost three shots in four and felt like missing
+                               feedback. These three are the sustained-fire weapons where
+                               a tick per round smears into a buzz. */
+                            int fast = (wH->WeaponIDNumber == WEAPON_PULSERIFLE
+                                     || wH->WeaponIDNumber == WEAPON_MINIGUN
+                                     || wH->WeaponIDNumber == WEAPON_SMARTGUN);
+                            int tick = 1;
+                            if (fast) {
+                                /* Every FOURTH round. Halving was not enough: at ~16.7
+                                   rounds/sec even a 120 ms gap still read as a buzz, so
+                                   the tick rate drops to ~4/sec (a ~240 ms gap), which
+                                   is clearly separated. The pulse lengthens to 35 ms to
+                                   suit - there is plenty of room now, and a longer
+                                   pulse at this spacing feels like a thump rather than
+                                   a click. Every other weapon ticks on every round. */
+                                tick_toggle = (tick_toggle + 1) & 3;
+                                tick = (tick_toggle == 0);
+                            }
+                            if (tick) XR_Haptic_Right(1.0f, fast ? 35.0f : 50.0f);
+                        }
+                        fired = 1;
+                    }
+                    if (!fired && st != prev_fire_state) {
+                        if (st == WEAPONSTATE_FIRING_PRIMARY)        XR_Haptic_Right(0.7f, 80.0f);
+                        else if (st == WEAPONSTATE_FIRING_SECONDARY) XR_Haptic_Right(0.5f, 80.0f);
+                    }
+                    prev_primary_rounds = wH->PrimaryRoundsRemaining;
+                    prev_fire_state = st;
+                }
+            }
         }
         UpdateObjectLights(Player);
         if (NumOnScreenBlocks) KRenderItems(Global_VDB_Ptr);
@@ -3244,10 +3509,28 @@ void AvpShowViewsVR(void)
              * the gun-specific barrel pitch / muzzle flash / idle-freeze don't apply. */
             const int is_alien = (AvP.PlayerType == I_Alien);
 
+            /* While reloading, let go of the controller and let the weapon animate.
+             *
+             * The reload animation was running all along (state 3, sub-sequence
+             * MHSS_Standard_Reload, tweening, timer advancing - measured on device),
+             * but most of it is ROOT motion: the gun drops, comes across, takes a
+             * magazine. Pinning the root to the controller every frame overwrites all
+             * of that, leaving only whatever the sections do relative to the root -
+             * which reads as "no reload animation".
+             *
+             * UpdateWeaponStateMachine still calls PositionPlayersWeapon() each tick,
+             * so the ordinary game-logic pose is sitting there ready to use; skipping
+             * the controller attach for these two states lets the animation play as it
+             * does in the flat game. The trade is that the gun leaves your hand for
+             * the duration of the reload. */
+            int is_reloading = 0;
+
             /* Fetch weapon state once; used for recoil shake and muzzle flash. */
             PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
             PLAYER_WEAPON_DATA *wpn = &ps->WeaponSlot[ps->SelectedWeaponSlot];
             VR_TuneSetWeapon(wpn->WeaponIDNumber);
+            is_reloading = (wpn->CurrentState == WEAPONSTATE_RELOAD_PRIMARY
+                         || wpn->CurrentState == WEAPONSTATE_RELOAD_SECONDARY);
             TEMPLATE_WEAPON_DATA *tw = &TemplateWeapon[wpn->WeaponIDNumber];
 
             if (PlayersWeapon.ObShape || PlayersWeapon.HModelControlBlock) {
@@ -3321,6 +3604,16 @@ void AvpShowViewsVR(void)
                         PlayersWeapon.ObWorld.vy = Global_VDB_Ptr->VDB_World.vy + wo.vy;
                         PlayersWeapon.ObWorld.vz = Global_VDB_Ptr->VDB_World.vz + wo.vz;
                     }
+                } else if (is_reloading) {
+                    /* Reloading: keep PositionPlayersWeapon's pose (set by the state
+                       machine this tick) and only bring it into this eye's view space,
+                       so the animation's root motion survives. */
+                    VECTORCH diff;
+                    diff.vx = PlayersWeapon.ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
+                    diff.vy = PlayersWeapon.ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
+                    diff.vz = PlayersWeapon.ObWorld.vz - Global_VDB_Ptr->VDB_World.vz;
+                    RotateVector(&diff, &Global_VDB_Ptr->VDB_Mat);
+                    PlayersWeapon.ObView = diff;
                 } else if (vr_right_hand_valid) {
                     /* Controller-attached weapon: position + orientation from the
                      * right controller, with the VR_WEAPON_* alignment offsets and
@@ -3365,10 +3658,17 @@ void AvpShowViewsVR(void)
                  *     or the transition to the fire sequence never completes.
                  *   - Marine/Predator sub-sequence enums share integer values so
                  *     the idle check must be gated on AvP.PlayerType. */
+                /* Only restore what was actually frozen. Saving and restoring
+                   unconditionally clobbers any timer_increment the render itself sets:
+                   when a tween ends inside DoHModel, HMTimer_Kernel runs
+                   InitHModelSequence for the target sequence and installs ITS rate, and
+                   writing the pre-render value back on top left the reload playing at
+                   the tween's rate - about 16x too fast, so it flashed through in a
+                   frame or two and held its last pose (measured on device). */
                 int saved_ti = 0;
+                int froze_ti = 0;
                 if (!is_alien && PlayersWeapon.HModelControlBlock) {
                     HMODELCONTROLLER *hmc = PlayersWeapon.HModelControlBlock;
-                    saved_ti = hmc->timer_increment;
                     int is_idle = 0;
                     if (hmc->Tweening == Controller_NoTweening) {
                         int sq = hmc->Sub_Sequence;
@@ -3380,8 +3680,11 @@ void AvpShowViewsVR(void)
                             is_idle = (sq == (int)PHSS_Stand || sq == (int)PHSS_Run
                                     || sq == (int)PHSS_Come  || sq == (int)PHSS_Go);
                     }
-                    if (is_idle)
+                    if (is_idle) {
+                        saved_ti = hmc->timer_increment;
                         hmc->timer_increment = 0;
+                        froze_ti = 1;
+                    }
                 }
                 /* --- VR: shrink the first-person arms + weapon in view ------
                  * The whole arms/weapon HModel is rotated by ObMat at its root
@@ -3415,7 +3718,7 @@ void AvpShowViewsVR(void)
                      * whole assembly (offset included) about the grip instead, so
                      * the grip stays pinned to the controller and every part keeps a
                      * constant physical offset from the hand at any wscale. */
-                    if (vr_right_hand_valid) {
+                    if (vr_right_hand_valid && !is_reloading) {
                         PlayersWeapon.ObWorld.vx = vr_right_hand_world.vx + (int)((PlayersWeapon.ObWorld.vx - vr_right_hand_world.vx) * wscale);
                         PlayersWeapon.ObWorld.vy = vr_right_hand_world.vy + (int)((PlayersWeapon.ObWorld.vy - vr_right_hand_world.vy) * wscale);
                         PlayersWeapon.ObWorld.vz = vr_right_hand_world.vz + (int)((PlayersWeapon.ObWorld.vz - vr_right_hand_world.vz) * wscale);
@@ -3443,15 +3746,25 @@ void AvpShowViewsVR(void)
                        separate left arm and both controllers are tracking;
                        otherwise the ordinary single-rig draw. */
                     VR_LEFT_ARM_DESC desc;
-                    if (VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
+                    /* "Hide Marine Left Arm" Off hides it on every Marine weapon except
+                       the dual pistols, whose left hand is holding the second gun. */
+                    extern int MarineLeftArmVisible;
+                    int hideLeftArm = (AvP.PlayerType == I_Marine
+                                    && !MarineLeftArmVisible
+                                    && wpn->WeaponIDNumber != WEAPON_TWO_PISTOLS);
+                    /* Hiding still needs the split machinery - it is what suppresses the
+                       limb - so the left hand being untracked no longer forces the plain
+                       single-rig draw when we are hiding. */
+                    if (!is_reloading
+                        && VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
                         && PlayersWeapon.HModelControlBlock
-                        && vr_left_hand_valid && vr_right_hand_valid) {
-                        VR_RenderWeaponSplitHands(&desc, wpn->WeaponIDNumber);
+                        && (hideLeftArm || (vr_left_hand_valid && vr_right_hand_valid))) {
+                        VR_RenderWeaponSplitHands(&desc, wpn->WeaponIDNumber, hideLeftArm);
                     } else {
                         RenderThisDisplayblock(&PlayersWeapon);
                     }
                 }
-                if (!is_alien && PlayersWeapon.HModelControlBlock)
+                if (froze_ti && PlayersWeapon.HModelControlBlock)
                     PlayersWeapon.HModelControlBlock->timer_increment = saved_ti;
 
                 /* Muzzle flash: PositionPlayersWeaponMuzzleFlash reads the barrel
@@ -3595,6 +3908,37 @@ void AvpShowViewsVR(void)
                 int hud_y = cy - (int)((float)cy * (aim_clip_y - vr_hud_offset_y) / vr_hud_clip_scale);
                 GunMuzzleSightX = hud_x << 16;
                 GunMuzzleSightY = hud_y << 16;
+            }
+        }
+        /* Same conversion for the LEFT pistol's crosshair.
+         *
+         * vr_left_sight_x/y is computed twice a frame in two different spaces, exactly
+         * as GunMuzzleSightX/Y is: earlier, in FIRING units, for CalculatePlayersTarget
+         * to place the shot; and here, in HUD-PIXEL units, for the crosshair. Using the
+         * firing value for the crosshair puts it well down and right of where the
+         * bullets actually land - the two spaces are not interchangeable.
+         * This block runs per eye, so the crosshair picks up each eye's convergence. */
+        if (vr_left_sight_valid && vr_left_hand_valid) {
+            VECTORCH aim_vs;
+            aim_vs.vx = vr_left_hand_mat.mat21;
+            aim_vs.vy = vr_left_hand_mat.mat22;
+            aim_vs.vz = vr_left_hand_mat.mat23;
+            RotateVector(&aim_vs, &Global_VDB_Ptr->VDB_Mat);   /* world -> view */
+            if (aim_vs.vz > 0) {
+                float aim_clip_x = (float)aim_vs.vx / aim_vs.vz
+                                 * (float)Global_VDB_Ptr->VDB_ProjX / (eye_fbo_w * 0.5f);
+                float aim_clip_y = -(float)aim_vs.vy / aim_vs.vz
+                                 * (float)Global_VDB_Ptr->VDB_ProjY / (eye_fbo_h * 0.5f);
+                if (CameraZoomScale > 0.0f && CameraZoomScale != 1.0f) {
+                    aim_clip_x /= CameraZoomScale;
+                    aim_clip_y /= CameraZoomScale;
+                }
+                int cx = ScreenDescriptorBlock.SDB_CentreX;
+                int cy = ScreenDescriptorBlock.SDB_CentreY;
+                int hud_x = cx + (int)((float)cx * (aim_clip_x - vr_hud_offset_x) / vr_hud_clip_scale);
+                int hud_y = cy - (int)((float)cy * (aim_clip_y - vr_hud_offset_y) / vr_hud_clip_scale);
+                vr_left_sight_x = hud_x << 16;
+                vr_left_sight_y = hud_y << 16;
             }
         }
         MaintainHUD();

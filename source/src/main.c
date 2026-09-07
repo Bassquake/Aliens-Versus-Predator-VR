@@ -222,6 +222,7 @@ int VRVignetteOn        = 1;
 int VRVignetteStrength  = 5;
 int VRClimbVignetteOn   = 1;
 int VRClimbVignetteStrength = 5;
+int MarineLeftArmVisible = 1;
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;
 int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
@@ -614,9 +615,9 @@ int xr_y_button_gameplay_long_edge           = 0; /* 1 once when Y is held past 
 int xr_menu_button_msg_history_edge          = 0; /* 1 once when left menu button is held past the long-press threshold (message history) */
 int xr_x_button_gameplay_pressed             = 0; /* 1 on X press edge in gameplay (taunt) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
-int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (Marine jetpack) */
+int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (currently unbound - the Marine jetpack moved to the left grip) */
 int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger press edge (Predator grappling hook) */
-int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squeeze is held (Predator recall disc) */
+int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squeeze is held (Predator recall disc, Marine jetpack) */
 static float xr_left_stick_x = 0.0f;
 static float xr_left_stick_y = 0.0f;
 #ifdef AVP_PCVR
@@ -656,6 +657,10 @@ int VRClimbVignetteOn = 1;
  * VRVignetteStrength. Separate because the two fire in different situations and
  * want different amounts: a turn is continuous, a wall transition is a brief swing. */
 int VRClimbVignetteStrength = 5;
+/* "Hide Marine Left Arm" (Controller Config): 1 = shown (default), 0 = hidden on every
+ * Marine weapon EXCEPT the dual pistols, where the left hand holds the second gun and
+ * hiding it would leave that gun floating. Consumed in avpview.c. */
+int MarineLeftArmVisible = 1;
 /* "Adjust HUD elements" (Controller Config): 0=default layout, 1 and 2 pull the
  * HUD progressively toward the centre of view for narrow-FOV headsets.
  * Consumed in AvpShowViewsVR when setting vr_hud_clip_scale. */

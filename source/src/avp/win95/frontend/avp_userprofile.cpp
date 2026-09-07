@@ -51,6 +51,7 @@ extern int VRSmoothDeadzone;
 extern int VRVignetteOn;
 extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
+extern int MarineLeftArmVisible;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
@@ -285,6 +286,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRVignetteOn = 1; /* comfort vignette on by default */
 	VRClimbVignetteOn = 1; /* wall-walk transition vignette on by default */
 	VRClimbVignetteStrength = 5;
+	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
 	GodModeCheatEnabled = 0; /* "god mode" cheat off by default */
@@ -367,6 +369,8 @@ extern void GetSettingsFromUserProfile(void)
 	VRClimbVignetteStrength =		UserProfilePtr->VRClimbVignetteStrengthPlus1
 						? UserProfilePtr->VRClimbVignetteStrengthPlus1 - 1
 						: 5;
+	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
+	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
 	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
 	GodModeCheatEnabled =			UserProfilePtr->GodModeCheat;
@@ -418,6 +422,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRVignetteOn =		VRVignetteOn;
 	profilePtr->VRClimbVignetteDisabled =	!VRClimbVignetteOn;
 	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
+	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
 	profilePtr->VRVignetteStrength =	VRVignetteStrength;
 	profilePtr->GiveAllWeaponsCheat =	GiveAllWeaponsCheatEnabled;
 	profilePtr->GodModeCheat =		GodModeCheatEnabled;

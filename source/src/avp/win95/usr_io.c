@@ -49,7 +49,6 @@ extern int xr_y_button_gameplay_long_edge;
 extern int xr_menu_button_msg_history_edge;
 extern int xr_x_button_gameplay_pressed;
 extern int xr_left_trigger_pressed;
-extern int xr_left_trigger_gameplay_pressed;
 extern int xr_left_trigger_gameplay_edge;
 extern int xr_left_squeeze_gameplay_pressed;
 extern void XR_Haptic_Left(float amplitude, float duration_ms);
@@ -1007,8 +1006,10 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->f.Jetpack]
 				 ||KeyboardInput[secondaryInput->f.Jetpack]
 				#ifdef AVP_XR
-				 /* Left trigger only engages the jetpack if the marine has one. */
-				 ||(xr_left_trigger_gameplay_pressed && playerStatusPtr->JetpackEnabled)
+				 /* Left GRIP, and only if the marine actually has a jetpack.
+				    Shares the grip with the Predator's disc recall below, which is
+				    harmless: the two are different species and never both live. */
+				 ||(xr_left_squeeze_gameplay_pressed && playerStatusPtr->JetpackEnabled)
 				#endif
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jetpack = 1;

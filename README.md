@@ -109,10 +109,10 @@ Finally, to play, on your headset, run Steam Link and navigate to the game in yo
 See below if want to include CD music if you have the physical game second CD...
 
 ## CD music
-You can skip this if you don't have the audio cd that comes with the game, it'll just play without background music. Or provide your own music! Would need 15 tracks.
+Steam and likely GOG have the music embedded so it wont be in their assets folder, so you have to find a copy of the CD. I can't tell you where to find it but it can be found online! Or you can skip this if you don't absolutely need it, it'll just play fine without background music. If you found a copy, then do the following:
+- Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset or Windows game location listed below. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
 - Create a folder in **sdcard/Android/data/com.bassquake.quest.avpvr/files/** called **cd_tracks**.
-- Or on Windows just create a folder called **cd_tracks** where the exe and the assets are.
-- Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset or Windows game location. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
+- Or on Windows/Linux create a folder called **cd_tracks** where the exe and the assets are.
 
 ## Controls
 

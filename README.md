@@ -109,10 +109,14 @@ Finally, to play, on your headset, run Steam Link and navigate to the game in yo
 See below if want to include CD music if you have the physical game's second CD or a digital copy found online...
 
 ## CD music
-Steam and likely GOG have the music embedded so it wont be in their assets folder, so you have to find a copy of the CD. I can't tell you where to find it but it can be found online! Or you can skip this if you don't absolutely need it, it'll just play fine without background music. If you found a copy, then do the following:
-- Rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset or Windows game location listed below. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
+You can skip this if you don't absolutely need background music, game will play fine without it but you will lose the atmosphere! Steam and likely GOG have the music embedded so it wont be in their assets folder, you have to find a copy of the CD or simply download from [moddb.com](https://www.moddb.com/games/aliens-vs-predator/addons/fixed-avp-classic-soundtrack). (There may be differences in track order to the CD. I need to look into it.) Do the following for the files:
 - Create a folder in **sdcard/Android/data/com.bassquake.quest.avpvr/files/** called **cd_tracks**.
 - Or on Windows/Linux create a folder called **cd_tracks** where the exe and the assets are.
+- Either rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset or Windows game location. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
+- Or if you downloaded from [moddb.com](https://www.moddb.com/games/aliens-vs-predator/addons/fixed-avp-classic-soundtrack) rename the ogg files as track01.ogg, track02.ogg etc and copy to **cd_tracks** folder.
+- Run the game!
+
+PS: Be aware I may rename the folder **cd_tracks** to **music** at some point.
 
 ## Controls
 

@@ -3544,11 +3544,122 @@ void AvpShowViewsVR(void)
                         fired = 1;
                     }
                     if (!fired && st != prev_fire_state) {
-                        if (st == WEAPONSTATE_FIRING_PRIMARY)        XR_Haptic_Right(0.7f, 80.0f);
+                        /* The shoulder cannon is handled by the charge block below,
+                           off the meter rather than off states, so it is skipped here
+                           to avoid two bursts for one shot. */
+                        if (wH->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON) {
+                            /* nothing - see the caster block below */
+                        }
+                        else if (st == WEAPONSTATE_FIRING_PRIMARY)   XR_Haptic_Right(0.7f, 80.0f);
                         else if (st == WEAPONSTATE_FIRING_SECONDARY) XR_Haptic_Right(0.5f, 80.0f);
                     }
                     prev_primary_rounds = wH->PrimaryRoundsRemaining;
                     prev_fire_state = st;
+                }
+
+                /* Shoulder cannon: a hum that rises with the meter, then a thump when
+                 * it discharges.
+                 *
+                 * Driven entirely by PlasmaCasterCharge - the SAME value the red bar on
+                 * the left arm draws (RenderPredatorPlasmaCasterCharge takes it
+                 * directly), so what you feel and what you see cannot drift apart.
+                 *
+                 * Deliberately NOT keyed on weapon states. A first attempt suppressed
+                 * the hum during FIRING_PRIMARY/SECONDARY on the assumption that those
+                 * meant "the shot is happening", and produced no hum at all: the caster
+                 * sits in a firing state for the whole time it is CHARGING (its template
+                 * maps PlasmaCaster_Idle to FIRING_PRIMARY and PlasmaCaster_Recoil to
+                 * RECOIL_PRIMARY), so the exclusion covered exactly the window the hum
+                 * was meant to fill, leaving only the one edge burst at the start.
+                 * The meter cannot be misread that way: it rises while charging and
+                 * falls when the shot is spent.
+                 *
+                 * The hum re-issues every frame at a duration longer than a frame so the
+                 * pulses overlap into one continuous vibration whose strength can change.
+                 * That smearing is the same actuator behaviour avoided for per-shot ticks
+                 * - there it read as a buzz instead of taps; here a buzz is the point. */
+                {
+                    extern int Caster_Jumpstart;   /* weapons.c: the charge floor */
+                    static int   prev_charge  = 0;
+                    static int   prev_charge_wpn = -1;
+                    static float thump_hold = 0.0f;   /* seconds left in the current phase */
+                    static int   thump_phase = 0;     /* 0 none, 1 silent gap, 2 burst */
+                    static int   prev_caster_st = -1;
+                    int is_caster = (wH->WeaponIDNumber == WEAPON_PRED_SHOULDERCANNON);
+                    int charge    = psH->PlasmaCasterCharge;
+
+                    if (wH->WeaponIDNumber != prev_charge_wpn) {
+                        prev_charge_wpn = wH->WeaponIDNumber;
+                        prev_charge = charge;      /* a weapon change is not a discharge */
+                    } else if (is_caster) {
+                        /* Two independent signals for "the shot went off", because the
+                           charge drop alone was not firing reliably on release:
+                             - the state entering RECOIL, which is where the discharge
+                               actually happens (PlasmaCaster_Recoil launches the bolt
+                               and resets the charge), and
+                             - the meter dropping sharply.
+                           Either will do, and the thump_hold below stops the two from
+                           double-firing when they land on the same frame. */
+                        int discharged = (prev_charge - charge > ONE_FIXED/20);
+                        if ((st == WEAPONSTATE_RECOIL_PRIMARY
+                          || st == WEAPONSTATE_RECOIL_SECONDARY)
+                            && st != prev_caster_st)
+                            discharged = 1;
+                        prev_caster_st = st;
+
+                        if (discharged && thump_phase == 0) {
+                            /* Shot detected. Do NOT vibrate yet - go quiet first.
+                             *
+                             * Confirmed on device that the burst was always being issued
+                             * (VRTHUMP, 2026-09-08): one call per shot, right on the
+                             * recoil frame. It simply could not be FELT, because the hum
+                             * had been running at ~0.63 amplitude in the frame before it
+                             * and a jump to 1.0 is a small step after a couple of seconds
+                             * of continuous buzz - the hand adapts, and the thump read as
+                             * the hum carrying on briefly.
+                             *
+                             * So the burst is given a silent gap to land against. The
+                             * contrast is what registers, not the amplitude. */
+                            thump_phase = 1;
+                            thump_hold  = 0.06f;
+                        } else if (thump_phase == 1) {
+                            /* Silence, then the burst when the gap has elapsed. */
+                            if (thump_hold <= 0.0f) {
+                                XR_Haptic_Right(1.0f, 160.0f);
+                                thump_phase = 2;
+                                thump_hold  = 0.17f;
+                            }
+                        } else if (thump_phase == 2) {
+                            /* Let the burst play out. A haptic call REPLACES whatever is
+                               running, and the trigger is often still held after a shot -
+                               the caster starts winding up again immediately - so without
+                               this the next frame's hum would overwrite it. */
+                            if (thump_hold <= 0.0f) thump_phase = 0;
+                        } else if ((xr_trigger_right_pressed || xr_grip_right_squeeze_pressed)
+                                   && charge > 0) {
+                            /* Map the charge's REAL working range, not 0..ONE_FIXED.
+                               Measured on device: the caster never sits at zero while
+                               armed - PlasmaCaster_Idle jumpstarts it to Caster_Jumpstart
+                               (10000) the moment it can afford to - and holding then
+                               climbs from there toward ONE_FIXED. Scaling from 0 wasted
+                               the bottom 15% of the range on charge levels that never
+                               occur, so a second of winding up moved the amplitude only
+                               0.17 -> 0.26 and felt like a constant rumble. */
+                            float f = (charge - Caster_Jumpstart)
+                                    / (float)(ONE_FIXED - Caster_Jumpstart);
+                            if (f < 0.0f) f = 0.0f;
+                            if (f > 1.0f) f = 1.0f;
+                            /* Barely there at the floor, full strength at the top. The
+                               shot's thump is the same amplitude but four times longer,
+                               so the release still reads as a separate event. */
+                            XR_Haptic_Right(0.05f + 0.95f * f, 40.0f);
+                        }
+                        prev_charge = charge;
+                        if (thump_hold > 0.0f) {
+                            thump_hold -= NormalFrameTime / 65536.0f;
+                            if (thump_hold < 0.0f) thump_hold = 0.0f;
+                        }
+                    }
                 }
             }
         }

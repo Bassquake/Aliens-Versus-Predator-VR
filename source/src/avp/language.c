@@ -192,7 +192,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_VRCLIMBVIGNETTE_HELP:return "Darkens your peripheral vision while the view swings onto a wall or ceiling. Clears once you are on the surface.";
 			case TEXTSTRING_VRCLIMBVIGNETTE_OFF: return "Off";
 			case TEXTSTRING_VRCLIMBVIGNETTE_ON:  return "On (Default)";
-			case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH: return "Wall walk vignette strength";
+			case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH: return "Alien climbing vignette strength";
 			case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH_HELP:return "How much the peripheral vision closes in while the view swings onto a wall or ceiling.";
 			case TEXTSTRING_MARINELEFTARM:      return "Show Marine Left Arm";
 			case TEXTSTRING_MARINELEFTARM_HELP: return "Off hides the Marine's left arm on every weapon except the dual pistols, where it holds the second gun.";

@@ -106,7 +106,7 @@ Choose Customization and change images. The image files are named the same as th
 
 Finally, to play, on your headset, run Steam Link and navigate to the game in your library. Simply click Play! (Meta Link and Virtual Desktop is untested).
 
-See below if want to include CD music if you have the physical game second CD...
+See below if want to include CD music if you have the physical game's second CD or a digital copy found online...
 
 ## CD music
 Steam and likely GOG have the music embedded so it wont be in their assets folder, so you have to find a copy of the CD. I can't tell you where to find it but it can be found online! Or you can skip this if you don't absolutely need it, it'll just play fine without background music. If you found a copy, then do the following:

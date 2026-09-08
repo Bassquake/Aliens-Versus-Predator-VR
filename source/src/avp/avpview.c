@@ -315,7 +315,8 @@ static VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
     [WEAPON_PRED_RIFLE]          = { -230,  -225,    0,    0,    0,    0 },
     [WEAPON_PRED_SHOULDERCANNON] = { -410,  -270,   95,   26,    -27,    70 },
     [WEAPON_PRED_DISC]           = { -600,  -250,    120,    -1,    -6,    65 },
-    [WEAPON_PRED_MEDICOMP]       = { -410,  -270,   95,   26,    -27,    70 },
+    [WEAPON_PRED_MEDICOMP]       = { -160,  0,   0,   12,    0,    77 },
+	//[WEAPON_PRED_MEDICOMP]       = { -410,  -270,   95,   26,    -27,    70 }, Before needles
     [WEAPON_PRED_STAFF]          = VR_WPN_DEFAULT,
     /* --- Misc / non-gun (unused by this path, kept at default for safety) --- */
     [WEAPON_CUDGEL]              = VR_WPN_DEFAULT,
@@ -514,7 +515,8 @@ static VR_HAND_TRIM vr_left_hand_trim[MAX_NO_OF_WEAPON_TEMPLATES] = {
     [WEAPON_PRED_RIFLE]          = {-150, 0, -60, 76, -7, 118},
     [WEAPON_PRED_SHOULDERCANNON] = {-100, 0, -90, -26, 13, -103},
     [WEAPON_PRED_DISC]           = {-130, 10, -60, -3, -20, -32},
-    [WEAPON_PRED_MEDICOMP]       = {-100, 0, -90, -26, 13, -103},
+    [WEAPON_PRED_MEDICOMP]       = {-100, 0, 0, -12, 13, -88},
+	//[WEAPON_PRED_MEDICOMP]       = {-100, 0, -90, -26, 13, -103}, Before needle position
     [WEAPON_PRED_STAFF]          = {0, 0, 0, 0, 0, 0},
     [WEAPON_TWO_PISTOLS]         = { 260, 0, 60, 0, 0, 0},
 };
@@ -738,12 +740,18 @@ static void VR_SplitRestoreFlags(void)
  * ever SET here, never cleared, so a section the model authored as hidden stays
  * hidden in both passes. */
 static void VR_SplitMark(SECTION_DATA *s, SECTION_DATA *root, int hide_subtree,
-                         int inside)
+                         int inside, SECTION_DATA *except)
 {
     while (s) {
         int in = inside || (s == root);
+        /* 'except' and everything under it counts as OUTSIDE the subtree, whichever
+           side of the split it is physically parented on. That is what lets a section
+           that lives in the left arm's subtree be drawn with the RIGHT hand instead -
+           see the medicomp needle in VR_RenderWeaponSplitHands. Passing in = 0 down the
+           recursion carries the exception to its children too. */
+        if (except && s == except) in = 0;
         if (in == hide_subtree) s->flags |= section_data_notreal;
-        VR_SplitMark(s->First_Child, root, hide_subtree, in);
+        VR_SplitMark(s->First_Child, root, hide_subtree, in, except);
         s = s->Next_Sibling;
     }
 }
@@ -896,6 +904,24 @@ static SECTION_DATA *VR_FindSupportHand(SECTION_DATA *s)
 }
 
 /* Draw PlayersWeapon with its left arm anchored to the left controller. */
+/* The section that stands for the RIGHT HAND, tried in order, first the rig has.
+ *
+ * The first-person Predator rig runs palm -> arm -> elbow -> bicep with no separate
+ * wrist section (VRHIER dump), and a palm bone's origin normally sits AT the wrist -
+ * so "right palm" is the wrist in all but name. Shared by everything that pins part of
+ * a rig to the controller, so the anchor cannot drift between them. */
+SECTION_DATA *VR_FindRightHandSection(HMODELCONTROLLER *hmc)
+{
+    static const char *const names[] = { "right wrist", "right arm", "right palm" };
+    int i;
+    if (!hmc || !hmc->section_data) return NULL;
+    for (i = 0; i < (int)(sizeof(names)/sizeof(names[0])); i++) {
+        SECTION_DATA *sd = GetThisSectionData(hmc->section_data, (char *)names[i]);
+        if (sd) return sd;
+    }
+    return NULL;
+}
+
 /* How far the left arm is driven by the weapon's ANIMATION rather than by the left
    controller: 0 = controller, 1 = animation. Eased by the weapon render; consumed by
    VR_RenderWeaponSplitHands below. */
@@ -948,8 +974,10 @@ void VR_BlendMatrixCH(MATRIXCH *out, const MATRIXCH *from, const MATRIXCH *to, f
     out->mat31=(int)(mo[6]*sc); out->mat32=(int)(mo[7]*sc); out->mat33=(int)(mo[8]*sc);
 }
 
+/* exceptName: a section inside the left subtree that should be drawn with the RIGHT
+   hand anyway, or NULL. */
 static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID,
-                                      int hideLeftArm)
+                                      int hideLeftArm, const char *exceptName)
 {
     extern DISPLAYBLOCK PlayersWeapon;
     extern void RenderThisDisplayblock(DISPLAYBLOCK *dbPtr);
@@ -993,7 +1021,7 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
            point. No second rig is built and no left-hand solve runs. */
         vr_split_saved_count = 0;
         VR_SplitSaveFlags(hmc->section_data);
-        VR_SplitMark(hmc->section_data, larmR, 1, 0);
+        VR_SplitMark(hmc->section_data, larmR, 1, 0, NULL);
         RenderThisDisplayblock(&PlayersWeapon);
         VR_SplitRestoreFlags();
         return;
@@ -1129,7 +1157,9 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
     /* --- pass 1: the left arm alone, rooted on the left controller --- */
     vr_split_saved_count = 0;
     VR_SplitSaveFlags(vr_left_hmc.section_data);
-    VR_SplitMark(vr_left_hmc.section_data, larmL, 0, 0);
+    VR_SplitMark(vr_left_hmc.section_data, larmL, 0, 0,
+                 exceptName ? GetThisSectionData(vr_left_hmc.section_data,
+                                                 (char *)exceptName) : NULL);
     PlayersWeapon.ObWorld = ObWorld_B;
     PlayersWeapon.ObMat   = ObMat_B;
     d.vx = ObWorld_B.vx - Global_VDB_Ptr->VDB_World.vx;
@@ -1148,7 +1178,9 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
     PlayersWeapon.HModelControlBlock = hmc;
     vr_split_saved_count = 0;
     VR_SplitSaveFlags(hmc->section_data);
-    VR_SplitMark(hmc->section_data, larmR, 1, 0);
+    VR_SplitMark(hmc->section_data, larmR, 1, 0,
+                 exceptName ? GetThisSectionData(hmc->section_data,
+                                                 (char *)exceptName) : NULL);
     PlayersWeapon.ObWorld = ObWorld_A;
     PlayersWeapon.ObMat   = ObMat_A;
     d.vx = ObWorld_A.vx - Global_VDB_Ptr->VDB_World.vx;
@@ -3788,10 +3820,12 @@ void AvpShowViewsVR(void)
                          || st == WEAPONSTATE_READYING
                          || st == WEAPONSTATE_UNREADYING);
                 } else {
-                    /* The medicomp's whole point IS its use animation, so it takes both
-                       that and the weapon-change ones. */
-                    want = (st != WEAPONSTATE_IDLE
-                         || (sq != (int)PHSS_Stand && sq != (int)PHSS_Run));
+                    /* The medicomp takes its use animation as well as the weapon-change
+                       ones. Keyed on the STATE alone: while merely carried it is now held
+                       posed mid-animation (see the presentation pose below), so its
+                       sub-sequence is an attack one the whole time and a sub != Stand/Run
+                       test would release it permanently. */
+                    want = (st != WEAPONSTATE_IDLE);
                 }
 
                 if (want) {
@@ -3891,32 +3925,25 @@ void AvpShowViewsVR(void)
                      * orientation from the animation mixes two frames and draws the arms
                      * from an origin that does not match their orientation, which is
                      * what looked like stretched geometry (measured 2026-09-07). */
-                    /* Which section is pinned to the controller. Tried in order, first
-                       one the rig actually has wins.
-
-                       The first-person Predator rig runs palm -> arm -> elbow -> bicep
-                       with no separate wrist section (VRHIER dump), and a palm bone's
-                       origin normally sits AT the wrist joint - so "right palm" is
-                       already the wrist in all but name. The wrist-ward names are tried
-                       ahead of it so that a rig which does carry one is used instead,
-                       and so this is one line to change if the anchor wants moving
-                       further up the arm. */
-                    static const char *const anchor_names[] = {
-                        "right wrist", "right arm", "right palm"
-                    };
                     HMODELCONTROLLER *ha = PlayersWeapon.HModelControlBlock;
-                    SECTION_DATA *rpalm = NULL;
-                    int ai;
+                    SECTION_DATA *rpalm;
+                    VECTORCH aw;
+                    MATRIXCH am;
+
+                    /* Aim at the TUNED anchor, matching the medicomp's presentation pose:
+                       VR_ComputeWeaponAnchor folds in this weapon's forward / right / up
+                       trim, so those three move the animation as well as the held pose
+                       and the two stay consistent while being tuned. Only the position is
+                       taken from it - the orientation stays the animation's, which is the
+                       whole point of this path. */
+                    VR_ComputeWeaponAnchor(wpn->WeaponIDNumber, &aw, &am);
 
                     ProveHModel(ha, &PlayersWeapon);
-                    for (ai = 0; ai < (int)(sizeof(anchor_names)/sizeof(anchor_names[0])); ai++) {
-                        rpalm = GetThisSectionData(ha->section_data, (char *)anchor_names[ai]);
-                        if (rpalm) break;
-                    }
+                    rpalm = VR_FindRightHandSection(ha);
                     if (rpalm) {
-                        PlayersWeapon.ObWorld.vx += vr_right_hand_world.vx - rpalm->World_Offset.vx;
-                        PlayersWeapon.ObWorld.vy += vr_right_hand_world.vy - rpalm->World_Offset.vy;
-                        PlayersWeapon.ObWorld.vz += vr_right_hand_world.vz - rpalm->World_Offset.vz;
+                        PlayersWeapon.ObWorld.vx += aw.vx - rpalm->World_Offset.vx;
+                        PlayersWeapon.ObWorld.vy += aw.vy - rpalm->World_Offset.vy;
+                        PlayersWeapon.ObWorld.vz += aw.vz - rpalm->World_Offset.vz;
                     }
                     {
                         VECTORCH ov;
@@ -4014,6 +4041,38 @@ void AvpShowViewsVR(void)
                         saved_ti = hmc->timer_increment;
                         hmc->timer_increment = 0;
                         froze_ti = 1;
+                    }
+
+                    /* Medicomp: hold it PART-WAY THROUGH its use animation while carried,
+                     * so the needles are presented in front of you.
+                     *
+                     * The medicomp and shoulder cannon are near-identical in the hand and
+                     * share a weapon-change animation, so which one is selected could only
+                     * be told from the message at the top of the screen as it was swapped.
+                     * Freezing the medicomp at the point where it is held out makes the
+                     * two unmistakable at a glance, without new art.
+                     *
+                     * Re-asserted EVERY FRAME, because WristConsole_Idle tweens the rig
+                     * back to Stand/Run/Fidget on every tick of the state machine - the
+                     * pose has to be reapplied after that has run, which is here.
+                     * timer_increment is zeroed and the timer pinned so the sequence sits
+                     * still rather than playing on, and the tween is cleared so it does
+                     * not drift back toward the idle pose. */
+                    #define VR_MEDICOMP_POSE_FRACTION 0.5f
+                    if (AvP.PlayerType == I_Predator
+                        && wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
+                        && wpn->CurrentState == WEAPONSTATE_IDLE
+                        && HModelSequence_Exists(hmc, HMSQT_PredatorHUD,
+                                                 (int)PHSS_Attack_Secondary))
+                    {
+                        if (hmc->Sub_Sequence != (int)PHSS_Attack_Secondary)
+                            InitHModelSequence(hmc, HMSQT_PredatorHUD,
+                                               (int)PHSS_Attack_Secondary, -1);
+                        hmc->Tweening        = Controller_NoTweening;
+                        hmc->Looped          = 0;
+                        hmc->timer_increment = 0;
+                        hmc->sequence_timer  = (int)(ONE_FIXED * VR_MEDICOMP_POSE_FRACTION);
+                        froze_ti = 0;   /* nothing to restore: the hold owns the timer */
                     }
 
                     /* Fit a swap animation into the time its state actually has.
@@ -4235,6 +4294,52 @@ void AvpShowViewsVR(void)
                         vr_left_anim_blend = left_t * left_t * (3.0f - 2.0f * left_t);
                     }
                 }
+                /* Medicomp presentation pose: put the NEEDLE HAND on the controller.
+                 *
+                 * While carried the medicomp is frozen part-way through its use
+                 * animation, and that pose carries the right hand well away from the
+                 * rig's root. The root is what is pinned to the controller, so the
+                 * needles ended up floating wherever the animation had left them.
+                 *
+                 * Shifting the whole rig by the MEASURED difference puts the hand where
+                 * your hand is while leaving the pose and the controller's rotation
+                 * exactly as they were - the same correction the authored-at-hand path
+                 * makes, applied to a weapon that is still held rather than released. */
+                if (AvP.PlayerType == I_Predator
+                    && wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
+                    && wpn->CurrentState == WEAPONSTATE_IDLE
+                    && vr_right_hand_valid
+                    && PlayersWeapon.HModelControlBlock)
+                {
+                    HMODELCONTROLLER *hn = PlayersWeapon.HModelControlBlock;
+                    SECTION_DATA *rh;
+                    VECTORCH aw;
+                    MATRIXCH am;
+
+                    /* Aim at the TUNED anchor, not the bare controller position.
+                       VR_ComputeWeaponAnchor already folds in this weapon's forward /
+                       right / up trim, so targeting it keeps those three working here.
+                       Targeting vr_right_hand_world directly pinned the hand section to
+                       the raw controller and silently discarded them - the rotations
+                       still worked, because they live in ObMat which this does not
+                       touch, which is exactly how the asymmetry showed up. */
+                    VR_ComputeWeaponAnchor(wpn->WeaponIDNumber, &aw, &am);
+
+                    ProveHModel(hn, &PlayersWeapon);
+                    rh = VR_FindRightHandSection(hn);
+                    if (rh) {
+                        VECTORCH ov;
+                        PlayersWeapon.ObWorld.vx += aw.vx - rh->World_Offset.vx;
+                        PlayersWeapon.ObWorld.vy += aw.vy - rh->World_Offset.vy;
+                        PlayersWeapon.ObWorld.vz += aw.vz - rh->World_Offset.vz;
+                        ov.vx = PlayersWeapon.ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
+                        ov.vy = PlayersWeapon.ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
+                        ov.vz = PlayersWeapon.ObWorld.vz - Global_VDB_Ptr->VDB_World.vz;
+                        RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
+                        PlayersWeapon.ObView = ov;
+                    }
+                }
+
                 {
                     /* Split the hands when this weapon's model actually has a
                        separate left arm and both controllers are tracking;
@@ -4269,11 +4374,27 @@ void AvpShowViewsVR(void)
                        would cut it back out again. vr_left_anim_blend eases the arm
                        between the controller and the animation so the handover is not a
                        one-frame flip - see VR_RenderWeaponSplitHands. */
+
+                    /* The medicomp keeps its split, minus ONE section.
+                       Both needles hang off "left arm" in that rig - dumped on device:
+                       left palm -> left arm -> {left stabme, right stabme} - because the
+                       medicomp is worn on the left arm. Splitting therefore handed the
+                       RIGHT needle to the left controller along with the rest of that
+                       subtree, and it pulled away from the right hand. Drawing the whole
+                       rig unsplit fixed the needle but took the left arm off its own
+                       controller with it. Excepting just "right stabme" gets both: it is
+                       drawn with the right hand, everything else in the left arm stays on
+                       the left controller. */
+                    const char *splitExcept =
+                        (AvP.PlayerType == I_Predator
+                         && wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
+                         && wpn->CurrentState == WEAPONSTATE_IDLE) ? "right stabme" : NULL;
                     if (!weapon_is_free
                         && VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
                         && PlayersWeapon.HModelControlBlock
                         && (hideLeftArm || (vr_left_hand_valid && vr_right_hand_valid))) {
-                        VR_RenderWeaponSplitHands(&desc, wpn->WeaponIDNumber, hideLeftArm);
+                        VR_RenderWeaponSplitHands(&desc, wpn->WeaponIDNumber, hideLeftArm,
+                                                  splitExcept);
                     } else {
                         vr_left_rig_drawn = 0;
                         RenderThisDisplayblock(&PlayersWeapon);

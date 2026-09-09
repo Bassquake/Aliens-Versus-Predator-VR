@@ -87,6 +87,9 @@ enum VR_SOURCE {
     VR_SRC_L_STICK_CLICK,
     VR_SRC_R_STICK_UP,
     VR_SRC_R_STICK_DOWN,
+    /* Appended, never inserted: a stored binding is a source INDEX, so putting a new
+       one in the middle would silently re-point every saved binding after it. */
+    VR_SRC_R_STICK_CLICK,
     VR_SRC_COUNT
 };
 

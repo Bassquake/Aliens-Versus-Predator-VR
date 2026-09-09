@@ -10,6 +10,7 @@ extern "C"
 #include "avp_userprofile.h"
 #include "language.h"
 #include "gammacontrol.h"
+#include <SDL3/SDL.h>
 #include "opengl.h"   /* VR_ACTION / VR_SOURCE and the VRBinding table */
 
 /* The profile is a raw blob, so its binding array is sized by a literal. Catch any
@@ -60,6 +61,7 @@ extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
+extern int VRMoveDeadzone;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
@@ -295,6 +297,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRClimbVignetteOn = 1; /* wall-walk transition vignette on by default */
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
+	VRMoveDeadzone = 2;
 	/* Bindings keep whatever main.c initialised them to: those ARE the defaults. */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
@@ -380,14 +383,47 @@ extern void GetSettingsFromUserProfile(void)
 						: 5;
 	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
+	VRMoveDeadzone =			UserProfilePtr->VRMoveDeadzonePlus1
+					? UserProfilePtr->VRMoveDeadzonePlus1 - 1 : 2;
 	{
 		/* Stored as source+1; 0 means the profile predates the bindings, so that
 		   action keeps its default rather than becoming unbound. */
+		/* Load, then VALIDATE - a stored set is only used if the whole species'
+		   row is sane. The binding block's layout has already changed shape more
+		   than once (a flat [16] became [3][12], neighbouring fields came and
+		   went), and a profile written by an older build decodes those bytes as
+		   something else entirely: an action can come back bound to a control that
+		   is held most of the time, which reads in-game as a button firing itself.
+		   Rejecting the row wholesale and keeping the defaults is recoverable;
+		   half-applying a garbled set is not. */
 		int sp, i;
 		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)
-			for (i = 0; i < VR_ACT_COUNT && i < 12; i++)
-				if (UserProfilePtr->VRBindingPlus1[sp][i])
-					VRBinding[sp][i] = UserProfilePtr->VRBindingPlus1[sp][i] - 1;
+		{
+			int candidate[VR_ACT_COUNT];
+			int ok = 1;
+
+			for (i = 0; i < VR_ACT_COUNT; i++)
+			{
+				int stored = (i < 12) ? UserProfilePtr->VRBindingPlus1[sp][i] : 0;
+				/* 0 = never written; keep this action's default. */
+				candidate[i] = stored ? stored - 1 : VRBinding[sp][i];
+				if (candidate[i] < 0 || candidate[i] >= VR_SRC_COUNT) ok = 0;
+			}
+			/* No control may drive two actions - Unbound excepted. */
+			for (i = 0; ok && i < VR_ACT_COUNT; i++)
+			{
+				int j;
+				if (candidate[i] == VR_SRC_NONE) continue;
+				for (j = i + 1; j < VR_ACT_COUNT; j++)
+					if (candidate[j] == candidate[i]) { ok = 0; break; }
+			}
+
+			if (ok)
+				for (i = 0; i < VR_ACT_COUNT; i++) VRBinding[sp][i] = candidate[i];
+			else
+				SDL_Log("PROFILE: controller bindings for species %d were not usable "
+				        "(older or corrupt profile) - defaults kept", sp);
+		}
 	}
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
 	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
@@ -441,6 +477,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRClimbVignetteDisabled =	!VRClimbVignetteOn;
 	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
 	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
+	profilePtr->VRMoveDeadzonePlus1 =	(unsigned char)(VRMoveDeadzone + 1);
 	{
 		int sp, i;
 		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)

@@ -152,7 +152,13 @@ typedef struct
 	   must not depend on which headers happen to be visible. The static assert in
 	   avp_userprofile.cpp keeps the two in step. */
 	unsigned char VRBindingPlus1[3][12];
-	char Padding[17];
+	/* Stored so that ZERO means "written before this option existed" and decodes to
+	   the default, as with every other field taken out of Padding. */
+	unsigned char ReservedWasVRRumbleOff;       //Rumble toggle, removed - byte kept so the blob layout does not shift
+	unsigned char ReservedWasVRRumbleStrength;  //Rumble strength, removed - ditto
+	unsigned char ReservedWasVRLeftHanded; //Left-Handed Mode, removed - byte kept so the blob layout does not shift
+	unsigned char VRMoveDeadzonePlus1;    //0=unset->2
+	char Padding[13];
 
 	int CDPlayerVolume;
 

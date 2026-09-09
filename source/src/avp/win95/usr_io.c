@@ -28,6 +28,7 @@
 #include "paintball.h"
 #include "ahudgadg.hpp"
 #include "avp_menus.h"
+#include <SDL3/SDL.h>
 #include "opengl.h"   /* VR_Action and the VR_ACT_* bindings */
 
 extern int InGameMenusAreRunning(void);
@@ -1001,6 +1002,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				 ||VR_Action(VR_ACT_FLARE)
 				#endif
 				)
+
 					ThrowAFlare();
 
 				#if !(MARINE_DEMO||DEATHMATCH_DEMO)

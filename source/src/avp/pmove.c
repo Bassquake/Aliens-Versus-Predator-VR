@@ -2039,14 +2039,23 @@ void ThrowAFlare(void)
 		VECTORCH position;
 
 		#ifdef AVP_XR
-		extern int xr_left_trigger_pressed;
 		extern int vr_right_hand_valid;
 		extern MATRIXCH vr_right_hand_mat;
 		extern VECTORCH vr_right_hand_world;
 		extern void XR_Haptic_Right(float amplitude, float duration_ms);
-		if (xr_left_trigger_pressed)
-			XR_Haptic_Right(0.6f, 100.0f);
-		if (xr_left_trigger_pressed && vr_right_hand_valid) {
+
+		/* Gated on the HAND being tracked, not on a particular control.
+		 *
+		 * Both of these used to also require xr_left_trigger_pressed - the flare's old
+		 * hard-coded trigger. Once the flare became a rebindable action that global was
+		 * no longer what fired it (the binding reads the trigger's HELD flag, and the
+		 * throw can land on a frame where the old edge has already cleared), so the
+		 * direction fell through to the flat game's camera path below and the flare
+		 * launched relative to the view rather than the hand - which came out backwards.
+		 * This function is only reached when a throw is actually happening, so there is
+		 * nothing for a control test to add here. */
+		XR_Haptic_Right(0.6f, 100.0f);
+		if (vr_right_hand_valid) {
 			/* In VR, throw in the direction the weapon controller is pointing.
 			 * vr_right_hand_mat is the raw grip-to-game matrix.  CreateGrenadeKernel
 			 * uses row 3 for launch velocity, but the barrel direction lives in row 2

@@ -219,6 +219,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_NEXTWEAPON:    return "Next Weapon";
 			case TEXTSTRING_BIND_PREVWEAPON:    return "Previous Weapon";
 			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. Triggers, grips, A/B/Y and stick clicks are held; X and stick up/down register a single press.";
+			case TEXTSTRING_VRMOVEDEADZONE:     return "Movement Deadzone";
+			case TEXTSTRING_VRMOVEDEADZONE_HELP:return "How far the movement stick must be pushed before you start moving. Turning has its own deadzone.";
 			case TEXTSTRING_BIND_RESET:         return "Reset All To Default";
 			case TEXTSTRING_BIND_RESET_HELP:    return "Put every control for this species back to its original mapping. Use These Settings still has to be chosen to keep it.";
 
@@ -234,6 +236,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BINDSRC_LSTICK:     return "Left Stick Click";
 			case TEXTSTRING_BINDSRC_RSTICKUP:   return "Right Stick Up";
 			case TEXTSTRING_BINDSRC_RSTICKDOWN: return "Right Stick Down";
+			case TEXTSTRING_BINDSRC_RSTICKCLICK:return "Right Stick Click";
 			case TEXTSTRING_USERPROFILE_HELP_VR: return "Press X or A button to auto-select a name and again to Continue.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press A to select a profile, or B to delete a profile.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";

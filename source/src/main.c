@@ -205,6 +205,25 @@ static const char * gamedatapath = NULL;
    Controller Configuration menu array references them on every target - only the
    links into that menu are gated, not the array itself. Defaults reproduce the
    original hard-coded scheme exactly, so an untouched profile plays as before. */
+/* Movement deadzone (General VR Configuration). Defined out here with VRBinding, ahead
+   of the AVP_XR split, because the menu array references it on every target.
+     VRMoveDeadzone  0..10, movement stick only; turning has its own
+                     (VRSmoothDeadzone) and they are not the same knob.
+
+   Two options were built here and removed again, both worth knowing about before they
+   are proposed a second time:
+
+   RUMBLE, both an on/off toggle and a strength scale. The headset OS already exposes
+   haptics controls, so an in-game duplicate is one more setting to get wrong for no
+   gain. The haptic calls themselves are untouched and unconditional.
+
+   LEFT-HANDED MODE. Swapping the poses, the input sources and the haptics all worked,
+   but the first-person ARMS are modelled for a right-handed hold and the face buttons
+   are not mirrored on the hardware, so the result was a left hand wearing a right arm
+   with A/B still on the right controller. It needs mirrored art to be worth having,
+   not more input plumbing. */
+int VRMoveDeadzone = 2;
+
 /* The defaults, written ONCE and used to initialise both the live table and the
    reference copy the menu compares against. Two separate literals would drift, and the
    drift would be invisible: the menu would simply mark the wrong value as the default. */
@@ -218,7 +237,7 @@ static const char * gamedatapath = NULL;
         VR_SRC_Y,               /* VISION         */ \
         VR_SRC_X,               /* TAUNT          */ \
         VR_SRC_L_GRIP,          /* SPECIAL - jetpack */ \
-        VR_SRC_L_TRIGGER,       /* FLARE          */ \
+        VR_SRC_R_STICK_CLICK,   /* FLARE          */ \
         VR_SRC_R_STICK_UP,      /* NEXT_WEAPON    */ \
         VR_SRC_R_STICK_DOWN     /* PREV_WEAPON    */ \
     }, \
@@ -650,7 +669,8 @@ int xr_a_button_pressed                = 0; /* 1 while right A button is held */
 int xr_a_button_restart_edge           = 0;
 int xr_left_thumbstick_click_pressed   = 0; /* 1 while left stick is clicked */
 int xr_b_button_pressed                     = 0; /* 1 while right B button is held */
-int xr_right_thumbstick_click_pressed        = 0; /* 1 on right stick up edge (next weapon) */
+int xr_right_thumbstick_click_pressed        = 0; /* MISNOMER: this is the stick UP edge (next weapon), not the click */
+int xr_right_stick_click_pressed             = 0; /* 1 while the right stick is actually clicked in */
 int xr_right_thumbstick_down_pressed         = 0; /* 1 on right stick down edge (previous weapon) */
 int xr_y_button_gameplay_pressed             = 0; /* 1 while Y held in gameplay (vision toggle) */
 int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge */
@@ -709,6 +729,7 @@ static int VR_SourceLevel(int src)
         case VR_SRC_L_STICK_CLICK: return xr_left_thumbstick_click_pressed;
         case VR_SRC_R_STICK_UP:    return xr_right_thumbstick_click_pressed;
         case VR_SRC_R_STICK_DOWN:  return xr_right_thumbstick_down_pressed;
+        case VR_SRC_R_STICK_CLICK: return xr_right_stick_click_pressed;
         default:                   return 0;   /* VR_SRC_NONE: deliberately unbound */
     }
 }
@@ -786,6 +807,8 @@ int VRClimbVignetteStrength = 5;
  * Marine weapon EXCEPT the dual pistols, where the left hand holds the second gun and
  * hiding it would leave that gun floating. Consumed in avpview.c. */
 int MarineLeftArmVisible = 1;
+
+
 /* "Adjust HUD elements" (Controller Config): 0=default layout, 1 and 2 pull the
  * HUD progressively toward the centre of view for narrow-FOV headsets.
  * Consumed in AvpShowViewsVR when setting vr_hud_clip_scale. */
@@ -3274,6 +3297,27 @@ int axes, balls, hats;
             xr_left_stick_x = state.currentState.x;
             xr_left_stick_y = state.currentState.y;
         }
+        /* Movement deadzone, applied once here where the stick becomes movement.
+           Rescaled beyond the threshold rather than merely clipped, so the full speed
+           range is still reachable however large the deadzone is set. The turning
+           stick has its own deadzone (VRSmoothDeadzone) - these are different sticks
+           and different settings. */
+        {
+            float dz = VRMoveDeadzone / 20.0f;   /* 0..10 -> 0 .. 0.5 of full travel */
+            float mag = SDL_sqrtf(xr_left_stick_x*xr_left_stick_x
+                                + xr_left_stick_y*xr_left_stick_y);
+            if (dz > 0.0f && mag > 0.0f) {
+                if (mag <= dz) {
+                    xr_left_stick_x = 0.0f;
+                    xr_left_stick_y = 0.0f;
+                } else {
+                    float scale = ((mag - dz) / (1.0f - dz)) / mag;
+                    xr_left_stick_x *= scale;
+                    xr_left_stick_y *= scale;
+                }
+            }
+        }
+
         /* Convert OpenXR [-1,1] floats to Win95 JOYINFOEX 0..65535 convention. */
         JoystickData.dwXpos = (DWORD)((xr_left_stick_x  * 32767.0f) + 32768.0f);
         JoystickData.dwYpos = (DWORD)((-xr_left_stick_y * 32767.0f) + 32768.0f);
@@ -3493,6 +3537,20 @@ int axes, balls, hats;
             if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &lget, &lstate))
                     && lstate.isActive)
                 xr_left_thumbstick_click_pressed = lstate.currentState ? 1 : 0;
+        }
+
+        /* Right thumbstick CLICK. The action was created and suggested from the
+           start but its state was never read - xr_right_thumbstick_click_pressed,
+           despite the name, holds the stick UP edge. Read properly here so the click
+           can be bound to something. */
+        xr_right_stick_click_pressed = 0;
+        if (!xr_2d_mode && xr_right_thumbstick_click_action && pfn_xrGetActionStateBoolean) {
+            XrActionStateGetInfo rcget = { XR_TYPE_ACTION_STATE_GET_INFO };
+            rcget.action = xr_right_thumbstick_click_action;
+            XrActionStateBoolean rcstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
+            if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &rcget, &rcstate))
+                    && rcstate.isActive)
+                xr_right_stick_click_pressed = rcstate.currentState ? 1 : 0;
         }
 
         /* B button → jump (gameplay only). */
@@ -3964,8 +4022,8 @@ int axes, balls, hats;
 void XR_Haptic_Right(float amplitude, float duration_ms)
 {
 #ifdef AVP_XR
-    if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_right_haptic_action)
-        return;
+    if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_right_haptic_action) return;
+    {
     XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
     info.action = xr_right_haptic_action;
     XrHapticVibration vib = { XR_TYPE_HAPTIC_VIBRATION };
@@ -3973,6 +4031,7 @@ void XR_Haptic_Right(float amplitude, float duration_ms)
     vib.frequency = XR_FREQUENCY_UNSPECIFIED;
     vib.amplitude = amplitude;
     pfn_xrApplyHapticFeedback(xr_session, &info, (XrHapticBaseHeader*)&vib);
+    }
 #else
     (void)amplitude; (void)duration_ms;
 #endif
@@ -3981,8 +4040,8 @@ void XR_Haptic_Right(float amplitude, float duration_ms)
 void XR_Haptic_Left(float amplitude, float duration_ms)
 {
 #ifdef AVP_XR
-    if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_left_haptic_action)
-        return;
+    if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_left_haptic_action) return;
+    {
     XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
     info.action = xr_left_haptic_action;
     XrHapticVibration vib = { XR_TYPE_HAPTIC_VIBRATION };
@@ -3990,6 +4049,7 @@ void XR_Haptic_Left(float amplitude, float duration_ms)
     vib.frequency = XR_FREQUENCY_UNSPECIFIED;
     vib.amplitude = amplitude;
     pfn_xrApplyHapticFeedback(xr_session, &info, (XrHapticBaseHeader*)&vib);
+    }
 #else
     (void)amplitude; (void)duration_ms;
 #endif

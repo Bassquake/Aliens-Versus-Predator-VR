@@ -28,6 +28,7 @@
 #include "paintball.h"
 #include "ahudgadg.hpp"
 #include "avp_menus.h"
+#include "opengl.h"   /* VR_Action and the VR_ACT_* bindings */
 
 extern int InGameMenusAreRunning(void);
 extern void AvP_TriggerInGameMenus(void);
@@ -959,7 +960,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		if(KeyboardInput[primaryInput->Crouch]
 		 ||KeyboardInput[secondaryInput->Crouch]
 		#ifdef AVP_XR
-		 ||xr_left_thumbstick_click_pressed
+		 ||VR_Action(VR_ACT_CROUCH)
 		#endif
 		)
 			playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Crouch = 1;
@@ -967,7 +968,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		if(KeyboardInput[primaryInput->Jump]
 		 ||KeyboardInput[secondaryInput->Jump]
 		#ifdef AVP_XR
-		 ||xr_b_button_pressed
+		 ||VR_Action(VR_ACT_JUMP)
 		#endif
 		)
 			playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump = 1;
@@ -975,7 +976,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		if(KeyboardInput[primaryInput->Operate]
 		 ||KeyboardInput[secondaryInput->Operate]
 		#ifdef AVP_XR
-		 ||xr_a_button_pressed
+		 ||VR_Action(VR_ACT_OPERATE)
 		#endif
 		)
 			playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Operate = 1;
@@ -989,7 +990,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->d.ImageIntensifier]
 				 ||KeyboardInput[secondaryInput->d.ImageIntensifier]
 				#ifdef AVP_XR
-				 ||xr_y_button_gameplay_pressed
+				 ||VR_Action(VR_ACT_VISION)
 				#endif
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
@@ -997,7 +998,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(DebouncedKeyboardInput[primaryInput->e.ThrowFlare]
 				 ||DebouncedKeyboardInput[secondaryInput->e.ThrowFlare]
 				#ifdef AVP_XR
-				 ||xr_left_trigger_pressed
+				 ||VR_Action(VR_ACT_FLARE)
 				#endif
 				)
 					ThrowAFlare();
@@ -1009,7 +1010,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				 /* Left GRIP, and only if the marine actually has a jetpack.
 				    Shares the grip with the Predator's disc recall below, which is
 				    harmless: the two are different species and never both live. */
-				 ||(xr_left_squeeze_gameplay_pressed && playerStatusPtr->JetpackEnabled)
+				 ||(VR_Action(VR_ACT_SPECIAL) && playerStatusPtr->JetpackEnabled)
 				#endif
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jetpack = 1;
@@ -1020,7 +1021,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->g.MarineTaunt]
 				 ||KeyboardInput[secondaryInput->g.MarineTaunt]
 				#ifdef AVP_XR
-				 ||xr_x_button_gameplay_pressed
+				 ||VR_Action(VR_ACT_TAUNT)
 				#endif
 				)
 					StartPlayerTaunt();
@@ -1057,7 +1058,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->d.Cloak]
 				 ||KeyboardInput[secondaryInput->d.Cloak]
 				#ifdef AVP_XR
-				 ||xr_left_trigger_pressed
+				 ||VR_Action(VR_ACT_FLARE)
 				#endif
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
@@ -1117,7 +1118,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->j.PredatorTaunt]
 				 ||KeyboardInput[secondaryInput->j.PredatorTaunt]
 				#ifdef AVP_XR
-				 ||xr_x_button_gameplay_pressed
+				 ||VR_Action(VR_ACT_TAUNT)
 				#endif
 				)
 					StartPlayerTaunt();
@@ -1125,7 +1126,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->i.RecallDisc]
 				 ||KeyboardInput[secondaryInput->i.RecallDisc]
 				#ifdef AVP_XR
-				 ||xr_left_squeeze_gameplay_pressed
+				 ||VR_Action(VR_ACT_SPECIAL)
 				#endif
 				)
 					Recall_Disc();
@@ -1158,7 +1159,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->a.AlternateVision]
 				 ||KeyboardInput[secondaryInput->a.AlternateVision]
 				#ifdef AVP_XR
-				 ||xr_y_button_gameplay_pressed
+				 ||VR_Action(VR_ACT_VISION)
 				#endif
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
@@ -1166,7 +1167,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(KeyboardInput[primaryInput->b.Taunt]
 				 ||KeyboardInput[secondaryInput->b.Taunt]
 				#ifdef AVP_XR
-				 ||xr_x_button_gameplay_pressed
+				 ||VR_Action(VR_ACT_TAUNT)
 				#endif
 				)
 					StartPlayerTaunt();
@@ -1226,7 +1227,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			if(KeyboardInput[primaryInput->a.NextWeapon]
 			 ||KeyboardInput[secondaryInput->a.NextWeapon]
 			#ifdef AVP_XR
-			 ||xr_right_thumbstick_click_pressed
+			 ||VR_Action(VR_ACT_NEXT_WEAPON)
 			#endif
 			)
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_NextWeapon = 1;
@@ -1234,7 +1235,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			if(KeyboardInput[primaryInput->b.PreviousWeapon]
 			 ||KeyboardInput[secondaryInput->b.PreviousWeapon]
 			#ifdef AVP_XR
-			 ||xr_right_thumbstick_down_pressed
+			 ||VR_Action(VR_ACT_PREV_WEAPON)
 			#endif
 			)
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_PreviousWeapon = 1;

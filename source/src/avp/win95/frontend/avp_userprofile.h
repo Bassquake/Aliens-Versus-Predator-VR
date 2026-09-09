@@ -141,7 +141,18 @@ typedef struct
 	   above, because this byte comes out of Padding: every profile written before the
 	   option existed has a zero here and the option defaults to On. */
 	unsigned char MarineLeftArmHidden; //0=On/shown (default), 1=Off/hidden (was Padding)
-	char Padding[53];
+	/* Controller bindings, one VR_SOURCE per VR_ACTION, stored as source+1 so that a
+	   zero - which is what every profile written before this existed has here - means
+	   "not set" and falls back to the default binding rather than to VR_SRC_NONE,
+	   which would silently leave the action unbound. Same reasoning as the other
+	   fields taken out of Padding. VR_ACT_COUNT is 11; the array is sized larger so
+	   adding an action does not move every field after it. */
+	/* Sized by the literal 3, not VR_SPECIES_COUNT: this header is included in places
+	   that do not pull in opengl.h, and the profile is an fwrite'n blob whose layout
+	   must not depend on which headers happen to be visible. The static assert in
+	   avp_userprofile.cpp keeps the two in step. */
+	unsigned char VRBindingPlus1[3][12];
+	char Padding[17];
 
 	int CDPlayerVolume;
 

@@ -20,6 +20,7 @@
 #include "avp_mp_config.h"
 #include "detaillevels.h"
 #include "cd_player.h"
+#include "opengl.h"   /* VR_ACTION / VR_SOURCE and the VRBinding table */
 
 #define MPLAYER_SUPPORT 0
 
@@ -228,7 +229,12 @@ static AVPMENU_ELEMENT AvPMenu_ControlsOptions[] =
  * Rows that do not apply to the current Turning Mode are greyed out and skipped by
  * the cursor rather than removed — see MenuElementIsDisabled in avp_menus.c. They
  * stay in this array so the layout never changes size. */
-static AVPMENU_ELEMENT AvPMenu_ControllerConfig[] =
+/* Headset and comfort options. These were all in Controller Configuration until
+   VR Configuration was split out from it; that menu is now free to hold the actual
+   controller customisation. */
+/* The authored rows. The live menu is built from these by MakeVRConfigMenu below,
+   which drops the species-specific ones while a level is running. */
+static const AVPMENU_ELEMENT AvPMenu_VRConfigMaster[] =
 {
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRTURN_MODE},	{1}, {&VRTurnMode},		{TEXTSTRING_VRTURN_SNAP},	TEXTSTRING_VRTURN_MODE_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRSNAP_ANGLE},	{3}, {&VRSnapAngleIndex},	{TEXTSTRING_VRSNAP_30},		TEXTSTRING_VRSNAP_ANGLE_HELP},
@@ -245,6 +251,117 @@ static AVPMENU_ELEMENT AvPMenu_ControllerConfig[] =
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
 	{AVPMENU_ELEMENT_ENDOFMENU}
 };
+
+/* The live VR Configuration menu, rebuilt whenever it is opened.
+ *
+ * Species-specific rows are DROPPED rather than greyed while a level is running: you
+ * cannot change species mid-level, so a permanently inert row is just clutter. Greying
+ * is right for the turn-mode rows, which the player can flip at any moment.
+ *
+ * Outside a level (Options off the main menu) everything is shown - no species is being
+ * played there, so all of it is legitimately configurable in advance. */
+static AVPMENU_ELEMENT AvPMenu_VRConfig[
+    sizeof(AvPMenu_VRConfigMaster)/sizeof(AvPMenu_VRConfigMaster[0])];
+
+/* inGame is passed in rather than read here: AvPMenus is static to avp_menus.c, and
+   the caller is the one that knows which menu state it is setting up. */
+extern void MakeVRConfigMenu(int inGame)
+{
+    const int isAlien  = (AvP.PlayerType == I_Alien);
+    const int isMarine = (AvP.PlayerType == I_Marine);
+    unsigned int src, dst = 0;
+
+    for (src = 0; src < sizeof(AvPMenu_VRConfigMaster)/sizeof(AvPMenu_VRConfigMaster[0]); src++)
+    {
+        const AVPMENU_ELEMENT *e = &AvPMenu_VRConfigMaster[src];
+
+        if (inGame && e->ElementID != AVPMENU_ELEMENT_ENDOFMENU)
+        {
+            switch (e->a.TextDescription)
+            {
+                case TEXTSTRING_VRCLIMBVIGNETTE:
+                case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH:
+                    if (!isAlien) continue;
+                    break;
+                case TEXTSTRING_MARINELEFTARM:
+                    if (!isMarine) continue;
+                    break;
+                default:
+                    break;
+            }
+        }
+        AvPMenu_VRConfig[dst++] = *e;
+    }
+    /* The terminator is copied with everything else, so dst is already past it. */
+}
+
+/* Controller customisation, one menu per species.
+ *
+ * Bindings are per species (VRBinding[AvP.PlayerType][action]) because the three play
+ * differently enough to want their own layouts - and because the flat game already
+ * splits its key configuration the same way, so this matches what players expect.
+ *
+ * Each row is a TEXTSLIDER over one binding, whose value IS a VR_SOURCE, so the string
+ * list starts at TEXTSTRING_BINDSRC_NONE and the enum order in opengl.h has to stay in
+ * step with the string order in langenum.h.
+ *
+ * The rows differ per species only where an ability does not exist: the flare and the
+ * jetpack are the Marine's, the recall disc the Predator's, and the Alien has neither.
+ * Everything else is common, so a habit learned on one species carries to the others. */
+static AVPMENU_ELEMENT AvPMenu_MarineControllerConfig[] =
+{
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_FIREPRIMARY},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_FIRE_PRIMARY]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_FIRESECONDARY},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_FIRE_SECONDARY]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_JUMP},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_JUMP]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_CROUCH},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_CROUCH]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_OPERATE},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_OPERATE]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_VISION},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_VISION]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_TAUNT},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_TAUNT]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_JETPACK},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_SPECIAL]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_FLARE},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_FLARE]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_NEXTWEAPON},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_NEXT_WEAPON]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_PREVWEAPON},	{VR_SRC_COUNT-1}, {&VRBinding[I_Marine][VR_ACT_PREV_WEAPON]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+
+	{AVPMENU_ELEMENT_RESETVRBINDINGS,	{TEXTSTRING_BIND_RESET},	{0},{0},{0},	TEXTSTRING_BIND_RESET_HELP},
+	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
+	{AVPMENU_ELEMENT_ENDOFMENU}
+};
+
+static AVPMENU_ELEMENT AvPMenu_PredatorControllerConfig[] =
+{
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_FIREPRIMARY},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_FIRE_PRIMARY]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_FIRESECONDARY},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_FIRE_SECONDARY]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_JUMP},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_JUMP]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_CROUCH},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_CROUCH]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_OPERATE},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_OPERATE]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_VISION},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_VISION]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_TAUNT},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_TAUNT]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_RECALLDISC},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_SPECIAL]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_NEXTWEAPON},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_NEXT_WEAPON]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_PREVWEAPON},	{VR_SRC_COUNT-1}, {&VRBinding[I_Predator][VR_ACT_PREV_WEAPON]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+
+	{AVPMENU_ELEMENT_RESETVRBINDINGS,	{TEXTSTRING_BIND_RESET},	{0},{0},{0},	TEXTSTRING_BIND_RESET_HELP},
+	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
+	{AVPMENU_ELEMENT_ENDOFMENU}
+};
+
+static AVPMENU_ELEMENT AvPMenu_AlienControllerConfig[] =
+{
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_FIREPRIMARY},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_FIRE_PRIMARY]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_FIRESECONDARY},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_FIRE_SECONDARY]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_JUMP},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_JUMP]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_CROUCH},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_CROUCH]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_OPERATE},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_OPERATE]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_VISION},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_VISION]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_TAUNT},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_TAUNT]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_NEXTWEAPON},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_NEXT_WEAPON]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_BIND_PREVWEAPON},	{VR_SRC_COUNT-1}, {&VRBinding[I_Alien][VR_ACT_PREV_WEAPON]},	{TEXTSTRING_BINDSRC_NONE},	TEXTSTRING_BIND_HELP},
+
+	{AVPMENU_ELEMENT_RESETVRBINDINGS,	{TEXTSTRING_BIND_RESET},	{0},{0},{0},	TEXTSTRING_BIND_RESET_HELP},
+	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
+	{AVPMENU_ELEMENT_ENDOFMENU}
+};
+
 static AVPMENU_ELEMENT AvPMenu_JoystickControlsOptions[] =
 {
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_JOYSTICKCONTROLS_ENABLED},		{1}, 	{(int*)&PlayerJoystickControlMethods.JoystickEnabled},	{TEXTSTRING_NO},	TEXTSTRING_JOYSTICKCONTROLS_ENABLED_HELP},
@@ -775,7 +892,12 @@ static AVPMENU_ELEMENT AvPMenu_InGame[] =
 	 * — every one of them read solely by the VR eye pass in avpview.c). Gated on
 	 * AVP_MENU_VR, not AVP_XR: on the non-VR phone flavor every row would be inert. */
 	#ifdef AVP_MENU_VR
-	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG}},
+	/* ONE controller-config row here, pointed at whichever species is being played -
+	   MakeInGameMenu retargets it. Mid-game the other two are noise: you cannot
+	   change species without leaving the level. The Options menu off the main menu
+	   still lists all three, which is where you would set them up in advance. */
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE},	{AVPMENU_ALIENCONTROLLERCONFIG}},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG_TITLE},		{AVPMENU_VRCONFIG}},
 	#endif
 	/* Mouse / joystick / key configuration hidden only in a real headset. */
 	#ifndef AVP_MENU_VR
@@ -795,7 +917,12 @@ static AVPMENU_ELEMENT AvPMenu_InNetGame[] =
 	 * — every one of them read solely by the VR eye pass in avpview.c). Gated on
 	 * AVP_MENU_VR, not AVP_XR: on the non-VR phone flavor every row would be inert. */
 	#ifdef AVP_MENU_VR
-	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG}},
+	/* ONE controller-config row here, pointed at whichever species is being played -
+	   MakeInGameMenu retargets it. Mid-game the other two are noise: you cannot
+	   change species without leaving the level. The Options menu off the main menu
+	   still lists all three, which is where you would set them up in advance. */
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE},	{AVPMENU_ALIENCONTROLLERCONFIG}},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG_TITLE},		{AVPMENU_VRCONFIG}},
 	#endif
 	/* Mouse / joystick / key configuration hidden only in a real headset. */
 	#ifndef AVP_MENU_VR
@@ -822,7 +949,10 @@ static AVPMENU_ELEMENT AvPMenu_Options[] =
 	/* Controller Configuration holds ONLY headset options — see the in-game menu
 	 * above. Gated on AVP_MENU_VR so the non-VR phone flavor does not get it. */
 	#ifdef AVP_MENU_VR
-	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_CONTROLLERCONFIG_TITLE},	{AVPMENU_CONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE},	{AVPMENU_ALIENCONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MARINECONTROLLERCONFIG_TITLE},	{AVPMENU_MARINECONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_PREDATORCONTROLLERCONFIG_TITLE},	{AVPMENU_PREDATORCONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG_TITLE},		{AVPMENU_VRCONFIG},		{0},	{0},	TEXTSTRING_VRCONFIG_HELP},
 	#endif
 	/* Mouse / joystick / per-species key configuration are hidden only in a real
 	 * headset, where input comes from the VR controllers via Controller
@@ -1087,11 +1217,20 @@ AVPMENU AvPMenusData[]=
 	// AVPMENU_SAVEGAME
 	{AVPMENU_FONT_SMALL,TEXTSTRING_SAVEGAME,	AvPMenu_SaveGame, AVPMENU_MAIN, 0},
 
-	// AVPMENU_CONTROLLERCONFIG
-	{AVPMENU_FONT_SMALL,TEXTSTRING_CONTROLLERCONFIG_TITLE,	AvPMenu_ControllerConfig, AVPMENU_OPTIONS, 0},
-
 	// AVPMENU_CHEATS
 	{AVPMENU_FONT_SMALL,TEXTSTRING_MAINMENU_CHEATS,	AvPMenu_Cheats, AVPMENU_MAIN, 0},
+
+	// AVPMENU_VRCONFIG
+	{AVPMENU_FONT_SMALL,TEXTSTRING_VRCONFIG_TITLE,	AvPMenu_VRConfig, AVPMENU_OPTIONS, 0},
+
+	// AVPMENU_MARINECONTROLLERCONFIG
+	{AVPMENU_FONT_SMALL,TEXTSTRING_MARINECONTROLLERCONFIG_TITLE,	AvPMenu_MarineControllerConfig, AVPMENU_OPTIONS, 0},
+
+	// AVPMENU_PREDATORCONTROLLERCONFIG
+	{AVPMENU_FONT_SMALL,TEXTSTRING_PREDATORCONTROLLERCONFIG_TITLE,	AvPMenu_PredatorControllerConfig, AVPMENU_OPTIONS, 0},
+
+	// AVPMENU_ALIENCONTROLLERCONFIG
+	{AVPMENU_FONT_SMALL,TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE,	AvPMenu_AlienControllerConfig, AVPMENU_OPTIONS, 0},
 
 };
 
@@ -1174,8 +1313,62 @@ static void RetargetSpeciesKeyConfigRow(AVPMENU_ELEMENT *menu,
 	}
 }
 
+/* Point the single controller-config row at the species being played.
+ *
+ * Same scan-don't-index approach as RetargetSpeciesKeyConfigRow above, and for the
+ * same reason: these menus already change shape per platform, so a hardcoded row
+ * number would silently retarget whatever happened to be at that position. */
+static void RetargetSpeciesControllerConfigRow(AVPMENU_ELEMENT *menu,
+                                               enum TEXTSTRING_ID title,
+                                               int targetMenu)
+{
+	AVPMENU_ELEMENT *e;
+
+	for (e = menu; e->ElementID != AVPMENU_ELEMENT_ENDOFMENU; e++)
+	{
+		if (e->ElementID != AVPMENU_ELEMENT_GOTOMENU) continue;
+
+		if (e->b.MenuToGoTo == AVPMENU_MARINECONTROLLERCONFIG
+		 || e->b.MenuToGoTo == AVPMENU_PREDATORCONTROLLERCONFIG
+		 || e->b.MenuToGoTo == AVPMENU_ALIENCONTROLLERCONFIG)
+		{
+			e->a.TextDescription = title;
+			e->b.MenuToGoTo      = targetMenu;
+			return;
+		}
+	}
+}
+
 extern void MakeInGameMenu(void)
 {
+	/* The controller-config row is retargeted on EVERY target, outside the
+	   AVP_MENU_VR guard below: that guard exists because the key-config rows are
+	   absent in VR, whereas this row is present only in VR. */
+	{
+		enum TEXTSTRING_ID ctitle;
+		int ctarget;
+
+		switch (AvP.PlayerType)
+		{
+			case I_Predator:
+				ctitle  = TEXTSTRING_PREDATORCONTROLLERCONFIG_TITLE;
+				ctarget = AVPMENU_PREDATORCONTROLLERCONFIG;
+				break;
+			case I_Alien:
+				ctitle  = TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE;
+				ctarget = AVPMENU_ALIENCONTROLLERCONFIG;
+				break;
+			case I_Marine:
+			default:
+				ctitle  = TEXTSTRING_MARINECONTROLLERCONFIG_TITLE;
+				ctarget = AVPMENU_MARINECONTROLLERCONFIG;
+				break;
+		}
+
+		RetargetSpeciesControllerConfigRow(AvPMenu_InGame,    ctitle, ctarget);
+		RetargetSpeciesControllerConfigRow(AvPMenu_InNetGame, ctitle, ctarget);
+	}
+
 	/* Must match the guard on the key-config rows themselves (AVP_MENU_VR), not
 	   AVP_XR — the phone flavor now carries those rows and needs them retargeted. */
 #ifndef AVP_MENU_VR

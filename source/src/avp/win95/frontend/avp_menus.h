@@ -117,9 +117,15 @@ enum AVPMENU_ID
 	AVPMENU_LOADGAME,
 	AVPMENU_SAVEGAME,
 
-	AVPMENU_CONTROLLERCONFIG,
-
 	AVPMENU_CHEATS,
+
+	/* Appended, not inserted: AvPMenus[] below is indexed BY THIS ENUM, so a new id
+	   has to be added at the same position in both or every menu after it opens the
+	   wrong one. The end is the one place that cannot go wrong. */
+	AVPMENU_VRCONFIG,
+	AVPMENU_MARINECONTROLLERCONFIG,
+	AVPMENU_PREDATORCONTROLLERCONFIG,
+	AVPMENU_ALIENCONTROLLERCONFIG,
 
 };
 
@@ -199,6 +205,7 @@ enum AVPMENU_ELEMENT_ID
 		
 
 	AVPMENU_ELEMENT_SAVESETTINGS,
+	AVPMENU_ELEMENT_RESETVRBINDINGS,
 
 	AVPMENU_ELEMENT_SAVEGAME,
 	AVPMENU_ELEMENT_LOADGAME,

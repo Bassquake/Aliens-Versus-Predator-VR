@@ -46,6 +46,65 @@ void MSAA_Resolve(void);               /* resolve the MS FBO to the backbuffer  
 void MSAA_AbortFrame(void);            /* discard a pending FBO (e.g. menu present)*/
 #endif
 
+/* ---- VR controller bindings ------------------------------------------------
+ *
+ * Every remappable gameplay action, and every physical control it can be put on.
+ * The consumer sites call VR_Action(VR_ACT_x) instead of reading a specific
+ * xr_*_pressed global, so a binding change takes effect with no other plumbing.
+ *
+ * LEVEL vs EDGE is a property of the SOURCE, not of the action, and the two are
+ * not interchangeable. The triggers, grips, A/B/Y and the stick clicks report
+ * "held"; X and the stick up/down report a press EDGE (one frame per press).
+ * Binding a hold-style action such as Jetpack to an edge source therefore gives a
+ * single tick rather than continuous thrust. The defaults below keep every action
+ * on the kind of source it was written for, which is why they match the original
+ * hard-coded bindings exactly. */
+enum VR_ACTION {
+    VR_ACT_FIRE_PRIMARY = 0,
+    VR_ACT_FIRE_SECONDARY,
+    VR_ACT_JUMP,
+    VR_ACT_CROUCH,
+    VR_ACT_OPERATE,
+    VR_ACT_VISION,
+    VR_ACT_TAUNT,
+    VR_ACT_SPECIAL,        /* Marine jetpack / Predator disc recall */
+    VR_ACT_FLARE,          /* Marine flare, an edge action */
+    VR_ACT_NEXT_WEAPON,
+    VR_ACT_PREV_WEAPON,
+    VR_ACT_COUNT
+};
+
+enum VR_SOURCE {
+    VR_SRC_NONE = 0,
+    VR_SRC_R_TRIGGER,
+    VR_SRC_R_GRIP,
+    VR_SRC_A,
+    VR_SRC_B,
+    VR_SRC_L_TRIGGER,
+    VR_SRC_L_GRIP,
+    VR_SRC_X,
+    VR_SRC_Y,
+    VR_SRC_L_STICK_CLICK,
+    VR_SRC_R_STICK_UP,
+    VR_SRC_R_STICK_DOWN,
+    VR_SRC_COUNT
+};
+
+/* Bindings are PER SPECIES: each plays differently enough to want its own layout,
+   and the three menus mirror the per-species key configuration the flat game already
+   has. Indexed [AvP.PlayerType][action] - I_Marine/I_Predator/I_Alien are 0/1/2, so
+   the player type indexes this directly. Menu-editable, profile-stored. */
+#define VR_SPECIES_COUNT 3
+extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
+
+/* The same table as first shipped. The Controller Configuration menu marks whichever
+   value matches it as "(Default)", so a player who has remapped something can always
+   see what it started as. */
+extern const int VRBindingDefault[VR_SPECIES_COUNT][VR_ACT_COUNT];
+
+/* Current state of whatever is bound to this action. 0 when unbound. */
+extern int VR_Action(int action);
+
 #ifdef AVP_XR
 /* Clip-space HUD controls — set during MaintainHUD() in VR, reset afterwards.
    vr_hud_clip_scale: < 1.0 shrinks toward centre (1.0 = no scale).
@@ -106,6 +165,12 @@ extern int       vr_left_hand_valid;
  *
  * Turning it off compiles out the tuner, its HUD readout and its input handling; the
  * tables themselves stay exactly as written here. */
+
+/* How long the weapon takes to ease between the hand-held pose and the released
+ * (animated) pose - reloads, medicomp use, shoulder-cannon fire. Without it the
+ * weapon jumps between the two in a single frame. */
+#define VR_FREE_BLEND_SECS 0.18f
+
 #define AVP_VR_HAND_TUNER 0
 
 #define VR_WEAPON_OFFSET_FORWARD  (-300)   /* was VR_WEAPON_PULLBACK = 300 */

@@ -61,6 +61,7 @@ extern void SaveDeviceAndVideoModePreferences(void);
 extern void MakeSelectSessionMenu(void);
 
 extern void MakeInGameMenu(void);
+extern void MakeVRConfigMenu(int inGame);
 extern void MakeMarineKeyConfigMenu(void);
 extern void MakePredatorKeyConfigMenu(void);
 extern void MakeAlienKeyConfigMenu(void);
@@ -1087,6 +1088,13 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 			break;
 		}
 
+		case AVPMENU_VRCONFIG:
+		{
+			/* Rebuilt on open so it reflects the species being played right now. */
+			MakeVRConfigMenu(AvPMenus.MenusState == MENUSSTATE_INGAMEMENUS);
+			break;
+		}
+
 		case AVPMENU_INGAME:
 		case AVPMENU_INNETGAME:
 		{
@@ -1344,6 +1352,49 @@ static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
 	return (elementPtr->a.TextDescription == TEXTSTRING_VERSION);
 }
 
+/* Cycle a controller binding, skipping any control already used by another action.
+ *
+ * Two actions on one button would fire both at once, which the engine has no way to
+ * arbitrate - so a control in use is simply not offered rather than allowed and then
+ * resolved. Unbound is exempt: any number of actions may be on nothing.
+ *
+ * The row is identified by its value POINTER landing inside VRBinding, the same test
+ * the "(Default)" marker uses; the species and action indices fall out of the offset,
+ * so this works for all three menus without knowing which one is open.
+ *
+ * The guard bounds the search to one full pass. If every other source were taken the
+ * value simply stays put, which is the correct outcome and cannot spin. */
+static int VR_CycleBinding(int *valuePtr, int maxValue, int forward)
+{
+	int *first = &VRBinding[0][0];
+	int idx, sp, act, guard, v;
+
+	if (valuePtr < first || valuePtr >= first + VR_SPECIES_COUNT*VR_ACT_COUNT)
+		return 0;                       /* not a binding row - caller does its thing */
+
+	idx = (int)(valuePtr - first);
+	sp  = idx / VR_ACT_COUNT;
+	act = idx % VR_ACT_COUNT;
+	v   = *valuePtr;
+
+	for (guard = 0; guard <= maxValue; guard++)
+	{
+		int taken = 0, other;
+
+		v += forward ? 1 : -1;
+		if (v > maxValue) v = 0;
+		if (v < 0)        v = maxValue;
+
+		if (v != VR_SRC_NONE)
+		{
+			for (other = 0; other < VR_ACT_COUNT; other++)
+				if (other != act && VRBinding[sp][other] == v) { taken = 1; break; }
+		}
+		if (!taken) { *valuePtr = v; return 1; }
+	}
+	return 1;                           /* nothing free: leave it where it was */
+}
+
 /* Rows that do not apply to the current Turning Mode: greyed out and skipped by the
  * cursor, rather than removed from the array.
  *
@@ -1364,7 +1415,7 @@ static int MenuElementIsDisabled(const AVPMENU_ELEMENT *elementPtr)
 	   row - see the brightness selection in RenderMenu. */
 	if (MenuElementIsReadOnlyLabel(elementPtr)) return 1;
 
-	if (AvPMenus.CurrentMenu != AVPMENU_CONTROLLERCONFIG) return 0;
+	if (AvPMenus.CurrentMenu != AVPMENU_VRCONFIG) return 0;
 	{
 		const int smooth = (VRTurnMode == 1);   /* 0 = Snap (default), 1 = Smooth */
 		switch (elementPtr->a.TextDescription)
@@ -2982,21 +3033,31 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 			{
 				break;
 			}
-			if ((interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
-			  ||(interactionID == AVPMENU_ELEMENT_INTERACTION_INCREASE))
 			{
-				*elementPtr->c.SliderValuePtr+=1;
-				if (*elementPtr->c.SliderValuePtr>elementPtr->b.MaxSliderValue)
+				int forward = ((interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
+				            || (interactionID == AVPMENU_ELEMENT_INTERACTION_INCREASE));
+
+				/* A controller binding skips controls already in use; every other
+				   text slider cycles normally. */
+				if (VR_CycleBinding(elementPtr->c.SliderValuePtr,
+				                    elementPtr->b.MaxSliderValue, forward))
+					break;
+
+				if (forward)
 				{
-					*elementPtr->c.SliderValuePtr=0;
+					*elementPtr->c.SliderValuePtr+=1;
+					if (*elementPtr->c.SliderValuePtr>elementPtr->b.MaxSliderValue)
+					{
+						*elementPtr->c.SliderValuePtr=0;
+					}
 				}
-			}
-			else
-			{
-				*elementPtr->c.SliderValuePtr-=1;
-				if (*elementPtr->c.SliderValuePtr<0)
+				else
 				{
-					*elementPtr->c.SliderValuePtr=elementPtr->b.MaxSliderValue;
+					*elementPtr->c.SliderValuePtr-=1;
+					if (*elementPtr->c.SliderValuePtr<0)
+					{
+						*elementPtr->c.SliderValuePtr=elementPtr->b.MaxSliderValue;
+					}
 				}
 			}
 			break;
@@ -3668,6 +3729,33 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 			break;
 		}
 
+		case AVPMENU_ELEMENT_RESETVRBINDINGS:
+		{
+			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
+			{
+				/* Which species is taken from the MENU being shown, not from who is
+				   being played: these menus are reachable from the main menu, where
+				   there is no current species at all. */
+				int sp = -1;
+				switch (AvPMenus.CurrentMenu)
+				{
+					case AVPMENU_MARINECONTROLLERCONFIG:   sp = I_Marine;   break;
+					case AVPMENU_PREDATORCONTROLLERCONFIG: sp = I_Predator; break;
+					case AVPMENU_ALIENCONTROLLERCONFIG:    sp = I_Alien;    break;
+					default: break;
+				}
+				if (sp >= 0)
+				{
+					int i;
+					for (i = 0; i < VR_ACT_COUNT; i++)
+						VRBinding[sp][i] = VRBindingDefault[sp][i];
+					/* Deliberately NOT saved here: like every other row in these
+					   menus the change is live, but only kept once Use These
+					   Settings is chosen. */
+				}
+			}
+			break;
+		}
 		case AVPMENU_ELEMENT_SAVESETTINGS:
 		{
 			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
@@ -3779,6 +3867,7 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 		case AVPMENU_ELEMENT_RESUMEGAME:
 		case AVPMENU_ELEMENT_RESTARTGAME:
 		case AVPMENU_ELEMENT_KEYCONFIGOK:
+		case AVPMENU_ELEMENT_RESETVRBINDINGS:
 		case AVPMENU_ELEMENT_RESETKEYCONFIG:
 		case AVPMENU_ELEMENT_STARTMARINEDEMO:
 		case AVPMENU_ELEMENT_STARTPREDATORDEMO:
@@ -3840,6 +3929,27 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 			{
 				//we have the index of the first string
 				textPtr = GetTextString(elementPtr->d.FirstTextSliderString+*(elementPtr->c.SliderValuePtr));
+			}
+
+			/* Controller bindings: mark the value this action started on.
+			 *
+			 * Detected by the slider's value POINTER landing inside VRBinding rather
+			 * than by menu id or row number - the three species menus share this code
+			 * and their layouts differ, so anything positional would drift. */
+			{
+				static char bindText[64];
+				const int *first = &VRBinding[0][0];
+				const int *val   = elementPtr->c.SliderValuePtr;
+
+				if (val >= first && val < first + VR_SPECIES_COUNT*VR_ACT_COUNT)
+				{
+					int idx = (int)(val - first);
+					if (*val == (&VRBindingDefault[0][0])[idx])
+					{
+						snprintf(bindText, sizeof(bindText), "%s (Default)", textPtr);
+						textPtr = bindText;
+					}
+				}
 			}
 
 			/* Battery Saver pins the VR refresh rate to 72 Hz — show that with a

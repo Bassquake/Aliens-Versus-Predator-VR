@@ -3278,7 +3278,7 @@ void AvpShowViewsVR(void)
         if (eye == 0) {
             /* Inject right-trigger primary fire before the weapon state machine reads it. */
             {
-                if (xr_trigger_right_pressed) {
+                if (VR_Action(VR_ACT_FIRE_PRIMARY)) {
                     PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
                     ps->Mvt_InputRequests.Flags.Rqst_FirePrimaryWeapon = 1;
                 }
@@ -3451,7 +3451,7 @@ void AvpShowViewsVR(void)
                                      alternating shot.
                      MARINE_PISTOL - the single pistol has no secondary worth firing in
                                      VR; the grip only produced an unwanted extra shot. */
-                int fire_secondary = xr_grip_right_squeeze_pressed
+                int fire_secondary = VR_Action(VR_ACT_FIRE_SECONDARY)
                                   && (weaponID != WEAPON_TWO_PISTOLS)
                                   && (weaponID != WEAPON_MARINE_PISTOL);
                 if (fire_secondary && has_secondary) {

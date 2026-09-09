@@ -10,6 +10,13 @@ extern "C"
 #include "avp_userprofile.h"
 #include "language.h"
 #include "gammacontrol.h"
+#include "opengl.h"   /* VR_ACTION / VR_SOURCE and the VRBinding table */
+
+/* The profile is a raw blob, so its binding array is sized by a literal. Catch any
+   drift between that and the enum at compile time rather than by silently writing
+   past it. */
+typedef char VRBindingProfileSizeCheck[
+    (VR_SPECIES_COUNT <= 3 && VR_ACT_COUNT <= 12) ? 1 : -1];
 #include "psnd.h"
 #include "cd_player.h"
 
@@ -52,6 +59,7 @@ extern int VRVignetteOn;
 extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
+extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
@@ -287,6 +295,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRClimbVignetteOn = 1; /* wall-walk transition vignette on by default */
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
+	/* Bindings keep whatever main.c initialised them to: those ARE the defaults. */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
 	GodModeCheatEnabled = 0; /* "god mode" cheat off by default */
@@ -371,6 +380,15 @@ extern void GetSettingsFromUserProfile(void)
 						: 5;
 	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
+	{
+		/* Stored as source+1; 0 means the profile predates the bindings, so that
+		   action keeps its default rather than becoming unbound. */
+		int sp, i;
+		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)
+			for (i = 0; i < VR_ACT_COUNT && i < 12; i++)
+				if (UserProfilePtr->VRBindingPlus1[sp][i])
+					VRBinding[sp][i] = UserProfilePtr->VRBindingPlus1[sp][i] - 1;
+	}
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
 	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
 	GodModeCheatEnabled =			UserProfilePtr->GodModeCheat;
@@ -423,6 +441,12 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRClimbVignetteDisabled =	!VRClimbVignetteOn;
 	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
 	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
+	{
+		int sp, i;
+		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)
+			for (i = 0; i < VR_ACT_COUNT && i < 12; i++)
+				profilePtr->VRBindingPlus1[sp][i] = (unsigned char)(VRBinding[sp][i] + 1);
+	}
 	profilePtr->VRVignetteStrength =	VRVignetteStrength;
 	profilePtr->GiveAllWeaponsCheat =	GiveAllWeaponsCheatEnabled;
 	profilePtr->GodModeCheat =		GodModeCheatEnabled;

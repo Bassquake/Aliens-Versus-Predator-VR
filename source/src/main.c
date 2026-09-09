@@ -201,6 +201,45 @@ static const char * gamedatapath = NULL;
 
 /* ** */
 
+/* Controller bindings. Defined here, OUTSIDE the AVP_XR split below, because the
+   Controller Configuration menu array references them on every target - only the
+   links into that menu are gated, not the array itself. Defaults reproduce the
+   original hard-coded scheme exactly, so an untouched profile plays as before. */
+/* The defaults, written ONCE and used to initialise both the live table and the
+   reference copy the menu compares against. Two separate literals would drift, and the
+   drift would be invisible: the menu would simply mark the wrong value as the default. */
+#define VR_BINDING_DEFAULTS { \
+    /* [I_Marine] */ { \
+        VR_SRC_R_TRIGGER,       /* FIRE_PRIMARY   */ \
+        VR_SRC_R_GRIP,          /* FIRE_SECONDARY */ \
+        VR_SRC_B,               /* JUMP           */ \
+        VR_SRC_L_STICK_CLICK,   /* CROUCH         */ \
+        VR_SRC_A,               /* OPERATE        */ \
+        VR_SRC_Y,               /* VISION         */ \
+        VR_SRC_X,               /* TAUNT          */ \
+        VR_SRC_L_GRIP,          /* SPECIAL - jetpack */ \
+        VR_SRC_L_TRIGGER,       /* FLARE          */ \
+        VR_SRC_R_STICK_UP,      /* NEXT_WEAPON    */ \
+        VR_SRC_R_STICK_DOWN     /* PREV_WEAPON    */ \
+    }, \
+    /* [I_Predator] */ { \
+        VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
+        VR_SRC_A, VR_SRC_Y, VR_SRC_X, \
+        VR_SRC_L_GRIP,          /* SPECIAL - recall disc */ \
+        VR_SRC_NONE,            /* FLARE - Marine only */ \
+        VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN \
+    }, \
+    /* [I_Alien] */ { \
+        VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
+        VR_SRC_A, VR_SRC_Y, VR_SRC_X, \
+        VR_SRC_NONE,            /* SPECIAL - Marine/Predator only */ \
+        VR_SRC_NONE,            /* FLARE   - Marine only */ \
+        VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN \
+    } }
+
+int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;
+const int VRBindingDefault[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;
+
 #ifndef AVP_XR
 /* -----------------------------------------------------------------------
  * Desktop (non-VR) definitions for the VR / upscaling config + query
@@ -212,6 +251,8 @@ static const char * gamedatapath = NULL;
  *   - MSAA is a real desktop setting, and now drives desktop and PCVR as well
  *     as Quest (it wrongly lived in the Android block before).
  * --------------------------------------------------------------------- */
+
+
 int VRRefreshRateIndex  = 0;
 int VRRefreshRateHz     = 0;   /* chosen rate in Hz; 0 = unset. Saved in the profile. */
 int VRTurnMode          = 0;
@@ -239,6 +280,9 @@ int MSAA_SampleCount(void)
     switch (MSAASampleIndex) { case 1: return 2; case 2: return 4; default: return 0; }
 }
 
+/* No controllers to read on a non-VR build; the bindings table still exists so the
+   menu array links, it simply never reports anything pressed. */
+int   VR_Action(int action)         { (void)action; return 0; }
 int   VR_IsIn3DMode(void)           { return 0; }
 int   VR_SessionActive(void)        { return 0; }
 int   VR_HeadsetActive(void)        { return 0; }
@@ -618,6 +662,87 @@ int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edg
 int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (currently unbound - the Marine jetpack moved to the left grip) */
 int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger press edge (Predator grappling hook) */
 int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squeeze is held (Predator recall disc, Marine jetpack) */
+
+/* Read whatever physical control this action is bound to.
+ *
+ * LEVEL vs EDGE is a property of the SOURCE and the two are not interchangeable:
+ * triggers, grips, A/B/Y and the stick clicks report "held", while X and the stick
+ * up/down report a press EDGE of one frame. Putting a hold action such as the
+ * jetpack on an edge source therefore gives a single tick rather than sustained
+ * thrust - which is a legitimate thing to let the player do, but is why the
+ * defaults keep every action on the kind of source it was written for. */
+/* Is this action a TAP or a HOLD?
+ *
+ * A property of the ACTION, not of the control it happens to be on - which is what the
+ * first version got wrong. Throwing a flare or cycling weapons must happen once per
+ * press however long the control is held; firing, jumping and crouching must continue
+ * while it is held. Binding Fire to the left trigger did nothing at all, because that
+ * source reported only a press EDGE: the fire request was set for a single frame and
+ * the weapon never got going. */
+static int VR_ActionIsTap(int action)
+{
+    switch (action) {
+        case VR_ACT_FLARE:
+        case VR_ACT_TAUNT:
+        case VR_ACT_NEXT_WEAPON:
+        case VR_ACT_PREV_WEAPON:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/* Whether the control is held right now. X and the stick directions are reported by the
+   runtime as edges only and have no level to give, so a HOLD action bound to one of
+   those behaves as a tap - which is a real limitation of those controls, not of this. */
+static int VR_SourceLevel(int src)
+{
+    switch (src) {
+        case VR_SRC_R_TRIGGER:     return xr_trigger_right_pressed;
+        case VR_SRC_R_GRIP:        return xr_grip_right_squeeze_pressed;
+        case VR_SRC_A:             return xr_a_button_pressed;
+        case VR_SRC_B:             return xr_b_button_pressed;
+        case VR_SRC_L_TRIGGER:     return xr_left_trigger_gameplay_pressed;
+        case VR_SRC_L_GRIP:        return xr_left_squeeze_gameplay_pressed;
+        case VR_SRC_X:             return xr_x_button_gameplay_pressed;
+        case VR_SRC_Y:             return xr_y_button_gameplay_pressed;
+        case VR_SRC_L_STICK_CLICK: return xr_left_thumbstick_click_pressed;
+        case VR_SRC_R_STICK_UP:    return xr_right_thumbstick_click_pressed;
+        case VR_SRC_R_STICK_DOWN:  return xr_right_thumbstick_down_pressed;
+        default:                   return 0;   /* VR_SRC_NONE: deliberately unbound */
+    }
+}
+
+int VR_Action(int action)
+{
+    extern int GlobalFrameCounter;
+
+    /* Edges are recomputed ONCE per frame for every action and then read from the
+       table, so several sites reading the same action in one frame all see it - the
+       taunt is read once per species, for instance. Consuming the edge on first read
+       would give it to whichever site happened to run first. */
+    static int prevLevel[VR_SPECIES_COUNT][VR_ACT_COUNT];
+    static int edgeThisFrame[VR_SPECIES_COUNT][VR_ACT_COUNT];
+    static int lastFrame = -1;
+
+    int sp = (int)AvP.PlayerType;
+    if (action < 0 || action >= VR_ACT_COUNT) return 0;
+    if (sp < 0 || sp >= VR_SPECIES_COUNT) sp = 0;
+
+    if (GlobalFrameCounter != lastFrame) {
+        int a2, s2;
+        lastFrame = GlobalFrameCounter;
+        for (s2 = 0; s2 < VR_SPECIES_COUNT; s2++)
+            for (a2 = 0; a2 < VR_ACT_COUNT; a2++) {
+                int lv = VR_SourceLevel(VRBinding[s2][a2]);
+                edgeThisFrame[s2][a2] = (lv && !prevLevel[s2][a2]);
+                prevLevel[s2][a2] = lv;
+            }
+    }
+
+    if (VR_ActionIsTap(action)) return edgeThisFrame[sp][action];
+    return VR_SourceLevel(VRBinding[sp][action]);
+}
 static float xr_left_stick_x = 0.0f;
 static float xr_left_stick_y = 0.0f;
 #ifdef AVP_PCVR

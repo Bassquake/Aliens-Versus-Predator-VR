@@ -1285,6 +1285,14 @@ extern void StartTriggerPlotFMV(int number)
 	//char path[64];
 	
 	if (CheatMode_Active != CHEATMODE_NONACTIVE) return;
+
+	/* "In-game movies: No" (Audio/Video Controls). MoviesAreActive was only ever
+	   consulted by UpdateFMVTexturePalette, which decides what an ALREADY PLAYING
+	   texture looks like - so setting it to No left every plot FMV still opening,
+	   decoding and playing its audio. Refusing to start one here is what the option
+	   actually promises. The screens fall back to their static/noise look, which is
+	   what UpdateFMVTexturePalette already draws when no movie is active. */
+	if (!MoviesAreActive) return;
 	
 	sprintf(buffer, "fmvs/message%d.smk", number);
 	#if 0

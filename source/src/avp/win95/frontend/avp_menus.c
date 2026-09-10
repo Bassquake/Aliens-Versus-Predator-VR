@@ -115,6 +115,9 @@ extern int EnemySpeedPredator;
 extern int VR_IsBatterySaverActive(void);
 
 void HandlePostGameFMVs(void);
+/* Audio/Video Controls > Intro/outro movies. Defined in fmv.c, edited by the menu
+   through avp_menudata.c and stored per profile. */
+extern int IntroOutroMoviesAreActive;
 void HandlePreGameFMVs(void);
 extern void AvP_UpdateMenus(void);
 static void SetupNewMenu(enum AVPMENU_ID menuID);
@@ -507,6 +510,12 @@ int AvP_MainMenus(void)
 }
 void HandlePostGameFMVs(void)
 {
+	/* "Intro/outro movies: No" (Audio/Video Controls). IntroOutroMoviesAreActive was
+	   stored in the profile and offered in the menu but READ NOWHERE, so the option
+	   did nothing at all. These two functions are the only things that play the
+	   per-species intro and outro films. */
+	if (!IntroOutroMoviesAreActive) return;
+
 	switch(AvP.PlayerType)
 	{
 		case I_Marine:
@@ -546,6 +555,8 @@ void HandlePostGameFMVs(void)
 }
 void HandlePreGameFMVs(void)
 {
+	if (!IntroOutroMoviesAreActive) return;
+
 	if (AvPMenus.MenusState == MENUSSTATE_STARTGAME && LoadGameRequest == SAVELOAD_REQUEST_NONE)
 	{
 		extern char LevelName[];

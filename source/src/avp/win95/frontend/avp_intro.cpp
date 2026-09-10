@@ -25,6 +25,7 @@ void Show_AvPLogo(void);
 extern void ShowSplashScreens(void);
 extern void Show_WinnerScreen(void);
 extern void PlayBinkedFMV(char *filenamePtr);
+extern "C" int IntroOutroMoviesAreActive;
 extern void DrawMainMenusBackdrop(void);
 extern void FadedScreen(int alpha);
 
@@ -51,8 +52,16 @@ extern void PlayIntroSequence(void)
 	FlipBuffers();
 	ClearScreenToBlack();
 
-	PlayBinkedFMV("fmvs/logos.bik");
-	PlayBinkedFMV("fmvs/rebellion.smk");
+	/* Audio/Video Controls > Intro/outro movies. This runs before any profile has
+	   been chosen, so the value here is the one seeded from config.cfg by
+	   LoadIntroMoviesPreference() - which is the whole reason the setting is stored
+	   there as well as in the profile. The static splash screens below are not
+	   movies and are already skippable, so they stay. */
+	if (IntroOutroMoviesAreActive)
+	{
+		PlayBinkedFMV("fmvs/logos.bik");
+		PlayBinkedFMV("fmvs/rebellion.smk");
+	}
 
 	StartMenuMusic();
 	ResetFrameCounter();

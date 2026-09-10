@@ -36,6 +36,7 @@
    resets the resolution to the desktop default. */
 extern "C" void VideoMode_WriteConfigLine(FILE *pFile);
 extern "C" void DesktopMirror_WriteConfigLine(FILE *pFile);
+extern "C" void IntroMovies_WriteConfigLine(FILE *pFile);
 
 /* Version settings ************************************************/
 
@@ -418,6 +419,7 @@ void KeyBinding :: WriteToConfigFile(char* Filename)
 	// '#' comment, so the batch processor ignores it on the way back in):
 	VideoMode_WriteConfigLine(pFile);
 	DesktopMirror_WriteConfigLine(pFile);
+	IntroMovies_WriteConfigLine(pFile);
 
 	fclose(pFile);
 

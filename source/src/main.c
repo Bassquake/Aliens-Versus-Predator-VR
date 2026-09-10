@@ -4348,6 +4348,15 @@ const int TotalVideoModes = sizeof(VideoModeList) / sizeof(VideoModeList[0]);
    option) and re-seeds this file on "Use these settings". */
 #define MIRROR_CONFIG_TAG     "#DESKTOPMIRROR"
 
+/* Intro/outro movies ride here for the same reason again, and this one is the
+   clearest case of all: the Fox and Rebellion logo films play inside
+   PlayIntroSequence, which runs before the frontend has even offered a profile
+   list. A profile-only copy therefore cannot suppress them - the setting exists,
+   is saved, and the logos play anyway on every launch. Precedence matches the
+   mirror: config.cfg seeds startup, a profile overrides it when loaded, and
+   "Use these settings" re-seeds this file. */
+#define INTROMOVIES_CONFIG_TAG "#INTROMOVIES"
+
 /* Does this line carry our setting? Case-insensitive so a hand-edited file
    works either way; the console uppercases everything it reads, we don't. */
 static int ConfigLineHasTag(const char *line, const char *tag)
@@ -4370,11 +4379,17 @@ static int MirrorConfigLine(const char *line)
     return ConfigLineHasTag(line, MIRROR_CONFIG_TAG);
 }
 
-/* Either of the two lines this file owns. Everything else in config.cfg belongs
-   to the game and has to survive a rewrite untouched. */
+static int IntroMoviesConfigLine(const char *line)
+{
+    return ConfigLineHasTag(line, INTROMOVIES_CONFIG_TAG);
+}
+
+/* Any of the lines this file owns. Everything else in config.cfg belongs to the
+   game and has to survive a rewrite untouched. */
 static int OurConfigLine(const char *line)
 {
-    return VideoModeConfigLine(line) || MirrorConfigLine(line);
+    return VideoModeConfigLine(line) || MirrorConfigLine(line)
+        || IntroMoviesConfigLine(line);
 }
 
 /* Seed DesktopMirrorIndex from config.cfg. Leaves it alone if there is no line,
@@ -4395,6 +4410,40 @@ void LoadDesktopMirrorPreference(void)
         if (v >= 0 && v <= 3) DesktopMirrorIndex = v;   /* a later line wins */
     }
     fclose(fp);
+}
+
+/* Seed IntroOutroMoviesAreActive from config.cfg. Left alone if there is no line,
+   which already means "on". */
+void LoadIntroMoviesPreference(void)
+{
+    extern int IntroOutroMoviesAreActive;
+    FILE *fp;
+    char line[256];
+
+    fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_READONLY, FILETYPE_CONFIG);
+    if (fp == NULL) return;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        int v;
+
+        if (!IntroMoviesConfigLine(line)) continue;
+        if (sscanf(line + sizeof(INTROMOVIES_CONFIG_TAG) - 1, "%d", &v) != 1) continue;
+        if (v == 0 || v == 1) IntroOutroMoviesAreActive = v;   /* a later line wins */
+    }
+    fclose(fp);
+}
+
+/* Append the intro/outro setting. Same contract as the two below, including being
+   called from KeyBinding::WriteToConfigFile. ON is the default, so only OFF is
+   written and turning the movies back on REMOVES the line. */
+void IntroMovies_WriteConfigLine(FILE *fp)
+{
+    extern int IntroOutroMoviesAreActive;
+
+    if (fp == NULL) return;
+    if (IntroOutroMoviesAreActive) return;
+
+    fprintf(fp, "%s 0\n", INTROMOVIES_CONFIG_TAG);
 }
 
 /* Append the mirror setting to an already-open config.cfg. Same contract as
@@ -4638,6 +4687,7 @@ void SaveDeviceAndVideoModePreferences()
 
     VideoMode_WriteConfigLine(fp);
     DesktopMirror_WriteConfigLine(fp);
+    IntroMovies_WriteConfigLine(fp);
     fclose(fp);
 
     /* The setting lives in config.cfg now; retire the file it used to be in. */
@@ -4850,6 +4900,7 @@ int InitSDL()
 
     LoadDeviceAndVideoModePreferences();
     LoadDesktopMirrorPreference();
+    LoadIntroMoviesPreference();
 
 #ifdef AVP_XR
     /* On VR builds, always enable controller input and configure left-stick

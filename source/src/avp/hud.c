@@ -1284,17 +1284,25 @@ static void DrawMarineSights(void)
 	   both. vr_left_sight_valid is only set while that weapon is held. */
 	{
 		extern int vr_left_sight_x, vr_left_sight_y, vr_left_sight_valid;
+		/* Cyan, so the two sights can be told apart at a glance. With both pistols
+		   aimed independently there are two white crosshairs of identical art on
+		   screen at once, and nothing says which hand owns which. */
+		#define VR_LEFT_SIGHT_R 0
+		#define VR_LEFT_SIGHT_G 255
+		#define VR_LEFT_SIGHT_B 255
 		if (vr_left_sight_valid)
 		{
 			if (MIRROR_CHEATMODE)
 			{
-				BLTGunSightToScreen(ScreenDescriptorBlock.SDB_Width - (vr_left_sight_x>>16),
-				                    vr_left_sight_y>>16, GUNSIGHT_CROSSHAIR);
+				BLTGunSightToScreen_Coloured(ScreenDescriptorBlock.SDB_Width - (vr_left_sight_x>>16),
+				                    vr_left_sight_y>>16, GUNSIGHT_CROSSHAIR,
+				                    VR_LEFT_SIGHT_R, VR_LEFT_SIGHT_G, VR_LEFT_SIGHT_B);
 			}
 			else
 			{
-				BLTGunSightToScreen(vr_left_sight_x>>16, vr_left_sight_y>>16,
-				                    GUNSIGHT_CROSSHAIR);
+				BLTGunSightToScreen_Coloured(vr_left_sight_x>>16, vr_left_sight_y>>16,
+				                    GUNSIGHT_CROSSHAIR,
+				                    VR_LEFT_SIGHT_R, VR_LEFT_SIGHT_G, VR_LEFT_SIGHT_B);
 			}
 		}
 	}

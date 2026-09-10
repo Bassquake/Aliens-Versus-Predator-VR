@@ -748,7 +748,21 @@ void D3D_BLTDigitToHUD(char digit, int x, int y, int font)
 
 }
 
+void D3D_BLTGunSightToHUD_Coloured(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightShape,
+                                   int red, int green, int blue);
+
 void D3D_BLTGunSightToHUD(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightShape)
+{
+	/* Unchanged behaviour: the stock sight is white. */
+	D3D_BLTGunSightToHUD_Coloured(screenX, screenY, gunsightShape, 255, 255, 255);
+}
+
+/* Same sight, drawn with an arbitrary tint. Draw_HUDImage feeds Red/Green/Blue straight
+   into the quad's vertex colour, and the sight art is white, so a tint just multiplies
+   through. Used for the VR left-pistol crosshair, which has to be told apart from the
+   right one when both are on screen at once. */
+void D3D_BLTGunSightToHUD_Coloured(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightShape,
+                                   int red, int green, int blue)
 {
   	HUDImageDesc imageDesc;
 	int gunsightSize=13;
@@ -765,9 +779,9 @@ void D3D_BLTGunSightToHUD(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsight
 	imageDesc.Width = gunsightSize;
 	imageDesc.Scale = ONE_FIXED;
 	imageDesc.Translucency = 128;
-	imageDesc.Red = 255;
-	imageDesc.Green = 255;
-	imageDesc.Blue = 255;
+	imageDesc.Red = red;
+	imageDesc.Green = green;
+	imageDesc.Blue = blue;
 
 	Draw_HUDImage(&imageDesc);
 }

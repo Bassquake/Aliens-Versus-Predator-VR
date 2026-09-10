@@ -207,6 +207,8 @@ extern void BLTAlienNumericsToHUD(void);
 ********************************************************************KJL*/
 
 extern void BLTGunSightToScreen(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightShape);
+extern void BLTGunSightToScreen_Coloured(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightShape,
+                                         int red, int green, int blue);
 /*KJL****************************************************************
 * screenX & screenY are in pixels (scaled to SDB so should be okay) *
 * (centre hotspot)													*

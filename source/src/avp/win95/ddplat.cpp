@@ -119,6 +119,8 @@ extern void D3D_BLTMotionTrackerToHUD(int scanLineSize);
 extern void D3D_BLTMotionTrackerBlipToHUD(int x, int y, int brightness);
 extern void D3D_BLTDigitToHUD(char digit, int x, int y, int font);
 extern void D3D_BLTGunSightToHUD(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightShape);
+extern void D3D_BLTGunSightToHUD_Coloured(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightShape,
+                                          int red, int green, int blue);
 
 extern void LoadCommonTextures(void);
 /*KJL****************************************************************************************
@@ -699,6 +701,16 @@ void BLTGunSightToScreen(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightS
 	if ((ScanDrawMode != ScanDrawDirectDraw) && (ZBufferOn==ZBufferMode))
 	{
 		D3D_BLTGunSightToHUD(screenX,screenY,gunsightShape);
+		return;
+	}
+}
+
+void BLTGunSightToScreen_Coloured(int screenX, int screenY, enum GUNSIGHT_SHAPE gunsightShape,
+                                  int red, int green, int blue)
+{
+	if ((ScanDrawMode != ScanDrawDirectDraw) && (ZBufferOn==ZBufferMode))
+	{
+		D3D_BLTGunSightToHUD_Coloured(screenX,screenY,gunsightShape,red,green,blue);
 		return;
 	}
 }

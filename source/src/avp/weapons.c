@@ -8349,7 +8349,7 @@ void Placeholder_Eating_Effect(STRATEGYBLOCK *sbPtr) {
 	
 }
 
-#define EAT_ATTACK_RANGE 1500
+#define EAT_ATTACK_RANGE (VR_Reach(1500))
 
 int PC_Alien_Eat_Attack(int hits)
 {
@@ -11457,6 +11457,7 @@ int FriendlyFireDamageFilter(DAMAGE_PROFILE *damage) {
 ** Load/Save Globals **
 **-------------------*/
 #include "savegame.h"
+#include "vr_scale.h"
 
 typedef struct weapons_c_save_block
 {

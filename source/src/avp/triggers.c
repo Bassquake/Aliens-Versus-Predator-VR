@@ -13,14 +13,23 @@
 #include "triggers.h"
 #include "pldnet.h"
 #include "los.h"
+#include "vr_scale.h"
 
 #define UseLocalAssert Yes
 #include "ourasert.h"
 
-/* in mm */
-#define ACTIVATION_Z_RANGE 3000
-#define ACTIVATION_X_RANGE 1000
-#define ACTIVATION_Y_RANGE 1000
+/* in mm.
+ *
+ * These bound a box in VIEW space - measured from the eye, not from the player's feet -
+ * so VR World Scale moves the eye out from under them. Above 1.0 the eye sits
+ * proportionally higher in game units while a wall switch stays where the level put it,
+ * which pushes the switch's ObView.vy past the 1000 limit: Use stops working while
+ * standing and starts working the moment you crouch, because crouching brings the eye
+ * back down. Scaling the box with the player restores the reach a body that size should
+ * have. Unchanged outside VR and at scale <= 1. */
+#define ACTIVATION_Z_RANGE VR_Reach(3000)
+#define ACTIVATION_X_RANGE VR_Reach(1000)
+#define ACTIVATION_Y_RANGE VR_Reach(1000)
 
 
 extern int NumOnScreenBlocks;

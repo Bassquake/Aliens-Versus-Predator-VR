@@ -4251,6 +4251,22 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 			int x = MENU_CENTREX+MENU_ELEMENT_SPACING+3;
 			x+=(201*(*elementPtr->c.SliderValuePtr))/elementPtr->b.MaxSliderValue;
 			RenderText(GetTextString(elementPtr->a.TextDescription),MENU_CENTREX-MENU_ELEMENT_SPACING,y,elementPtr->Brightness,AVPMENUFORMAT_RIGHTJUSTIFIED);
+
+			/* World Scale prints its actual value next to the bar. A bare bar is fine
+			   for a 0-10 comfort setting, but this one spans 1.00 to 1.50 and the
+			   number is the whole point - "about a third along" is not something you
+			   can set deliberately or report back. Matched by the value POINTER, as
+			   the binding rows are, rather than by row position. */
+			if (elementPtr->c.SliderValuePtr == &VRWorldScaleIndex)
+			{
+				static char scaleText[16];
+				snprintf(scaleText, sizeof(scaleText), "%.2f",
+				         VR_WorldScaleFromIndex(*elementPtr->c.SliderValuePtr));
+				/* +225, the same inset the enemy-speed readouts below use, so the
+				   two line up and the number is not jammed against the bar. */
+				RenderText(scaleText, MENU_CENTREX+MENU_ELEMENT_SPACING+225, y,
+				           elementPtr->Brightness, AVPMENUFORMAT_LEFTJUSTIFIED);
+			}
 			if(AvPMenus.MenusState == MENUSSTATE_INGAMEMENUS)
 			{
 				D3D_DrawSliderBar(MENU_CENTREX+MENU_ELEMENT_SPACING,y+1,elementPtr->Brightness);

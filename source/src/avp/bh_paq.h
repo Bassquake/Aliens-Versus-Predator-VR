@@ -1,3 +1,4 @@
+#include "vr_scale.h"
 /* Patrick 18/2/97 ------------------------------------------------
   Header file for alien queen and predator-alien support functions
   -----------------------------------------------------------------*/
@@ -76,7 +77,7 @@ typedef struct tools_data_paq
 #define QUEEN_NEAR_SPEED				12000 	/* mm/s */
 #define PRAL_NEAR_DAMAGE				20 		/* mm/s */
 #define QUEEN_NEAR_DAMAGE				40 		/* mm/s */
-#define PAQ_CLOSE_ATTACK_RANGE			1500 	/* mm */
+#define PAQ_CLOSE_ATTACK_RANGE			(VR_Reach(1500)) 	/* mm */
 #define PAQ_NEAR_VIEW_WIDTH				500		/* mm */  	
 /* 1-1.5 seconds in 16ths of a second */
 #define PAQ_FAR_MOVE_TIME			((16+(FastRandom()&0x07))*(ONE_FIXED>>4))  	

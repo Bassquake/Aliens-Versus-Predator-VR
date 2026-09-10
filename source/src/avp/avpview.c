@@ -622,6 +622,63 @@ void VR_TuneRenderHUD(void)
 #define VR_TuneRenderHUD()    ((void)0)
 #endif
 
+/* Moved up from the eye pass: the world-scale tuner below reports units per metre,
+   and a second copy of the number would be free to drift from this one. */
+#define GAME_UNITS_PER_METRE 2200
+
+/* ---- world scale ------------------------------------------------------------
+ *
+ * Multiplies the units-per-metre scale derived from the player's height. 1.0 is the
+ * behaviour that shipped, so leaving it alone changes nothing.
+ *
+ * Kept OUTSIDE the tuner's #if: the scale is applied in the eye pass on every build,
+ * and only the means of changing it live is optional. */
+/* vr_world_scale itself is defined in main.c, outside the AVP_XR split, because
+   VR_Reach() is called from the behaviour files on every target. */
+
+
+#if AVP_VR_WORLD_TUNER
+/* In-world world-scale tuning.
+ *
+ * Toggle with CROUCH-CLICK (left stick click) + A - deliberately awkward, and a
+ * different pair from the hand tuner's (left stick click + B) so the two cannot be
+ * opened at once by accident. While active the right stick is taken over: left/right
+ * changes the scale, up/down jumps by a larger step. Every change is logged so the
+ * final number can be read off logcat.
+ *
+ * The value is live only - nothing is persisted. This shortens the loop for finding a
+ * number; baking it in is a separate, deliberate edit. */
+int vr_world_tune_active = 0;
+
+void VR_WorldTuneAdjust(float delta)
+{
+    vr_world_scale += delta;
+    if (vr_world_scale < 0.10f) vr_world_scale = 0.10f;   /* below this the world is unusable */
+    if (vr_world_scale > 5.00f) vr_world_scale = 5.00f;
+    SDL_Log("VRWORLD scale = %.3f  (units per metre = %.0f)",
+            vr_world_scale, vr_world_scale * (float)GAME_UNITS_PER_METRE);
+}
+
+void VR_WorldTuneReset(void)
+{
+    vr_world_scale = 1.0f;
+    SDL_Log("VRWORLD scale reset to 1.000");
+}
+
+void VR_WorldTuneRenderHUD(void)
+{
+    char line[80];
+    if (!vr_world_tune_active) return;
+    RenderString("VR WORLD SCALE  (stick: left/right fine, up/down coarse)",
+                 20, 210, 0xFF00FFFF);
+    SDL_snprintf(line, sizeof(line), "  scale %.3f   (%.0f units/metre)",
+                 vr_world_scale, vr_world_scale * (float)GAME_UNITS_PER_METRE);
+    RenderString(line, 20, 226, 0xFFFFFF00);
+}
+#else
+#define VR_WorldTuneRenderHUD() ((void)0)
+#endif
+
 static void VR_ApplyHandTrimRotation(MATRIXCH *m, const VR_HAND_TRIM *t)
 {
     VR_RotateAboutAxis(m, 0, t->pitch_deg);  /* X: fingers up   */
@@ -2382,7 +2439,6 @@ void AvpShowViewsVR(void)
     /* xr_views already located by VR_WaitAndBeginFrame() in main.c */
     extern void VR_InvalidateTextureCache(void);
 
-#define GAME_UNITS_PER_METRE 2200
     /* GLCHECK calls glGetError() which forces a CPU↔GPU pipeline sync on tiled
      * mobile GPUs (Adreno on Quest) — gate to debug builds only. */
 #if defined(NDEBUG)
@@ -2503,7 +2559,25 @@ void AvpShowViewsVR(void)
         body_upright = (Player->ObStrategyBlock->DynPtr->OrientMat.mat22 > 64881); /* 0.99*ONE_FIXED => tilt < ~8 deg */
     if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright)
         cached_vr_y_scale = (float)game_eye_to_floor / ref_head_y;
-    float vr_y_scale = cached_vr_y_scale;
+    /* Follow the menu slider. Polled rather than hooked, the same way the texture
+       filter settings are: this catches the slider, a profile load and "Use these
+       settings" alike. Only on CHANGE, so the world-scale tuner (which writes
+       vr_world_scale directly) is not fought frame by frame - moving the slider takes
+       authority back. */
+    {
+        static int prev_world_scale_index = -1;
+        if (VRWorldScaleIndex != prev_world_scale_index) {
+            prev_world_scale_index = VRWorldScaleIndex;
+            vr_world_scale = VR_WorldScaleFromIndex(VRWorldScaleIndex);
+        }
+    }
+
+    /* World Scale: how many game units one real metre is worth. Raising it makes a
+       given physical movement cover more of the world, so the world feels SMALLER and
+       you feel larger; lowering it does the opposite. Applied here, at the single point
+       the scale is finalised, so the camera, the room-scale offsets and the weapon's
+       reference scale all follow from one number. */
+    float vr_y_scale = cached_vr_y_scale * vr_world_scale;
 
     /* Anchor for the first-person weapon's on-screen size. The gun is a fixed
      * game-unit model placed at the hand, and the hand's distance from the eye
@@ -2513,8 +2587,35 @@ void AvpShowViewsVR(void)
      * and hold it for the session; the weapon-scale code below multiplies by
      * vr_y_scale/vr_weapon_ref_scale so the gun keeps that one constant on-screen
      * size no matter how vr_y_scale later changes. */
+    /* Assumed STANDING eye height, in metres. The reference is normalised to this so
+     * that arm and weapon size no longer depend on the posture you happened to be in
+     * when the headset was recentred. */
+    #define VR_NOMINAL_EYE_HEIGHT_M 1.65f
     if (vr_weapon_ref_scale <= 0.0f && ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright)
-        vr_weapon_ref_scale = vr_y_scale;
+    {
+        /* Capture what vr_y_scale WOULD have been had you been stood at the nominal
+         * height, not what it actually was.
+         *
+         * vr_y_scale is game_eye_to_floor / ref_head_y, so recentring while SEATED
+         * (ref_head_y ~1.1m rather than ~1.7m) makes it ~55% larger. The hand is placed
+         * at a distance proportional to vr_y_scale, so it lands that much further from
+         * the eye in game units - and because the reference used to be captured as
+         * vr_y_scale itself, the ratio below came out at exactly 1.0 whatever posture
+         * that was, leaving the arms drawn at their normal size on the end of a much
+         * longer arm. They looked tiny, and the only cure was to stand, recentre, then
+         * launch.
+         *
+         * Dividing the captured value by (ref_head_y / nominal) removes the posture and
+         * leaves everything else: the ratio still tracks vr_y_scale for later changes,
+         * so the gun keeps a constant apparent size across a mid-session recentre, a
+         * World Scale change, and the character crouching, exactly as before. A user who
+         * recentres standing at the nominal height gets the same size they get today. */
+        float rh = ref_head_y;
+        /* Recentred lying down, or a bogus pose, must not yield giant arms. */
+        if (rh < 0.80f) rh = 0.80f;
+        if (rh > 2.20f) rh = 2.20f;
+        vr_weapon_ref_scale = vr_y_scale * (rh / VR_NOMINAL_EYE_HEIGHT_M);
+    }
 
     /* Head-centre room-scale offset in game units, for the network so remote
        players see room-scale walking. Same transform as the per-eye camera offset
@@ -4583,6 +4684,13 @@ void AvpShowViewsVR(void)
         {   /* live hand-tuning readout */
             extern void VR_TuneRenderHUD(void);
             VR_TuneRenderHUD();
+        }
+#endif
+#if AVP_VR_WORLD_TUNER
+        {   /* live world-scale readout. Its own guard, NOT nested inside the hand
+               tuner's - the two are independent and either can be built alone. */
+            extern void VR_WorldTuneRenderHUD(void);
+            VR_WorldTuneRenderHUD();
         }
 #endif
         vr_hud_clip_scale = 1.0f;

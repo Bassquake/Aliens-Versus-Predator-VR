@@ -44,7 +44,7 @@ extern SECTION * GetNamedHierarchyFromLibrary(const char * rif_name, const char 
 extern char LevelName[];
 extern unsigned char Null_Name[8];
 
-#define QueenAttackRange 3500
+#define QueenAttackRange (VR_Reach(3500))
 
 /*minimum time for flamethrower before queen takes notice*/
 #define QueenMinimumFireTime ONE_FIXED/8
@@ -4895,6 +4895,7 @@ static void MakeNonFragable(HMODELCONTROLLER *controller)
 ** Loading and Saving **
 **--------------------*/
 #include "savegame.h"
+#include "vr_scale.h"
 
 typedef struct queen_save_block
 {

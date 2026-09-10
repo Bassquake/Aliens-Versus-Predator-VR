@@ -1,3 +1,4 @@
+#include "vr_scale.h"
 /*--------------Patrick 7/11/96----------------
   Header file for Alien AI support functions
   ---------------------------------------------*/
@@ -193,11 +194,22 @@
 	#define ALIEN_JUMPVELOCITY 					(8000)
 	#define ALIEN_FORWARDVELOCITY 				(12000)
 	#define ALIEN_CURVEDISTANCE 				(8000)
-	#define ALIEN_ATTACKDISTANCE_MIN			(2000)
+	/* The five distances below are scaled by VR World Scale along with the alien's
+	   size and reach (see vr_scale.h), so a scaled-up alien keeps its approach and
+	   pounce envelope at the same number of BODY LENGTHS the original was tuned for.
+	   Unscaled, a 1.4x alien walked ~a third of a body length closer than intended
+	   before committing, and pounced from proportionally too near.
+	
+	   Deliberately alien-only. The NPC firing bands in bh_marin.c (MinRange /
+	   ForceFireRange / MaxRange) are balance numbers, not visual ones - widening a
+	   sniper's MaxRange changes the difficulty rather than fixing a mismatch. The
+	   dynamics extents do not scale either, so these thresholds still have to leave
+	   the alien somewhere it can physically stand. */
+	#define ALIEN_ATTACKDISTANCE_MIN			(VR_Reach(2000))
 	/* Above (1500) for Ken: reduced from 2000 */
 	/* 1/6/98, changed back to 2000.  It was well bust. */
-	#define ALIEN_ATTACKDISTANCE_MAX			(4000)
-	#define ALIEN_ATTACKRANGE 					(3000)
+	#define ALIEN_ATTACKDISTANCE_MAX			(VR_Reach(4000))
+	#define ALIEN_ATTACKRANGE 					(VR_Reach(3000))
 	/* Range check for damage validity. */
 	#define ALIEN_ATTACKTIME 					(ONE_FIXED>>1)
 	/* random time between 1 and 2 seconds,in fixed point,with granularity 1/8th second */
@@ -208,9 +220,9 @@
 	#define PRAETORIAN_WALKSPEED_FACTOR			((ONE_FIXED*6)/5)
 	#define PRAETORIAN_CRAWLSPEED_FACTOR		(ONE_FIXED*2)
 
-	#define ALIEN_POUNCE_MAXRANGE 				(12000)
-	#define ALIEN_POUNCE_STARTMAXRANGE 			(8000)
-	#define ALIEN_POUNCE_MINRANGE 				(3000)
+	#define ALIEN_POUNCE_MAXRANGE 				(VR_Reach(12000))
+	#define ALIEN_POUNCE_STARTMAXRANGE 			(VR_Reach(8000))
+	#define ALIEN_POUNCE_MINRANGE 				(VR_Reach(3000))
 	#define ALIEN_JUMP_SPEED					(25000)
 	#define PREDALIEN_JUMP_SPEED				(25000)
 	#define PRAETORIAN_JUMP_SPEED				(25000)

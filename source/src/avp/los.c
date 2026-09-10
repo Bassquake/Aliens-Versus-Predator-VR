@@ -1,6 +1,7 @@
 /*KJL*************************
 * los.c - Line of sight code *
 *************************KJL*/
+#include <SDL3/SDL.h>
 #include "3dc.h"
 #include "module.h"					  
 #include "inline.h"
@@ -512,9 +513,43 @@ void CheckForRayIntersectionWithObject(DISPLAYBLOCK *dPtr)
 	if (needToRotate)
 	{
 		MATRIXCH matrix = dPtr->ObMat;
-		TransposeMatrixCH(&matrix);
-		RotateVector(&viewVectorBeta,&matrix);
-		RotateVector(&viewVectorAlpha,&matrix);
+		#ifdef AVP_XR
+		/* ObMat may carry a UNIFORM SCALE (VR World Scale grows the characters by
+		 * baking one into every section's SecMat). TransposeMatrixCH is the inverse
+		 * only for an ORTHONORMAL matrix, so on a scaled one the ray lands in object
+		 * space wrong by s^2 and hits stop matching what is drawn.
+		 *
+		 * Strip the scale for the rotation, then divide the ray by it. Dividing the
+		 * ray by s is exactly equivalent to testing against a shape s times larger,
+		 * which is what the player can see - so the hitbox grows with the model
+		 * instead of the test simply being distorted. */
+		{
+			float sx = (float)matrix.mat11, sy = (float)matrix.mat12, sz = (float)matrix.mat13;
+			float scale = SDL_sqrtf(sx*sx + sy*sy + sz*sz) / (float)ONE_FIXED;
+			if (scale > 1.001f) {
+				float inv = 1.0f / scale;
+				matrix.mat11 = (int)(matrix.mat11 * inv); matrix.mat12 = (int)(matrix.mat12 * inv); matrix.mat13 = (int)(matrix.mat13 * inv);
+				matrix.mat21 = (int)(matrix.mat21 * inv); matrix.mat22 = (int)(matrix.mat22 * inv); matrix.mat23 = (int)(matrix.mat23 * inv);
+				matrix.mat31 = (int)(matrix.mat31 * inv); matrix.mat32 = (int)(matrix.mat32 * inv); matrix.mat33 = (int)(matrix.mat33 * inv);
+				TransposeMatrixCH(&matrix);
+				RotateVector(&viewVectorBeta,&matrix);
+				RotateVector(&viewVectorAlpha,&matrix);
+				viewVectorBeta.vx  = (int)(viewVectorBeta.vx  * inv);
+				viewVectorBeta.vy  = (int)(viewVectorBeta.vy  * inv);
+				viewVectorBeta.vz  = (int)(viewVectorBeta.vz  * inv);
+				viewVectorAlpha.vx = (int)(viewVectorAlpha.vx * inv);
+				viewVectorAlpha.vy = (int)(viewVectorAlpha.vy * inv);
+				viewVectorAlpha.vz = (int)(viewVectorAlpha.vz * inv);
+			} else
+		#endif
+		{
+			TransposeMatrixCH(&matrix);
+			RotateVector(&viewVectorBeta,&matrix);
+			RotateVector(&viewVectorAlpha,&matrix);
+		}
+		#ifdef AVP_XR
+		}
+		#endif
 	}
 
 	numberOfItems = SetupPolygonAccess(dPtr);

@@ -219,6 +219,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_NEXTWEAPON:    return "Next Weapon";
 			case TEXTSTRING_BIND_PREVWEAPON:    return "Previous Weapon";
 			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. Triggers, grips, A/B/Y and stick clicks are held; X and stick up/down register a single press.";
+			case TEXTSTRING_VRWORLDSCALE:       return "World Scale (Default: 1.30)";
+			case TEXTSTRING_VRWORLDSCALE_HELP:  return "How large the world feels. Higher values make one real step cover more ground, so the world seems smaller.";
 			case TEXTSTRING_VRMOVEDEADZONE:     return "Movement Deadzone";
 			case TEXTSTRING_VRMOVEDEADZONE_HELP:return "How far the movement stick must be pushed before you start moving. Turning has its own deadzone.";
 			case TEXTSTRING_BIND_RESET:         return "Reset All To Default";

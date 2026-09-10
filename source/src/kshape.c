@@ -266,6 +266,43 @@ void SetupShapePipeline(void)
 
 }
 
+
+/* Build WToLMat (world -> local) from an object matrix that may carry a UNIFORM SCALE.
+ *
+ * WToLMat is used to put light positions and the camera into the object's own space, and
+ * it is made by TRANSPOSING the object matrix - the inverse only for an ORTHONORMAL one.
+ * VR World Scale bakes a uniform scale into every character section's SecMat (hmodel.c
+ * hands that straight to the dummy display block it renders each section through), and
+ * the transpose of s*R is s*R', so every light came out s times further away than it is.
+ * The shape's vertices are untouched model space, so the extra distance went straight
+ * into the falloff and the characters got darker the larger they were scaled - close to
+ * black at the top of the range.
+ *
+ * Stripping the scale leaves the pure inverse rotation, so the distance from the object
+ * to each light is reported truthfully and a scaled character is lit like an unscaled one
+ * standing in the same place. The scale MUST stay in ObMat itself, which is what actually
+ * draws the model larger (LToVMat above) - only this derived matrix is corrected.
+ *
+ * Same defect as the hitbox ray in los.c; anywhere else that transposes a possibly-scaled
+ * matrix has it too. */
+static void SetWToLMatFromObMat(const MATRIXCH *obMat)
+{
+	CopyMatrix((MATRIXCH *)obMat, &WToLMat);
+#ifdef AVP_XR
+	{
+		float sx = (float)WToLMat.mat11, sy = (float)WToLMat.mat12, sz = (float)WToLMat.mat13;
+		float scale = (float)sqrt(sx*sx + sy*sy + sz*sz) / (float)ONE_FIXED;
+		if (scale > 1.001f) {
+			float inv = 1.0f / scale;
+			WToLMat.mat11 = (int)(WToLMat.mat11 * inv); WToLMat.mat12 = (int)(WToLMat.mat12 * inv); WToLMat.mat13 = (int)(WToLMat.mat13 * inv);
+			WToLMat.mat21 = (int)(WToLMat.mat21 * inv); WToLMat.mat22 = (int)(WToLMat.mat22 * inv); WToLMat.mat23 = (int)(WToLMat.mat23 * inv);
+			WToLMat.mat31 = (int)(WToLMat.mat31 * inv); WToLMat.mat32 = (int)(WToLMat.mat32 * inv); WToLMat.mat33 = (int)(WToLMat.mat33 * inv);
+		}
+	}
+#endif
+	TransposeMatrixCH(&WToLMat);
+}
+
 void ChooseLightingModel(DISPLAYBLOCK *dispPtr)
 {
 	LOCALASSERT(dispPtr);
@@ -3940,8 +3977,7 @@ void AddShape(DISPLAYBLOCK *dptr, VIEWDESCRIPTORBLOCK *VDB_Ptr)
 
 	*/
 
-	CopyMatrix(&dptr->ObMat, &WToLMat);
-	TransposeMatrixCH(&WToLMat);
+	SetWToLMatFromObMat(&dptr->ObMat);
 
 
 	/*
@@ -4275,8 +4311,7 @@ void AddHierarchicalShape(DISPLAYBLOCK *dptr, VIEWDESCRIPTORBLOCK *VDB_Ptr)
 
 	*/
 
-	CopyMatrix(&dptr->ObMat, &WToLMat);
-	TransposeMatrixCH(&WToLMat);
+	SetWToLMatFromObMat(&dptr->ObMat);
 
 
 	/*

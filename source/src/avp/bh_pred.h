@@ -1,3 +1,4 @@
+#include "vr_scale.h"
 /*--------------Patrick 21/1/97-----------------------
   Header file for predator AI & NPC support functions
   ---------------------------------------------------*/
@@ -222,8 +223,12 @@ typedef struct tools_data_predator
 #define PRED_REGEN_TIME						(10*ONE_FIXED)
 #define PRED_MAXIDENTITY					(4) 	 	
 #define NO_OF_FRAGMENTS_FROM_DEAD_PREDATOR 	(10)
-#define PRED_CLOSE_ATTACK_RANGE				(1500) 	/* mm */
-#define PRED_STAFF_ATTACK_RANGE				(2000) 	/* mm */
+/* _RAW is the unscaled value, needed where the range appears in a STATIC weapon
+   table (an initialiser must be a compile-time constant). The plain name stays
+   scaled so the ~18 range COMPARISONS pick it up without being touched. */
+#define PRED_CLOSE_ATTACK_RANGE_RAW			(1500) 	/* mm */
+#define PRED_CLOSE_ATTACK_RANGE				(VR_Reach(PRED_CLOSE_ATTACK_RANGE_RAW))
+#define PRED_STAFF_ATTACK_RANGE				(VR_Reach(2000)) 	/* mm */
 #define PRED_NEAR_VIEW_WIDTH				(500)	/* mm */  	
 #define PRED_FPPLASMA_INFRONT				(600) 	/* mm */
 #define PRED_FPPLASMA_ACROSS				(-500) 	/* mm */

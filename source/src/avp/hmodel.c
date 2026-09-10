@@ -2113,6 +2113,74 @@ static void HMTimer_Kernel(HMODELCONTROLLER *controller) {
 
 }
 
+#ifdef AVP_XR
+/* Scale the CHARACTERS with World Scale.
+ *
+ * World Scale above 1.0 puts the camera higher in game units for the same physical
+ * height - you become a giant and everyone else looks small. Growing the characters by
+ * the same factor restores their intended size relative to you. The level deliberately
+ * does not grow, or nothing would change.
+ *
+ * This has to happen where the rig is BUILT, not where it is drawn. A first attempt
+ * scaled ObMat around the AddShape call in kzsort.c and only appeared to work
+ * sometimes: AddShape solves an HModel (DoHModel) only for objects with NO strategy
+ * block, and every NPC has one - their sections are already solved earlier in the frame
+ * by whichever behaviour called ProveHModel, so a draw-time matrix change reached
+ * nothing. Process_Section below is the single point every character passes through.
+ *
+ * The scale goes into a LOCAL copy: dptr->ObMat is shared game state, and physics,
+ * AI and aiming all read it.
+ *
+ * VISUAL ONLY - hitboxes, reach and AI distances are unchanged, so a scaled character
+ * is a larger picture of the same-sized creature. */
+static int VR_IsCharacterSB(STRATEGYBLOCK *sbPtr)
+{
+    if (!sbPtr) return 0;
+    switch (sbPtr->I_SBtype) {
+        case I_BehaviourAlien:
+        case I_BehaviourQueenAlien:
+        case I_BehaviourFaceHugger:
+        case I_BehaviourPredator:
+        case I_BehaviourXenoborg:
+        case I_BehaviourMarine:
+        case I_BehaviourSeal:
+        case I_BehaviourPredatorAlien:
+        /* Death types. A character that dies is rebuilt as a new strategy block of one
+           of these, carrying the same rig - so without them the corpse dropped back to
+           its unscaled size at the moment of death. HierarchicalFragment also covers
+           other rig debris, which is fine: it comes off characters. */
+        case I_BehaviourHierarchicalFragment:
+        case I_BehaviourAlienFragment:
+        case I_BehaviourNetCorpse:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/* Forces the scale on for one AddShape, for a character the type test cannot see.
+   The player's reflection is the only user: RenderPlayersImageInMirror deliberately
+   NULLS ObStrategyBlock before drawing (that is how it gets AddShape to solve the
+   HModel at all - kshape.c only calls DoHModel for a block with no strategy block),
+   so by the time the matrix reaches here there is nothing left to identify it by. */
+int vr_force_character_scale = 0;
+
+static void VR_ScaleCharacterMatrix(MATRIXCH *m, STRATEGYBLOCK *sbPtr)
+{
+    extern float vr_world_scale;
+    extern int VR_IsIn3DMode(void);
+    float f;
+
+    if (vr_world_scale <= 1.001f || !VR_IsIn3DMode()) return;
+    if (!vr_force_character_scale && !VR_IsCharacterSB(sbPtr)) return;
+
+    f = vr_world_scale;
+    m->mat11 = (int)(m->mat11 * f); m->mat12 = (int)(m->mat12 * f); m->mat13 = (int)(m->mat13 * f);
+    m->mat21 = (int)(m->mat21 * f); m->mat22 = (int)(m->mat22 * f); m->mat23 = (int)(m->mat23 * f);
+    m->mat31 = (int)(m->mat31 * f); m->mat32 = (int)(m->mat32 * f); m->mat33 = (int)(m->mat33 * f);
+}
+#endif
+
 void DoHModel(HMODELCONTROLLER *controller, DISPLAYBLOCK *dptr) {
 
 	GLOBALASSERT(controller);
@@ -2176,7 +2244,18 @@ void DoHModel(HMODELCONTROLLER *controller, DISPLAYBLOCK *dptr) {
 		} else {
 			render=1;
 		}
-		Process_Section(controller,controller->section_data,&dptr->ObWorld,&dptr->ObMat,controller->sequence_timer,controller->Sequence_Type,controller->Sub_Sequence,render);
+		{
+			/* Same character scaling as ProveHModel. There are THREE root solves in
+			   this file - here, ProveHModel and ProveHModel_Far - and a character can
+			   go through any of them depending on what it is doing and how far away it
+			   is. Scaling only one made them flip size as they switched paths, so all
+			   three apply it or none can. */
+			MATRIXCH rootMat = dptr->ObMat;
+			#ifdef AVP_XR
+			VR_ScaleCharacterMatrix(&rootMat, dptr->ObStrategyBlock);
+			#endif
+			Process_Section(controller,controller->section_data,&dptr->ObWorld,&rootMat,controller->sequence_timer,controller->Sequence_Type,controller->Sub_Sequence,render);
+		}
 
 	}
 	/* Note braces!  Process_Section is OUTSIDE, 'cos you might still want to render! */
@@ -2261,6 +2340,7 @@ void DoHModelTimer(HMODELCONTROLLER *controller) {
 	
 }
 
+
 void ProveHModel(HMODELCONTROLLER *controller, DISPLAYBLOCK *dptr) {
 
 	/* Simply to verify a new hmodel, and remove junk. */
@@ -2312,7 +2392,13 @@ void ProveHModel(HMODELCONTROLLER *controller, DISPLAYBLOCK *dptr) {
 	}
 	/* That handled the timer.  Now update positions. */
 
-	Process_Section(controller,controller->section_data,&dptr->ObWorld,&dptr->ObMat,controller->sequence_timer,controller->Sequence_Type,controller->Sub_Sequence,0);
+	{
+		MATRIXCH rootMat = dptr->ObMat;
+		#ifdef AVP_XR
+		VR_ScaleCharacterMatrix(&rootMat, dptr->ObStrategyBlock);
+		#endif
+		Process_Section(controller,controller->section_data,&dptr->ObWorld,&rootMat,controller->sequence_timer,controller->Sequence_Type,controller->Sub_Sequence,0);
+	}
 
 	controller->FrameStamp=GlobalFrameCounter;
 	controller->Computed_Position=dptr->ObWorld;
@@ -2374,7 +2460,13 @@ void ProveHModel_Far(HMODELCONTROLLER *controller, STRATEGYBLOCK *sbPtr) {
 	}
    /* That handled the timer.  Now update positions. */
 
-	Process_Section(controller,controller->section_data,&sbPtr->DynPtr->Position,&sbPtr->DynPtr->OrientMat,controller->sequence_timer,controller->Sequence_Type,controller->Sub_Sequence,0);
+	{
+		MATRIXCH rootMat = sbPtr->DynPtr->OrientMat;
+		#ifdef AVP_XR
+		VR_ScaleCharacterMatrix(&rootMat, sbPtr);
+		#endif
+		Process_Section(controller,controller->section_data,&sbPtr->DynPtr->Position,&rootMat,controller->sequence_timer,controller->Sequence_Type,controller->Sub_Sequence,0);
+	}
 
 	controller->FrameStamp=GlobalFrameCounter;
 	controller->Computed_Position=sbPtr->DynPtr->Position;

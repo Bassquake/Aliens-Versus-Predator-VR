@@ -62,6 +62,7 @@ extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
 extern int VRMoveDeadzone;
+extern int VRWorldScaleIndex;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
@@ -298,6 +299,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
 	VRMoveDeadzone = 2;
+	VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 	/* Bindings keep whatever main.c initialised them to: those ARE the defaults. */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
@@ -385,6 +387,11 @@ extern void GetSettingsFromUserProfile(void)
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
 	VRMoveDeadzone =			UserProfilePtr->VRMoveDeadzonePlus1
 					? UserProfilePtr->VRMoveDeadzonePlus1 - 1 : 2;
+	VRWorldScaleIndex =			UserProfilePtr->VRWorldScaleIndexPlus1
+					? UserProfilePtr->VRWorldScaleIndexPlus1 - 1
+					: VR_WORLD_SCALE_DEFAULT_INDEX;
+	if (VRWorldScaleIndex < 0 || VRWorldScaleIndex > VR_WORLD_SCALE_MAX_INDEX)
+		VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 	{
 		/* Stored as source+1; 0 means the profile predates the bindings, so that
 		   action keeps its default rather than becoming unbound. */
@@ -478,6 +485,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
 	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
 	profilePtr->VRMoveDeadzonePlus1 =	(unsigned char)(VRMoveDeadzone + 1);
+	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);
 	{
 		int sp, i;
 		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)

@@ -223,6 +223,20 @@ static const char * gamedatapath = NULL;
    with A/B still on the right controller. It needs mirrored art to be worth having,
    not more input plumbing. */
 int VRMoveDeadzone = 2;
+int VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
+
+/* The live world scale, and the melee-reach helper that reads it (see vr_scale.h).
+   Both live out here, ahead of the AVP_XR split: the range macros in bh_pred.h and
+   friends are unconditional, so the behaviour files call VR_Reach on every target.
+   It returns the range untouched with no headset, so the flat game is unchanged. */
+float vr_world_scale = VR_WorldScaleFromIndex(VR_WORLD_SCALE_DEFAULT_INDEX);
+
+int VR_Reach(int range)
+{
+    extern int VR_IsIn3DMode(void);
+    if (!VR_IsIn3DMode() || vr_world_scale <= 1.001f) return range;
+    return (int)(range * vr_world_scale);
+}
 
 /* The defaults, written ONCE and used to initialise both the live table and the
    reference copy the menu compares against. Two separate literals would drift, and the
@@ -702,6 +716,13 @@ int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squee
 static int VR_ActionIsTap(int action)
 {
     switch (action) {
+        /* OPERATE is an edge because OperateObjectInLineOfSight runs EVERY frame the
+           request is set, and it operates whatever is in range at that moment. Read as
+           a level, holding the button meant the first switch to wander into the box got
+           thrown without a fresh press - which reads as a switch activating on
+           proximity. Both consumers (this and the multiplayer respawn/restart) want a
+           press anyway. */
+        case VR_ACT_OPERATE:
         case VR_ACT_FLARE:
         case VR_ACT_TAUNT:
         case VR_ACT_NEXT_WEAPON:
@@ -745,6 +766,7 @@ int VR_Action(int action)
     static int prevLevel[VR_SPECIES_COUNT][VR_ACT_COUNT];
     static int edgeThisFrame[VR_SPECIES_COUNT][VR_ACT_COUNT];
     static int lastFrame = -1;
+    extern int vr_suppress_edges_frames;
 
     int sp = (int)AvP.PlayerType;
     if (action < 0 || action >= VR_ACT_COUNT) return 0;
@@ -752,11 +774,23 @@ int VR_Action(int action)
 
     if (GlobalFrameCounter != lastFrame) {
         int a2, s2;
+        /* Coming out of a 2D menu, every button still physically held reads as a fresh
+           PRESS: the gameplay levels are force-masked to 0 while xr_2d_mode is true, so
+           the remembered level is 0 while the finger is still down. You dismiss the pause
+           menu WITH A, and A is Operate - so the first gameplay frame fired a phantom
+           Use and threw whatever switch happened to be in view. Same hazard
+           xr_x_pause_latch guards on the way in; this is the way out.
+
+           The levels are still sampled into prevLevel during the suppressed frames, so
+           the button is simply adopted as "already held" and the next real edge needs a
+           genuine release and press. */
+        int suppress = (vr_suppress_edges_frames > 0);
+        if (suppress) vr_suppress_edges_frames--;
         lastFrame = GlobalFrameCounter;
         for (s2 = 0; s2 < VR_SPECIES_COUNT; s2++)
             for (a2 = 0; a2 < VR_ACT_COUNT; a2++) {
                 int lv = VR_SourceLevel(VRBinding[s2][a2]);
-                edgeThisFrame[s2][a2] = (lv && !prevLevel[s2][a2]);
+                edgeThisFrame[s2][a2] = (!suppress && lv && !prevLevel[s2][a2]);
                 prevLevel[s2][a2] = lv;
             }
     }
@@ -779,6 +813,37 @@ int xr_hmd_move_sin = 0;
 int xr_hmd_move_cos = 65536; /* ONE_FIXED — default facing +Z */
 /* Accumulated snap turn offset in game angle units (0-4095, 4096 = full circle). */
 int xr_snap_yaw = 0;
+/* Frames of edge suppression owed after a 2D menu closes - see VR_Action. Counted in
+   frames rather than a single flag because xr_2d_mode is cleared at the END of the loop
+   iteration that dismissed the menu, so the stale level survives into the frame after. */
+int vr_suppress_edges_frames = 0;
+#ifdef AVP_XR
+/* Release the synthetic keys the 2D menu path drives.
+ *
+ * While xr_2d_mode is true the stick is translated into arrow keys by writing
+ * KeyboardInput[KEY_UP/DOWN/LEFT/RIGHT] directly. That block is inside the 2D branch and
+ * ends with a return, so gameplay never writes those slots - whatever value was last
+ * written stays latched forever once the menu closes.
+ *
+ * That is not cosmetic: these are real key slots the game reads through the ordinary
+ * bindings, and the SECONDARY binding for Operate is KEY_DOWN. A single visit to the
+ * pause menu left Operate reading as permanently held, so OperateObjectInLineOfSight ran
+ * every frame and threw whichever switch came into view - "it triggers just by looking at
+ * it", and clean again only after a restart.
+ *
+ * Called on every exit from 2D mode. Debounced entries go too, or a stale edge is
+ * delivered to the first gameplay frame. */
+static void VR_ReleaseMenuSyntheticKeys(void)
+{
+    static const int keys[] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_CR };
+    size_t i;
+    for (i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
+        KeyboardInput[keys[i]] = 0;
+        DebouncedKeyboardInput[keys[i]] = 0;
+    }
+}
+#endif
+
 bool xr_enabled = false;   // so you can flip it off quickly if needed
 bool xr_session_running = false;
 
@@ -3352,6 +3417,56 @@ int axes, balls, hats;
                 ry = rstate.currentState.y;
             }
 
+#if AVP_VR_WORLD_TUNER
+            /* In-world world-scale tuning. Toggled with crouch-click + A, a different
+               pair from the hand tuner's crouch-click + B, so the two cannot both be
+               opened by one gesture. */
+            {
+                extern int   vr_world_tune_active;
+                extern float vr_world_scale;
+                extern void  VR_WorldTuneAdjust(float delta);
+                extern void  VR_WorldTuneReset(void);
+                extern int   xr_left_thumbstick_click_pressed;
+                extern int   xr_a_button_pressed;
+                extern int   xr_y_button_gameplay_pressed;
+                static bool  wt_toggle_armed = true;
+                static bool  wt_coarse_armed = true;
+                static Uint64 wt_next_step   = 0;
+
+                if (xr_left_thumbstick_click_pressed && xr_a_button_pressed) {
+                    if (wt_toggle_armed) {
+                        wt_toggle_armed = false;
+                        vr_world_tune_active = !vr_world_tune_active;
+                        SDL_Log("VRWORLD %s (scale %.3f)",
+                                vr_world_tune_active ? "ON" : "OFF", vr_world_scale);
+                    }
+                } else {
+                    wt_toggle_armed = true;
+                }
+
+                if (vr_world_tune_active) {
+                    Uint64 now = SDL_GetTicks();
+                    /* Y resets to 1.0 - quick way back to a known state. */
+                    if (xr_y_button_gameplay_pressed) VR_WorldTuneReset();
+                    if (ry > 0.6f || ry < -0.6f) {
+                        if (wt_coarse_armed) {
+                            wt_coarse_armed = false;
+                            VR_WorldTuneAdjust(ry > 0.0f ? 0.10f : -0.10f);
+                        }
+                    } else {
+                        wt_coarse_armed = true;
+                    }
+                    if ((rx > 0.5f || rx < -0.5f) && now >= wt_next_step) {
+                        wt_next_step = now + 80;
+                        VR_WorldTuneAdjust(rx > 0.0f ? 0.01f : -0.01f);
+                    }
+                    /* Owns the stick while open, exactly as the hand tuner does. */
+                    rx = 0.0f;
+                    ry = 0.0f;
+                }
+            }
+#endif
+
 #if AVP_VR_HAND_TUNER
             /* In-world hand tuning takes the right stick over entirely: up/down
                picks a field, left/right changes it. Turning and weapon cycling are
@@ -3688,6 +3803,27 @@ int axes, balls, hats;
                 const float  X_LOG_HOLD_SECS   = 0.5f;
                 const float  X_PAUSE_HOLD_SECS = 1.0f;
 
+                /* Release the synthetic ESC this block pulses below.
+                 *
+                 * A synthetic write into KeyboardInput[] has no physical key to generate
+                 * the key-up, so it must be released deliberately or it latches - which
+                 * is exactly how the 2D menu's arrow keys jammed Operate on (see
+                 * VR_ReleaseMenuSyntheticKeys). Today this one happens to be masked: the
+                 * left-menu-button block further down runs later in the same frame and
+                 * unconditionally zeroes KEY_ESCAPE in its gameplay branch. That is
+                 * incidental, not by design - it is common code, and SteamVR never
+                 * delivers that button, so the day it is guarded out for PCVR this pulse
+                 * would stick and the pause menu would re-open on its own every frame.
+                 *
+                 * Only the LEVEL bit is released. The debounced entry is a one-frame edge
+                 * owned by the input layer, and it is what AvP_TriggerInGameMenus
+                 * actually reads, so clearing it here could eat a real press. */
+                static int x_esc_pulse_pending = 0;
+                if (x_esc_pulse_pending) {
+                    KeyboardInput[KEY_ESCAPE] = 0;
+                    x_esc_pulse_pending = 0;
+                }
+
                 if (xr_2d_mode) {
                     /* Menus: X is select (KEY_CR); no hold tracking here. */
                     x_hold_secs  = 0.0f;
@@ -3712,6 +3848,7 @@ int axes, balls, hats;
                             SDL_Log("INPUT: X held %.2fs - opening the pause menu", x_hold_secs);
                             KeyboardInput[KEY_ESCAPE] = 1;
                             DebouncedKeyboardInput[KEY_ESCAPE] = 1;
+                            x_esc_pulse_pending = 1;   /* released next frame */
                             x_stage = 2;
                             /* Hold the menu-select latch until X is released, so
                              * the still-down X that opened the menu doesn't also
@@ -6552,6 +6689,7 @@ int main(int argc, char *argv[])
 #ifdef AVP_XR
         vr_recalibrate = 1;   // recalibrate heading + room-scale on first VR frame
         xr_2d_mode = false;   // 3D game starting — stop quad rendering
+        VR_ReleaseMenuSyntheticKeys();
         SDL_Log("*** xr_2d_mode set to FALSE — game starting ***");
 #endif
         while(AvP.MainLoopRunning) {
@@ -6707,8 +6845,13 @@ int main(int argc, char *argv[])
                      * 3D mode if the menu was just dismissed. */
                     if (xr_enabled && xr_session_running && xr_2d_mode) {
                         InGameFlipBuffers();
-                        if (!menusActive)
+                        if (!menusActive) {
                             xr_2d_mode = false;
+                            /* Buttons held through the dismissal must not read as new
+                               presses in gameplay - above all A, which is Operate. */
+                            vr_suppress_edges_frames = 2;
+                            VR_ReleaseMenuSyntheticKeys();
+                        }
                     }
                     /* An AVP_XR build that is NOT presenting through a headset has to
                        present here, exactly like the desktop build below. Two targets

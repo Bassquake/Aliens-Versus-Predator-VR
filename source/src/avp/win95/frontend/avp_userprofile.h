@@ -158,7 +158,8 @@ typedef struct
 	unsigned char ReservedWasVRRumbleStrength;  //Rumble strength, removed - ditto
 	unsigned char ReservedWasVRLeftHanded; //Left-Handed Mode, removed - byte kept so the blob layout does not shift
 	unsigned char VRMoveDeadzonePlus1;    //0=unset->2
-	char Padding[13];
+	unsigned char VRWorldScaleIndexPlus1; //0=unset->VR_WORLD_SCALE_DEFAULT_INDEX
+	char Padding[12];
 
 	int CDPlayerVolume;
 

@@ -9621,8 +9621,26 @@ void RenderPlayersImageInMirror(void)
 		ReflectObject(dPtr);
 
 		PlayersMirrorImage.ObStrategyBlock = 0;
-		
+
+		#ifdef AVP_XR
+		/* Scale the reflection with VR World Scale, exactly as the NPCs are scaled.
+		   Above 1.0 the player's eye sits proportionally higher in game units - you
+		   are a giant - so an unscaled reflection is a figure whose head falls well
+		   below your own eyeline, and you appear too small in the mirror.
+
+		   It needs the flag rather than the ordinary type test because the line above
+		   has just nulled the strategy block, which is the only thing that test reads.
+		   Scaling about the model origin (the feet) keeps the reflection stood on the
+		   floor and grows it upward, which is what the mirror should show. */
+		{
+			extern int vr_force_character_scale;
+			vr_force_character_scale = 1;
+			AddShape(dPtr,Global_VDB_Ptr);
+			vr_force_character_scale = 0;
+		}
+		#else
 		AddShape(dPtr,Global_VDB_Ptr);
+		#endif
 		PlayersMirrorImage.ObStrategyBlock = &PlayersMirrorImageSB;
 	
 	}

@@ -108,6 +108,32 @@ extern const int VRBindingDefault[VR_SPECIES_COUNT][VR_ACT_COUNT];
 /* Current state of whatever is bound to this action. 0 when unbound. */
 extern int VR_Action(int action);
 
+/* World Scale, as a menu setting.
+ *
+ * The menu system's sliders are integer-only, so the setting is an INDEX and the scale
+ * is derived from it: 1.00 + index*0.05, giving 1.00 .. 1.50 in 0.05 steps.
+ * VR_WORLD_SCALE_DEFAULT_INDEX is 1.30. Keep the three in step - the range is stated
+ * once here and everything else derives from it.
+ *
+ * The range was 0.10 .. 3.00 while it was being tuned. It is narrowed to the band that
+ * is actually usable: below 1.00 the character/reach scaling stands down entirely (all
+ * of it is gated on > 1.001) so the low half of the slider only shrank the player
+ * against an unscaled world, and the far end was never playable.
+ *
+ * Changing MIN or STEP RE-MEANS EVERY STORED INDEX - the profile keeps the index, not
+ * the value (VRWorldScaleIndexPlus1), so an old profile's number now decodes to a
+ * different scale. The load-time range check in avp_userprofile.cpp catches anything
+ * past the new maximum and falls back to the default; a stored index that still fits
+ * silently becomes a different scale, which is the accepted cost of a range change. */
+#define VR_WORLD_SCALE_MIN            1.00f
+#define VR_WORLD_SCALE_STEP           0.05f
+#define VR_WORLD_SCALE_MAX_INDEX      10        /* 1.00 + 10*0.05 = 1.50 */
+#define VR_WORLD_SCALE_DEFAULT_INDEX  6         /* 1.00 +  6*0.05 = 1.30 */
+#define VR_WorldScaleFromIndex(i)     (VR_WORLD_SCALE_MIN + (i) * VR_WORLD_SCALE_STEP)
+
+extern int   VRWorldScaleIndex;   /* menu-editable, profile-stored */
+extern float vr_world_scale;      /* what the eye pass actually multiplies by */
+
 #ifdef AVP_XR
 /* Clip-space HUD controls — set during MaintainHUD() in VR, reset afterwards.
    vr_hud_clip_scale: < 1.0 shrinks toward centre (1.0 = no scale).
@@ -175,6 +201,11 @@ extern int       vr_left_hand_valid;
 #define VR_FREE_BLEND_SECS 0.18f
 
 #define AVP_VR_HAND_TUNER 0
+
+/* In-world WORLD SCALE tuner. Same idea and the same cost as the hand tuner above:
+ * a dev tool for finding a number on-device, compiled out entirely when 0. Toggled
+ * separately so both can be built independently. */
+#define AVP_VR_WORLD_TUNER 0
 
 #define VR_WEAPON_OFFSET_FORWARD  (-300)   /* was VR_WEAPON_PULLBACK = 300 */
 #define VR_WEAPON_OFFSET_RIGHT    0

@@ -174,7 +174,7 @@ PREDATOR_WEAPON_DATA NPC_Predator_Weapons[] = {
                 "R shoulder",                                           /* ElevationName */
                 "predator",                                                     /* HitLocationTableName */
                 1000,                                                                      /* MinRange (Don't fire when closer) */
-                PRED_CLOSE_ATTACK_RANGE,                        /* ForceFireRange (Fire if closer) */
+                PRED_CLOSE_ATTACK_RANGE_RAW,                        /* ForceFireRange (Fire if closer) */
                 20000,                                                          /* MaxRange (Don't fire if further) */
                 //65536>>3,                                                     /* Firing Rate */
                 65536,                                                          /* Firing Rate */
@@ -192,8 +192,8 @@ PREDATOR_WEAPON_DATA NPC_Predator_Weapons[] = {
                 "R shoulder",                                           /* ElevationName */
                 "predator",                                                     /* HitLocationTableName */
                 0,                                                                      /* MinRange (Don't fire when closer) */
-                PRED_CLOSE_ATTACK_RANGE,                        /* ForceFireRange (Fire if closer) */
-                PRED_CLOSE_ATTACK_RANGE,                        /* MaxRange (Don't fire if further) */
+                PRED_CLOSE_ATTACK_RANGE_RAW,                        /* ForceFireRange (Fire if closer) */
+                PRED_CLOSE_ATTACK_RANGE_RAW,                        /* MaxRange (Don't fire if further) */
                 65536<<1,                                                       /* Firing Rate */
                 1,                                                                      /* VolleySize */
                 65536>>1,                                                       /* SwappingTime */
@@ -209,7 +209,7 @@ PREDATOR_WEAPON_DATA NPC_Predator_Weapons[] = {
                 "Plasma caster",                                        /* ElevationName */
                 "predator",                                                     /* HitLocationTableName */
                 0,                                                                      /* MinRange (Don't fire when closer) */
-                PRED_CLOSE_ATTACK_RANGE,                        /* ForceFireRange (Fire if closer) */
+                PRED_CLOSE_ATTACK_RANGE_RAW,                        /* ForceFireRange (Fire if closer) */
                 -1,                                                                     /* MaxRange (Don't fire if further) */
                 65536,                                                          /* Firing Rate */
                 1,                                                                      /* VolleySize */
@@ -226,8 +226,8 @@ PREDATOR_WEAPON_DATA NPC_Predator_Weapons[] = {
                 "R shoulder",                                           /* ElevationName */
                 "predator",                                                     /* HitLocationTableName */
                 0,                                                                      /* MinRange (Don't fire when closer) */
-                PRED_CLOSE_ATTACK_RANGE,                        /* ForceFireRange (Fire if closer) */
-                PRED_CLOSE_ATTACK_RANGE,                        /* MaxRange (Don't fire if further) */
+                PRED_CLOSE_ATTACK_RANGE_RAW,                        /* ForceFireRange (Fire if closer) */
+                PRED_CLOSE_ATTACK_RANGE_RAW,                        /* MaxRange (Don't fire if further) */
                 65536<<1,                                                       /* Firing Rate */
                 1,                                                                      /* VolleySize */
                 65536>>1,                                                       /* SwappingTime */
@@ -260,7 +260,7 @@ PREDATOR_WEAPON_DATA NPC_Predator_Weapons[] = {
                 "R shoulder",                                           /* ElevationName */
                 "predator",                                                     /* HitLocationTableName */
                 0,                                                                      /* MinRange (Don't fire when closer) */
-                PRED_CLOSE_ATTACK_RANGE,                        /* ForceFireRange (Fire if closer) */
+                PRED_CLOSE_ATTACK_RANGE_RAW,                        /* ForceFireRange (Fire if closer) */
                 -1,                                                                     /* MaxRange (Don't fire if further) */
                 65536>>2,                                                       /* Firing Rate */
                 1,                                                                      /* VolleySize */
@@ -277,7 +277,7 @@ PREDATOR_WEAPON_DATA NPC_Predator_Weapons[] = {
                 "Plasma caster",                                        /* ElevationName */
                 "predator",                                                     /* HitLocationTableName */
                 0,                                                                      /* MinRange (Don't fire when closer) */
-                PRED_CLOSE_ATTACK_RANGE,                        /* ForceFireRange (Fire if closer) */
+                PRED_CLOSE_ATTACK_RANGE_RAW,                        /* ForceFireRange (Fire if closer) */
                 -1,                                                                     /* MaxRange (Don't fire if further) */
                 65536>>2,                                                       /* Firing Rate */
                 1,                                                                      /* VolleySize */

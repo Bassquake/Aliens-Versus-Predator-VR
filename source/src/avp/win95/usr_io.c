@@ -1107,10 +1107,21 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				}
 				#ifdef AVP_XR
 				/* Hold Y for >0.5s → step the zoom in; once past max zoom it wraps
-				 * back to normal (no zoom). One step per hold. */
+				 * back to normal (no zoom). One step per hold.
+				 *
+				 * VR stops one step SHORT of the keyboard game. ZoomLevels[] (hud.c) is
+				 * {1.0, 0.4, 0.1, 0.02}, so the last step is a ~50x magnification - on a
+				 * monitor that is a sniper view, but in a headset the entire FOV is that
+				 * narrow and every small head movement is magnified fifty-fold, which is
+				 * unusable and unpleasant. pmove.c also does turnSpeed >>= CameraZoomLevel,
+				 * so that step divides stick turning by 8 as well.
+				 *
+				 * The keyboard ZoomIn/ZoomOut path above still reaches 3, so a PCVR exe
+				 * running flat (-noxr) is unchanged, as is the desktop game. */
+				#define VR_PREDATOR_MAX_ZOOM_LEVEL 2
 				if (xr_y_button_gameplay_long_edge)
 				{
-					if (CameraZoomLevel<3) CameraZoomLevel++;
+					if (CameraZoomLevel<VR_PREDATOR_MAX_ZOOM_LEVEL) CameraZoomLevel++;
 					else CameraZoomLevel = 0;
 				}
 				#endif

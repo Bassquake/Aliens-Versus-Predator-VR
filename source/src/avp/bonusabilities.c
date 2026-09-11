@@ -307,6 +307,11 @@ extern void HandleGrapplingHookForces(void)
 	}
 }
 
+#ifdef AVP_XR
+#include "opengl.h"
+extern int VR_SessionActive(void);
+#endif
+
 extern void RenderGrapplingHook(void)
 {
 	if (GrapplingHook.IsEngaged && GrapplingHook.DispPtr)
@@ -322,6 +327,26 @@ extern void RenderGrapplingHook(void)
 			cable[0].vx = Global_VDB_Ptr->VDB_World.vx-mat.mat31/128;
 			cable[0].vy = Global_VDB_Ptr->VDB_World.vy-mat.mat32/128+500;
 			cable[0].vz = Global_VDB_Ptr->VDB_World.vz-mat.mat33/128;
+
+			#ifdef AVP_XR
+			/* Anchor the player end to the HAND, not the camera.
+			 *
+			 * The cable is strung from cable[0] to the hook, and cable[0] above is the
+			 * view position pushed back along the camera's forward axis. On a monitor the
+			 * camera is rigidly attached to the body, so that reads as the cable leaving
+			 * the Predator's chest and stays put. In a headset the camera is the HEAD:
+			 * it moves with every turn and every physical lean, and since the far end is
+			 * pinned in the world, the whole cable swings about the hook as you look
+			 * around.
+			 *
+			 * The launcher is wrist-mounted and the hook fires off the left trigger, so
+			 * the left controller is where the cable should leave from - it then behaves
+			 * as a real line: fixed at the hook, following the hand that holds it, and
+			 * completely indifferent to where the head is pointed. Falls back to the
+			 * camera-relative point above when that hand is not tracked. */
+			if (VR_SessionActive() && vr_left_hand_valid)
+				cable[0] = vr_left_hand_world;
+			#endif
 		}
 //		cable[0].vx = Global_VDB_Ptr->VDB_World.vx;
 //		cable[0].vy = Global_VDB_Ptr->VDB_World.vy+500;

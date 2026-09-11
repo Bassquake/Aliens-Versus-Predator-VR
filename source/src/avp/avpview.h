@@ -14,6 +14,7 @@ extern VIEWDESCRIPTORBLOCK *Global_VDB_Ptr;
 #include <SDL3/SDL.h>
 extern int vr_is_rendering;
 extern VECTORCH vr_base_world; /* pre-IPD camera position, consistent between eyes */
+extern VECTORCH vr_head_world; /* head CENTRE incl. room-scale offset - where you see from */
 void AvpShowViewsVR(void);
 void VR_InitEyeFBOs(int w, int h);
 /* Depth-state helpers called from kzsort.c during VR rendering. */

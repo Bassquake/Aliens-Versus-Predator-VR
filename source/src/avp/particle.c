@@ -68,6 +68,146 @@ extern SOUND3DDATA PredPistolExplosion_SoundData;
 extern MODULE *playerPherModule;
 
 static void InitialiseVolumetricExplosions(void);
+
+#ifdef AVP_XR
+/* How much of the lamp can be seen, 0 .. ONE_FIXED.
+ *
+ * The stock test fires a SINGLE ray at corona_location - the average of the light
+ * polygon's vertices - and switches the whole corona on or off by the result. A lamp is
+ * not a point, so at any edge that one ray is cut while most of the fixture is still in
+ * view, and the halo pops. Chasing that with a wider tolerance only moves the threshold:
+ * widen it and rail poles stop occluding, narrow it and door frames pop again.
+ *
+ * So return a FRACTION instead and let the caller fade. Four probes: the centre, two
+ * offset across the line of sight (the axis a door frame or pillar edge sweeps through)
+ * and one below the lamp (for ceiling grazing, which no horizontal probe can escape).
+ * The centre carries double weight, being the point the fixture is actually at.
+ *
+ * The spread is the lamp's own half-width, from ObRadius - not LightRange, which is the
+ * illumination radius and says nothing about how big the lamp looks. */
+static int CoronaVisibleFraction(DISPLAYBLOCK *objectPtr, VECTORCH *positionPtr)
+{
+	VECTORCH sample, across, origin, toEye;
+	VECTORCH hitPoint, hitNormal;
+	int spread, dist, skip;
+	int weight = 0;
+
+	/* Clear line to the lamp itself: fully lit, and three raycasts saved. */
+	if (CameraCanSeeThisPosition_WithIgnore(objectPtr, positionPtr)) return ONE_FIXED;
+
+	hitPoint  = LOS_Point;
+	hitNormal = LOS_ObjectNormal;
+
+	toEye.vx = vr_head_world.vx - positionPtr->vx;
+	toEye.vy = vr_head_world.vy - positionPtr->vy;
+	toEye.vz = vr_head_world.vz - positionPtr->vz;
+
+	/* Is the blocker BETWEEN us, or is it a surface the ray merely skims?
+	 *
+	 * A lamp is mounted in structure, and a ray leaving it toward a distant eye runs
+	 * shallow, so it clips its own ceiling a metre or two out and reports the lamp hidden
+	 * while it is in plain view down the corridor. Skipping the first stretch of the ray
+	 * fixes that - but blindly, it also skips straight THROUGH a thin floor, and the
+	 * corona shows from the room below. Distance cannot separate those: both are shallow
+	 * rays meeting a horizontal surface.
+	 *
+	 * Which SIDE each end is on can. Grazing its own ceiling, the lamp and the eye are
+	 * both below it - same side, and the hit is a protrusion to be skipped. Through a
+	 * floor they are on opposite sides, which is a real barrier however shallow the angle.
+	 * Done with the hit polygon's own normal, so it needs no assumption about the surface
+	 * being level. */
+	{
+		double nx = (double)hitNormal.vx, ny = (double)hitNormal.vy, nz = (double)hitNormal.vz;
+		double sideLamp = nx * (double)(positionPtr->vx - hitPoint.vx)
+		                + ny * (double)(positionPtr->vy - hitPoint.vy)
+		                + nz * (double)(positionPtr->vz - hitPoint.vz);
+		double sideEye  = nx * (double)(vr_head_world.vx - hitPoint.vx)
+		                + ny * (double)(vr_head_world.vy - hitPoint.vy)
+		                + nz * (double)(vr_head_world.vz - hitPoint.vz);
+
+		if ((sideLamp > 0.0) != (sideEye > 0.0)) return 0;   /* genuinely separated */
+	}
+
+	across.vx = -toEye.vz;
+	across.vy = 0;
+	across.vz =  toEye.vx;
+
+	{
+		double dx = (double)toEye.vx, dy = (double)toEye.vy, dz = (double)toEye.vz;
+		dist = (int)sqrt(dx*dx + dy*dy + dz*dz);
+	}
+	skip = dist / 6;
+	if (skip > 2500) skip = 2500;
+
+	Normalise(&toEye);
+	origin.vx = positionPtr->vx + MUL_FIXED(toEye.vx, skip);
+	origin.vy = positionPtr->vy + MUL_FIXED(toEye.vy, skip);
+	origin.vz = positionPtr->vz + MUL_FIXED(toEye.vz, skip);
+
+	if (across.vx == 0 && across.vz == 0)
+		return CameraCanSeeThisPosition_WithIgnore(objectPtr, &origin) ? ONE_FIXED : 0;
+	Normalise(&across);
+
+	spread = objectPtr->ObRadius / 2;
+	if (spread < 25)  spread = 25;
+	if (spread > 200) spread = 200;
+
+	if (CameraCanSeeThisPosition_WithIgnore(objectPtr, &origin)) weight += 2;
+
+	sample.vx = origin.vx + MUL_FIXED(across.vx, spread);
+	sample.vy = origin.vy;
+	sample.vz = origin.vz + MUL_FIXED(across.vz, spread);
+	if (CameraCanSeeThisPosition_WithIgnore(objectPtr, &sample)) weight++;
+
+	sample.vx = origin.vx - MUL_FIXED(across.vx, spread);
+	sample.vy = origin.vy;
+	sample.vz = origin.vz - MUL_FIXED(across.vz, spread);
+	if (CameraCanSeeThisPosition_WithIgnore(objectPtr, &sample)) weight++;
+
+	/* +vy is down, so this sits below the fixture - the ceiling-graze case no horizontal
+	   probe can escape. */
+	sample.vx = origin.vx;
+	sample.vy = origin.vy + spread;
+	sample.vz = origin.vz;
+	if (CameraCanSeeThisPosition_WithIgnore(objectPtr, &sample)) weight++;
+
+	return (weight * ONE_FIXED) / 5;
+}
+
+/* Step the stored fade toward what is visible this frame, ONCE per frame however many
+   eyes are drawn - the stamp both keeps the rate right and saves the second eye's four
+   raycasts. About an eighth of a second end to end: quick enough to read as occlusion,
+   slow enough that a sample flicking on and off cannot strobe. */
+extern int GlobalFrameCounter;
+extern int VR_SessionActive(void);
+/* How much of its red a dominantly-red corona keeps, per cent. Lower if ranks of red
+   lights still blow out; 100 restores the stock colour exactly. */
+#define VR_RED_CORONA_PERCENT 60
+#define CORONA_FADE_PER_SECOND 8
+static int CoronaFade(DISPLAYBLOCK *objectPtr, PLACED_LIGHT_BEHAV_BLOCK *pl_bhv, VECTORCH *positionPtr)
+{
+	if (pl_bhv->corona_fade_stamp != GlobalFrameCounter)
+	{
+		int target = CoronaVisibleFraction(objectPtr, positionPtr);
+		int step   = NormalFrameTime * CORONA_FADE_PER_SECOND;
+
+		pl_bhv->corona_fade_stamp = GlobalFrameCounter;
+
+		if (pl_bhv->corona_fade < target)
+		{
+			pl_bhv->corona_fade += step;
+			if (pl_bhv->corona_fade > target) pl_bhv->corona_fade = target;
+		}
+		else if (pl_bhv->corona_fade > target)
+		{
+			pl_bhv->corona_fade -= step;
+			if (pl_bhv->corona_fade < target) pl_bhv->corona_fade = target;
+		}
+	}
+	return pl_bhv->corona_fade;
+}
+#endif
+
 void DoFlareCorona(DISPLAYBLOCK *objectPtr);
 void InitialiseRainDrops(void);
 void HandleRipples(void);
@@ -1799,7 +1939,12 @@ static void RenderParticlesOnly(void)
 							position.vy += objectPtr->ObWorld.vy;
 							position.vz += objectPtr->ObWorld.vz;
 
+							#ifdef AVP_XR
+							int coronaFade = CoronaFade(objectPtr,pl_bhv,&position);
+							if (coronaFade > 0)
+							#else
 							if (CameraCanSeeThisPosition_WithIgnore(objectPtr,&position))
+							#endif
 							{
 								LIGHTBLOCK *lPtr = pl_bhv->light;
 								int colour;
@@ -1814,6 +1959,34 @@ static void RenderParticlesOnly(void)
 										if (r>255) r=255;
 										if (g>255) g=255;
 										if (b>255) b=255;
+										#ifdef AVP_XR
+										/* Hold saturated RED coronas back a little in a headset.
+										 *
+										 * These draw additively, so a rank of red lights down a
+										 * corridor sums into a flat blown-out slab: red is already
+										 * at the ceiling on its own, and every overlap can only
+										 * push the other channels up, so the colour washes toward
+										 * white and all the shape is lost. Red saturates alone
+										 * because these fittings run red at full with almost no
+										 * green or blue, which is exactly the case tested for -
+										 * a white or amber lamp keeps its headroom in all three
+										 * channels and is left alone.
+										 *
+										 * Only the corona is scaled. The light itself still
+										 * illuminates the world at full strength. */
+										/* Scaled PROPORTIONALLY, and keyed on the light being
+										   dominantly red rather than on it saturating.
+										   Measured on-device: these fittings run scales
+										   (65535,0,0) with LightBright PULSING 3025..47434, so
+										   r only ever reaches ~185 - no single sprite saturates
+										   and an "r == 255" test never fired at all. The slab of
+										   flat red is the ADDITIVE SUM of several of them, so the
+										   lever is each sprite's contribution. Proportional
+										   because a threshold would be crossed and re-crossed by
+										   the pulse, making the corona jump. */
+										if (VR_SessionActive() && g*3 < r && b*3 < r)
+											r = (r * VR_RED_CORONA_PERCENT) / 100;
+										#endif
 										colour = 0xff000000+(r<<16)+(g<<8)+(b);
 										break;
 									}
@@ -1837,6 +2010,17 @@ static void RenderParticlesOnly(void)
 									  	break;
 									}
 								}
+								#ifdef AVP_XR
+								/* Fade by scaling the RGB, not the alpha byte: the flare
+								   is drawn TRANSLUCENCY_GLOWING (additive), where the
+								   colour is the contribution and alpha does nothing. */
+								{
+									int fr = MUL_FIXED((colour>>16)&255, coronaFade);
+									int fg = MUL_FIXED((colour>>8)&255, coronaFade);
+									int fb = MUL_FIXED( colour&255, coronaFade);
+									colour = (colour&0xff000000)+(fr<<16)+(fg<<8)+fb;
+								}
+								#endif
 								RenderLightFlare(&position,colour);
 							}
 						}

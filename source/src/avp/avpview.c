@@ -246,6 +246,7 @@ int vr_scoreboard_visible = 0;
 int vr_recalibrate = 1;
 /* Game-logic camera position before per-eye IPD offset — used for LOS checks in VR. */
 VECTORCH vr_base_world = {0, 0, 0};
+VECTORCH vr_head_world = {0, 0, 0};
 
 #ifdef AVP_XR
 /* Game-space controller hand poses — updated each frame before the per-eye render loop.
@@ -2650,6 +2651,31 @@ void AvpShowViewsVR(void)
             else if (moving_hold > 0)   moving_hold--;     /* keep walking briefly */
             vr_physically_moving = (moving_hold > 0);
         }
+
+        /* Where the player can actually SEE FROM, as opposed to where the character
+           stands. base_world comes from UpdateCamera, so it is the game camera BEFORE
+           any room-scale head offset is applied per eye - lean out over a rail and it
+           does not move at all. Tests that ask "can the camera see this point" have to
+           use the real head position or they disagree with the picture: a light halo
+           would switch off because the character's body could not see the lamp, while
+           the lamp was plainly visible past the railing to the player who had leaned.
+           Joystick movement changed it and leaning did not, which is the signature.
+
+           Head CENTRE, not either eye, so both eyes still get an identical answer -
+           the reason the LOS test avoided the per-eye position in the first place.
+
+           The vertical MUST use the ordinary eye formula, not the climbing path's
+           deviation-from-base_world form. That form collapses to base_world.vy when you
+           are stood at the reference pose, and base_world.vy is the FLAT camera height,
+           which carries no World Scale - while the real eye is at
+           Player->ObWorld.vy - eye_height*vr_y_scale and vr_y_scale does. At World Scale
+           1.3 that left the ray origin about 0.3*game_eye_to_floor - roughly half a metre
+           - BELOW the eye, which is the difference between a handrail blocking the ray and
+           the lamp being plainly visible over it. Reported on-device as halos switching
+           off that came back when World Scale was set to 1.00. */
+        vr_head_world.vx = base_world.vx + vr_room_offset_x;
+        vr_head_world.vy = Player->ObWorld.vy - (int)(eye_mid_y * vr_y_scale);
+        vr_head_world.vz = base_world.vz + vr_room_offset_z;
     }
 
     /* Reset hand pose validity; updated below from controller tracking. */

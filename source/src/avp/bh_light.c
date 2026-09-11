@@ -136,6 +136,8 @@ void* InitPlacedLight(void* bhdata,STRATEGYBLOCK *sbPtr)
 
 	pl_bhv->has_broken_sequence=1;
 	pl_bhv->has_corona=0;
+	pl_bhv->corona_fade=0;
+	pl_bhv->corona_fade_stamp=-1;
 
 	/*check to see if object is animated.*/
 	/*also check for corona flag at the same time*/

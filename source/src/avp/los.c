@@ -1,6 +1,7 @@
 /*KJL*************************
 * los.c - Line of sight code *
 *************************KJL*/
+#include <math.h>
 #include <SDL3/SDL.h>
 #include "3dc.h"
 #include "module.h"					  
@@ -142,10 +143,16 @@ int CameraCanSeeThisPosition_WithIgnore(DISPLAYBLOCK *ignoredObjectPtr,VECTORCH 
 
 	/* In VR each eye has a slightly different world position (IPD offset), so
 	   using Global_VDB_Ptr->VDB_World causes the LOS result to differ between
-	   eyes — halos appear in one eye but not the other.  Use the pre-IPD camera
-	   position (same height/pos as non-VR) so both eyes get an identical result. */
+	   eyes — halos appear in one eye but not the other.  Use the head CENTRE, which
+	   is identical for both eyes and still includes the room-scale offset.
+
+	   It used to use vr_base_world, which is the camera BEFORE that offset is added,
+	   i.e. the character's game position. Leaning or stepping sideways then changed
+	   nothing here while changing the picture completely, so a light halo would switch
+	   off as though occluded by a railing the player could plainly see past. The
+	   giveaway was that joystick movement affected it and physical movement did not. */
 	#ifdef AVP_XR
-	viewVector = vr_is_rendering ? vr_base_world : Global_VDB_Ptr->VDB_World;
+	viewVector = vr_is_rendering ? vr_head_world : Global_VDB_Ptr->VDB_World;
 	#else
 	viewVector = Global_VDB_Ptr->VDB_World;
 	#endif
@@ -153,6 +160,47 @@ int CameraCanSeeThisPosition_WithIgnore(DISPLAYBLOCK *ignoredObjectPtr,VECTORCH 
    	viewVector.vx -= positionPtr->vx;
 	viewVector.vy -= positionPtr->vy;
 	viewVector.vz -= positionPtr->vz;
+
+	#ifdef AVP_XR
+	/* Distance to the camera, taken BEFORE the vector is normalised.
+	 *
+	 * EXACT, deliberately not Approximate3dMagnitude. That helper is max + (other two)/4,
+	 * which OVERESTIMATES by several percent whenever one axis dominates - precisely the
+	 * shape of a long sightline down a corridor. The comparison below is against a real
+	 * distance along the same ray, so a few percent of slack turns "the first thing hit is
+	 * behind the player" into "blocked": measured on-device at 13908 against a true 13410
+	 * with the hit at 13741, i.e. past the eye and still counted as an occluder. Because
+	 * the error depends on the ray's direction, it struck some lights and not others -
+	 * stray coronas going dark with nothing between them and the player. */
+	{
+		double dx = (double)viewVector.vx;
+		double dy = (double)viewVector.vy;
+		double dz = (double)viewVector.vz;
+		int headDistance = (int)sqrt(dx*dx + dy*dy + dz*dz);
+
+		Normalise(&viewVector);
+		FindPolygonInLineOfSight(&viewVector, positionPtr, 0,ignoredObjectPtr);
+
+		if (LOS_ObjectHitPtr == Player) return 1;
+
+		/* The test above asks whether the ray from the point reaches the PLAYER'S BODY.
+		   That works when the camera sits inside the body, which is true flat and was
+		   true in VR while the ray was aimed at the unscaled camera position. It stops
+		   being true once World Scale lifts the eye: the body's collision extents are
+		   deliberately NOT scaled, so past about 1.1 the ray aimed at the raised eye
+		   passes clean over the player, hits a wall somewhere behind, and EVERY light
+		   reported itself occluded at once.
+
+		   What the caller actually wants to know is whether anything stands between the
+		   point and the eye, so ask that directly: LOS_Lambda is the distance in game
+		   units to the first thing hit (and a huge sentinel when nothing was), so a first
+		   hit at or beyond the eye means the line is clear. Equivalent to the body test
+		   whenever the eye is inside the body, and still correct when it is not. */
+		if (vr_is_rendering && LOS_Lambda >= headDistance) return 1;
+
+		return 0;
+	}
+	#else
 	Normalise(&viewVector);
 
 	FindPolygonInLineOfSight(&viewVector, positionPtr, 0,ignoredObjectPtr);
@@ -160,6 +208,7 @@ int CameraCanSeeThisPosition_WithIgnore(DISPLAYBLOCK *ignoredObjectPtr,VECTORCH 
 
 	if (LOS_ObjectHitPtr == Player) return 1;
 	else return 0;
+	#endif
 }
 
 int IsThisObjectVisibleFromThisPosition_WithIgnore(DISPLAYBLOCK *objectPtr,DISPLAYBLOCK *ignoredObjectPtr,VECTORCH *positionPtr,int maxRange)

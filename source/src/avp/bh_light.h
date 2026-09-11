@@ -73,6 +73,13 @@ typedef struct placed_light_behav_block
 
 	VECTORCH corona_location;
 
+	/* Corona occlusion fade (VR). 16.16, 0 = fully hidden, ONE_FIXED = fully visible,
+	   plus the frame it was last evaluated on so the two eye passes share one result.
+	   Transient presentation state - deliberately NOT in PLACED_LIGHT_SAVE_BLOCK, which
+	   copies named elements rather than the whole struct, so adding these is safe. */
+	int corona_fade;
+	int corona_fade_stamp;
+
 	int startingHealth; //for network games
 	int startingArmour;
 	

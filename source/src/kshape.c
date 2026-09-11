@@ -6581,6 +6581,10 @@ void RenderPredatorPlasmaCasterCharge(int value, VECTORCH *worldOffsetPtr, MATRI
 
 
 int LightFlareAlpha = 65535;
+#ifdef AVP_XR
+extern int VR_SessionActive(void);
+#endif
+
 void RenderLightFlare(VECTORCH *positionPtr, unsigned int colour)
 {
 	int centreX,centreY,sizeX,sizeY,z;
@@ -6633,22 +6637,140 @@ void RenderLightFlare(VECTORCH *positionPtr, unsigned int colour)
 		sizeY = MUL_FIXED(ScreenDescriptorBlock.SDB_Height<<13,87381)/Global_VDB_Ptr->VDB_ProjY;
 	}
 
-	VerticesBuffer[0].X = centreX - sizeX;
-	VerticesBuffer[0].Y = centreY - sizeY;
-	VerticesBuffer[0].Z = z;
-	VerticesBuffer[1].X = centreX + sizeX;
-	VerticesBuffer[1].Y = centreY - sizeY;
-	VerticesBuffer[1].Z = z;
-	VerticesBuffer[2].X = centreX + sizeX;
-	VerticesBuffer[2].Y = centreY + sizeY;
-	VerticesBuffer[2].Z = z;
-	VerticesBuffer[3].X = centreX - sizeX;
-	VerticesBuffer[3].Y = centreY + sizeY;
-	VerticesBuffer[3].Z = z;
+	{
+	/* The frustum test below is run on the FLAT, screen-parallel quad even in VR, and the
+	   billboard is substituted afterwards. QuadWithinFrustrum asks that SOME corner satisfy
+	   each clip plane independently, which is a conservative test that false-REJECTS a large
+	   quad straddling the frustum - and this sprite is a quarter of the screen wide. The
+	   billboard's corners sit at different depths, so their tangent offsets grow
+	   asymmetrically and trip that far more often: flares blinked out while you were looking
+	   straight at them (measured: corners at x=269,-118 against z=450..994, culled on the -Y
+	   plane alone). Testing the flat quad keeps visibility bit-identical to the flat game and
+	   leaves the billboard to decide only SHAPE. */
+	int quadBuilt = 0;
+	#ifdef AVP_XR
+	int billboard[4][3];
+	#endif
+
+	#ifdef AVP_XR
+	/* In a headset the flat path's quad is the problem, and it is subtle.
+	 *
+	 * It puts all four corners at one view-space z (ONE_FIXED) with x/y as the projected
+	 * RATIOS - a plane welded PERPENDICULAR TO THE VIEW AXIS. Monoscopically that is
+	 * undetectable, because a constant-z plane still projects to a rectangle wherever it
+	 * sits, which is why this has been correct on a monitor since 1999. In stereo it is
+	 * not: the corners really are at different distances from the eye, so the plane's
+	 * tilt is visible, and turning your head re-orients it to stay perpendicular to the
+	 * new forward axis. The sprite pivots about the lamp as you look around.
+	 *
+	 * A real billboard fixes it: face the quad at the EYE (the view-space origin) rather
+	 * than at the screen, with its up axis taken from world up so it cannot roll either.
+	 * Head rotation then slides it across your view without turning it - the way a
+	 * physical object behaves - and only moving changes what you see.
+	 *
+	 * The half-extents are scaled by the light's depth so the perspective divide returns
+	 * the same angular size the flat path gives; the flare neither grows nor shrinks.
+	 * Corners now differ in z, which the polygon clippers below handle (they are general).
+	 * IsDrawnInFront still pins zvalue to 0 in D3D_Particle_Output, so it goes on drawing
+	 * over the world and cannot pop behind geometry. */
+	if (VR_SessionActive())
+	{
+		float nx = (float)point.vx, ny = (float)point.vy, nz = (float)point.vz;
+		float nlen = (float)sqrt(nx*nx + ny*ny + nz*nz);
+
+		if (nlen > 1.0f)
+		{
+			float ux, uy, uz, rx, ry, rz, rlen;
+
+			nx /= nlen; ny /= nlen; nz /= nlen;     /* eye -> light, unit */
+
+			/* Reference up = the CAMERA'S up, which in view space is just -Y - no
+			   transform needed, since this whole basis is built in view space. That
+			   is what makes the sprite roll with the headset: tilt your head and the
+			   reference tilts with it, exactly as a lens flare on a monitor rolls with
+			   the camera.
+			   Using WORLD up here instead (rotate this by VDB_Mat) would hold the sprite
+			   upright in the world and ignore head roll. That was tried first and is the
+			   wrong call for a flare - it is a lens artifact, so it belongs to the
+			   viewer, not to the room. The eye-facing normal below is what stops it
+			   pivoting under yaw, and that is independent of this choice. */
+			ux = 0.0f; uy = -1.0f; uz = 0.0f;
+
+			/* right = up x n, then up = n x right: an orthonormal frame whose normal
+			   points back at the eye. Degenerate only when the light lies along the
+			   camera's up axis - directly overhead or underfoot - where no roll is more
+			   correct than another; fall through to the screen-aligned quad there. */
+			rx = uy*nz - uz*ny;
+			ry = uz*nx - ux*nz;
+			rz = ux*ny - uy*nx;
+			rlen = (float)sqrt(rx*rx + ry*ry + rz*rz);
+
+			if (rlen > 0.02f)
+			{
+				float sx, sy;
+
+				rx /= rlen; ry /= rlen; rz /= rlen;
+				ux = ny*rz - nz*ry;
+				uy = nz*rx - nx*rz;
+				uz = nx*ry - ny*rx;
+
+				sx = (float)sizeX * (float)point.vz / (float)ONE_FIXED;
+				sy = (float)sizeY * (float)point.vz / (float)ONE_FIXED;
+
+				billboard[0][0] = point.vx + (int)(-sx*rx + sy*ux);
+				billboard[0][1] = point.vy + (int)(-sx*ry + sy*uy);
+				billboard[0][2] = point.vz + (int)(-sx*rz + sy*uz);
+				billboard[1][0] = point.vx + (int)( sx*rx + sy*ux);
+				billboard[1][1] = point.vy + (int)( sx*ry + sy*uy);
+				billboard[1][2] = point.vz + (int)( sx*rz + sy*uz);
+				billboard[2][0] = point.vx + (int)( sx*rx - sy*ux);
+				billboard[2][1] = point.vy + (int)( sx*ry - sy*uy);
+				billboard[2][2] = point.vz + (int)( sx*rz - sy*uz);
+				billboard[3][0] = point.vx + (int)(-sx*rx - sy*ux);
+				billboard[3][1] = point.vy + (int)(-sx*ry - sy*uy);
+				billboard[3][2] = point.vz + (int)(-sx*rz - sy*uz);
+				quadBuilt = 1;
+			}
+		}
+	}
+	#endif
+
+	{
+		VerticesBuffer[0].X = centreX - sizeX;
+		VerticesBuffer[0].Y = centreY - sizeY;
+		VerticesBuffer[0].Z = z;
+		VerticesBuffer[1].X = centreX + sizeX;
+		VerticesBuffer[1].Y = centreY - sizeY;
+		VerticesBuffer[1].Z = z;
+		VerticesBuffer[2].X = centreX + sizeX;
+		VerticesBuffer[2].Y = centreY + sizeY;
+		VerticesBuffer[2].Z = z;
+		VerticesBuffer[3].X = centreX - sizeX;
+		VerticesBuffer[3].Y = centreY + sizeY;
+		VerticesBuffer[3].Z = z;
+	}
 	
 	{
 		int outcode = QuadWithinFrustrum();
-										  
+
+		#ifdef AVP_XR
+		/* Visible per the flat quad - now draw it as the eye-facing billboard. */
+		if (outcode && quadBuilt)
+		{
+			int c;
+			for (c = 0; c < 4; c++)
+			{
+				VerticesBuffer[c].X = billboard[c][0];
+				VerticesBuffer[c].Y = billboard[c][1];
+				VerticesBuffer[c].Z = billboard[c][2];
+			}
+			/* Force the clipping path: "no clipping needed" was decided about the flat
+			   quad, and the billboard's corners sit elsewhere. */
+			outcode = 1;
+		}
+		#endif
+
+
 		if (outcode)
 		{		 
 			RenderPolygon.NumberOfVertices=4;
@@ -6684,6 +6806,7 @@ void RenderLightFlare(VECTORCH *positionPtr, unsigned int colour)
 			else D3D_Particle_Output(&particle,VerticesBuffer);
 		}
 	}	
+	}
 }
 
 #if VOLUMETRIC_FOG

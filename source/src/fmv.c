@@ -1181,10 +1181,52 @@ void ScanImagesForFMVs(void)
 #endif
 }
 
+/* A gap between calls longer than this is treated as the game having been STOPPED rather
+   than merely slow: long enough that no ordinary frame or decode hitch reaches it, short
+   enough to catch a quick visit to the pause menu. */
+#define FMV_STALL_MS 250
+
 void UpdateAllFMVTextures(void)
 {
 	extern void UpdateFMVTexture(FMVTEXTURE *ftPtr);
 	int i = NumberOfFMVTextures;
+
+	/* Carry the video clock across a pause.
+	 *
+	 * Playback is paced against the WALL CLOCK - a frame is due once SDL_GetTicks()
+	 * reaches fmv_next_frame_ms - and this function is not called at all while the
+	 * in-game menu is up. Nothing decodes during the pause, but the clock keeps running,
+	 * so on return the catch-up loop in UpdateFMVTexture finds itself seconds behind and
+	 * runs frames as fast as its guard allows until it is back on the clock. A mission
+	 * video therefore "played out" while the player sat in the menu, silently, and was
+	 * over or nearly over when they came back.
+	 *
+	 * Nothing needs to know that it was the menu specifically: any stall this long should
+	 * move the timebase rather than be caught up, so a level load or a lost frame budget
+	 * is handled the same way. The audio is paced to videoMs (fmv_next_frame_ms -
+	 * fmv_start_ms), so shifting both keeps sound and picture together. */
+	{
+		static unsigned int lastUpdateMs = 0;
+		unsigned int nowMs = (unsigned int)SDL_GetTicks();
+
+		if (lastUpdateMs != 0)
+		{
+			unsigned int gap = nowMs - lastUpdateMs;
+
+			if (gap > FMV_STALL_MS)
+			{
+				int j = NumberOfFMVTextures;
+				while (j--)
+				{
+					FMVTEXTURE *f = &FMVTexture[j];
+					if (!f->fmv_active) continue;
+					f->fmv_start_ms      += gap;
+					f->fmv_next_frame_ms += gap;
+				}
+			}
+		}
+		lastUpdateMs = nowMs;
+	}
 
 #ifdef __ANDROID__
 	/* Capture the nearest video screen to the player for this frame (and reset the

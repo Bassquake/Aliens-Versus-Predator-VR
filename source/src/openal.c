@@ -889,11 +889,25 @@ void OpenAL_FmvStreamQueue(int h, const short *mono16, int numSamples)
 	}
 
 	/* (re)start playback once a little is buffered (slack against underruns) or
-	 * after an underrun left buffers queued but the source stopped. */
+	 * after an underrun left buffers queued but the source stopped.
+	 *
+	 * The restart needs its own case, and "queued >= 2" CANNOT express it. A STOPPED
+	 * source has all of its queued buffers marked processed, so each call through here
+	 * reclaims the one buffer it has, queues a single replacement, and finds queued == 1
+	 * again - the count never reaches two and the source never restarts. Measured after
+	 * the in-game menu drained one: alQueued=1 alProcessed=1 alState=AL_STOPPED, frozen
+	 * exactly there while audio kept being queued, so a video's sound never came back.
+	 * Any underrun long enough to stop the source had the same dead end; pausing simply
+	 * guarantees one.
+	 *
+	 * So: build a little slack before the FIRST start (AL_INITIAL), but from AL_STOPPED
+	 * restart on anything at all, since more will not arrive by waiting. */
 	ALint queued = 0, state = 0;
 	alGetSourcei(s->source, AL_BUFFERS_QUEUED, &queued);
 	alGetSourcei(s->source, AL_SOURCE_STATE, &state);
-	if (queued >= 2 && state != AL_PLAYING) alSourcePlay(s->source);
+	if (state != AL_PLAYING &&
+	    (queued >= 2 || (state == AL_STOPPED && queued >= 1)))
+		alSourcePlay(s->source);
 }
 
 void OpenAL_FmvStreamSetWorldPos(int h, int wx, int wy, int wz, int innerRange, int outerRange)

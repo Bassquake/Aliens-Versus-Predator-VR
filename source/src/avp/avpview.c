@@ -2877,34 +2877,71 @@ void AvpShowViewsVR(void)
         float s = SDL_sqrtf(bx*bx + bz*bz);  /* sin(tilt) = horizontal magnitude */
         float c = by;                        /* cos(tilt) */
 
-        /* Last well-defined horizontal rotation axis, reused on a flat ceiling
-         * (where down is exactly antipodal to upright and the axis is otherwise
-         * undefined) to keep the roll continuous through the wall→ceiling climb. */
-        static float last_ax = 1.0f, last_az = 0.0f;
+        /* The surface frame, PARALLEL TRANSPORTED rather than rebuilt each frame.
+         *
+         * The old construction was the minimal rotation taking world-down onto the body
+         * down axis, about the axis (bz,0,-bx)/s. That axis is UNDEFINED as s -> 0, and
+         * near the ceiling bx and bz are numerical noise - while the rotation angle is
+         * approaching 180 degrees, where a rotation about a horizontal axis MIRRORS the
+         * heading rather than turning it. So which way you faced on a ceiling was decided
+         * by noise, and stepping head-on onto a diagonal wall resolved it to a real axis
+         * and flipped the view 180 degrees. It came right on a second attempt because the
+         * remembered axis was by then the diagonal's own. Blending the axis (tried first)
+         * softens the jump but cannot fix it - the ceiling's own heading is still arbitrary.
+         *
+         * Instead carry a forward vector in world space and re-project it perpendicular to
+         * the body down axis each frame. That is continuous through every orientation
+         * including straight overhead: the frame turns only as much as the surface actually
+         * turned since last frame, so there is nothing to flip. Upright it is the identity,
+         * matching the untilted view exactly.
+         *
+         * Columns are (right, down, forward) - the same convention the old Rodrigues matrix
+         * produced, whose second column was the body down axis. */
+        static float fwd_x = 0.0f, fwd_y = 0.0f, fwd_z = 1.0f;
 
-        if (s > 0.0001f || c < 0.0f) {            /* not upright → apply tilt */
-            float ax, az, su, cu;
-            if (s > 0.0001f) {
-                ax = bz / s;  az = -bx / s;       /* unit horizontal axis */
-                last_ax = ax; last_az = az;
-                su = s; cu = c;
-            } else {
-                ax = last_ax; az = last_az;       /* flat ceiling: 180° roll */
-                su = 0.0f; cu = -1.0f;
+        if (s > 0.0001f || c < 0.0f) {            /* not upright -> apply tilt */
+            float fx = fwd_x, fy = fwd_y, fz = fwd_z;
+            float d, fl;
+
+            d = fx*bx + fy*by + fz*bz;
+            fx -= d*bx; fy -= d*by; fz -= d*bz;
+            fl = SDL_sqrtf(fx*fx + fy*fy + fz*fz);
+
+            if (fl < 0.01f) {
+                /* Carried forward has gone parallel to down, which needs a discontinuous
+                   jump in the body orientation. Rebuild from whichever world axis is
+                   least aligned with down so the frame stays defined. */
+                float ux = 0.0f, uy = 0.0f, uz = 1.0f;
+                if (SDL_fabsf(bz) > 0.9f) { ux = 1.0f; uz = 0.0f; }
+                d = ux*bx + uy*by + uz*bz;
+                fx = ux - d*bx; fy = uy - d*by; fz = uz - d*bz;
+                fl = SDL_sqrtf(fx*fx + fy*fy + fz*fz);
             }
-            float omc = 1.0f - cu;
-            /* Rodrigues rotation taking (0,1,0) onto the body down axis. Applied
-             * as a world-space PRE-rotation of the scene (see the MatrixMultiply
-             * below), so "up the wall" appears as forward when you look level —
-             * matching the locomotion transform in pmove.c (forward -> up the
-             * wall). Row-major. */
-            float R11 = cu + ax*ax*omc, R12 = -az*su,         R13 = ax*az*omc;
-            float R21 = az*su,          R22 = cu,             R23 = -ax*su;
-            float R31 = ax*az*omc,      R32 = ax*su,          R33 = cu + az*az*omc;
-            vr_climb_tilt.mat11 = (int)(R11*65536.0f); vr_climb_tilt.mat12 = (int)(R12*65536.0f); vr_climb_tilt.mat13 = (int)(R13*65536.0f);
-            vr_climb_tilt.mat21 = (int)(R21*65536.0f); vr_climb_tilt.mat22 = (int)(R22*65536.0f); vr_climb_tilt.mat23 = (int)(R23*65536.0f);
-            vr_climb_tilt.mat31 = (int)(R31*65536.0f); vr_climb_tilt.mat32 = (int)(R32*65536.0f); vr_climb_tilt.mat33 = (int)(R33*65536.0f);
+            fx /= fl; fy /= fl; fz /= fl;
+            fwd_x = fx; fwd_y = fy; fwd_z = fz;
+
+            {
+                /* right = down x forward: right-handed, and (1,0,0) when upright. */
+                float rx = by*fz - bz*fy;
+                float ry = bz*fx - bx*fz;
+                float rz = bx*fy - by*fx;
+
+                vr_climb_tilt.mat11 = (int)(rx*65536.0f);
+                vr_climb_tilt.mat12 = (int)(bx*65536.0f);
+                vr_climb_tilt.mat13 = (int)(fx*65536.0f);
+                vr_climb_tilt.mat21 = (int)(ry*65536.0f);
+                vr_climb_tilt.mat22 = (int)(by*65536.0f);
+                vr_climb_tilt.mat23 = (int)(fy*65536.0f);
+                vr_climb_tilt.mat31 = (int)(rz*65536.0f);
+                vr_climb_tilt.mat32 = (int)(bz*65536.0f);
+                vr_climb_tilt.mat33 = (int)(fz*65536.0f);
+            }
             vr_climb_tilt_active = 1;
+        }
+        else {
+            /* Upright: no tilt, and the carried frame resets to world forward so the next
+               climb starts from the identity exactly as the floor view does. */
+            fwd_x = 0.0f; fwd_y = 0.0f; fwd_z = 1.0f;
         }
     }
     else {

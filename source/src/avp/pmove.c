@@ -300,20 +300,42 @@ void PlayerBehaviour(STRATEGYBLOCK* sbPtr)
 	void AuxLocationTest(void);
 #endif
 
-/* How far ahead (world units, 1 metre == 1000) the climb grab reaches when the
-   Alien isn't quite touching the wall yet. Keeps the grab from feeling fiddly. */
-#define ALIEN_CLIMB_REACH 1000
+/* How far ahead the climb grab reaches when the Alien isn't quite touching the wall
+   yet. Keeps the grab from feeling fiddly.
 
-/* A surface counts as a climbable wall when its normal is steeper than ~45
-   degrees, i.e. |normal.vy| < cos(45deg)*ONE_FIXED. */
-#define ALIEN_CLIMB_WALL_VY 46341
+   The old value was 1000 with a comment claiming "1 metre == 1000" - but this engine
+   runs at GAME_UNITS_PER_METRE == 2200 (a standing eye is ~3740 units up, the Alien's
+   attack range 3000 is ~1.4 m). So the reach was really 45 cm from the probe origin and
+   you had to be all but touching the wall for it to fire, which is why walls refused to
+   be climbed unless you were already against them. 1.5 m in the engine's actual units. */
+#define ALIEN_CLIMB_REACH 3300
+
+/* A surface counts as climbable when its normal is more than ~23.7 degrees off
+   vertical, i.e. |normal.vy| < 60000.
+
+   This was cos(45 deg) == 46341, which excluded SLOPES: a 45 degree ramp gives
+   |normal.vy| of exactly 46341 and failed the strict test, and anything shallower
+   was rejected outright, so only near-vertical walls could ever be grabbed.
+
+   60000 is not a new guess - it is the SAME threshold the attach logic already uses
+   (GravityDirection.vy <= 60000 is what sets AlienClimbLeftFloor and commits the
+   climb). The two disagreeing is what left a band of surfaces that could be grabbed
+   but never committed, or committed but never grabbed. Matching them means any
+   surface the climb can hold onto is also one the grab will accept.
+
+   The floor is |normal.vy| == 65536 and stays well clear, so walking around is
+   unaffected; a gentle ramp now qualifies, but only if the player deliberately
+   presses jump while facing it. */
+#define ALIEN_CLIMB_WALL_VY 60000
 
 /* Returns 1 if the Alien is up against (or within reach of) a wall or other
    steep surface, so a jump press should start a climb rather than an ordinary
    hop. */
-static int AlienFacingClimbableWall(DYNAMICSBLOCK *dynPtr, VECTORCH *viewDir)
+static int AlienFacingClimbableWall(DYNAMICSBLOCK *dynPtr, VECTORCH *viewDir,
+                                    VECTORCH *outNormal)
 {
 	COLLISIONREPORT *reportPtr = dynPtr->CollisionReportPtr;
+
 
 	/* Any wall we've actually walked into: if we're touching it, pressing jump
 	   climbs it. No need to be looking straight at it (in VR the head can be
@@ -327,16 +349,29 @@ static int AlienFacingClimbableWall(DYNAMICSBLOCK *dynPtr, VECTORCH *viewDir)
 
 		if (ny < ALIEN_CLIMB_WALL_VY)
 		{
+			if (outNormal) *outNormal = reportPtr->ObstacleNormal;
 			return 1;
 		}
 		reportPtr = reportPtr->NextCollisionReportPtr;
 	}
 
 	/* Otherwise be a bit forgiving: cast a short ray along the view direction
-	   and grab a wall that's within reach even if we're not touching it yet. */
+	   and grab a wall that's within reach even if we're not touching it yet.
+	
+	   From the EYE, not dynPtr->Position. That position is the Alien's origin at floor
+	   level, so a ray leaving it along a view direction tilted even slightly downward
+	   hits the floor within a few units and the probe reports a floor every time -
+	   measured on device as lambda=28 against a reach of 1000, with the view only ~4
+	   degrees below level. The probe could therefore only ever succeed while looking
+	   exactly level or up, which left the grab working solely off the touching-contact
+	   test above and walls refusing to be climbed unless you were already against them.
+	   Global_VDB_Ptr->VDB_World is the camera on every target, and it is where the
+	   player is looking FROM, which is what this test is trying to express. */
 	{
+		extern VIEWDESCRIPTORBLOCK *Global_VDB_Ptr;
 		VECTORCH probeDir = *viewDir;
-		VECTORCH probePos = dynPtr->Position;
+		VECTORCH probePos = Global_VDB_Ptr ? Global_VDB_Ptr->VDB_World
+		                                   : dynPtr->Position;
 
 		FindPolygonInLineOfSight(&probeDir, &probePos, 0, Player);
 
@@ -344,7 +379,10 @@ static int AlienFacingClimbableWall(DYNAMICSBLOCK *dynPtr, VECTORCH *viewDir)
 		{
 			int ny = LOS_ObjectNormal.vy;
 			if (ny < 0) ny = -ny;
-			if (ny < ALIEN_CLIMB_WALL_VY) return 1;
+			if (ny < ALIEN_CLIMB_WALL_VY) {
+				if (outNormal) *outNormal = LOS_ObjectNormal;
+				return 1;
+			}
 		}
 	}
 
@@ -522,6 +560,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 		int jumpNow = playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump;
 		alienJumpEdge = jumpNow && !AlienPrevJump;
 		AlienPrevJump = jumpNow;
+
 	}
 
 	/* KJL 11:07:42 10/09/98 - Bonus Abilities */
@@ -972,6 +1011,34 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 						notTooSteep = 1;
 						break;
 					}
+
+					/* An Alien may also push off a surface it could CLIMB.
+					 *
+					 * This gate asks "is there solid enough ground under you to jump
+					 * from", and only ground within ~23.7 degrees of flat counts. Stand
+					 * on a slope and the slope is your ONLY contact, so it fails and the
+					 * whole jump block - ordinary jump AND the climb grab - is skipped.
+					 * Pressing jump on a slope did nothing whatsoever. Measured: a 45
+					 * degree slope reports [46340,-46340,0], giving a dot of -46340
+					 * against the -60000 the test wants.
+					 *
+					 * It worked from the lip of the slope only because the flat floor was
+					 * still a contact there and satisfied this on the slope's behalf.
+					 *
+					 * A surface the climb would accept is by definition one the Alien can
+					 * hold onto, so it is firm enough to launch from. Alien-only: the
+					 * Marine and Predator keep the original footing rule. */
+					if (AvP.PlayerType == I_Alien)
+					{
+						int ny = reportPtr->ObstacleNormal.vy;
+						if (ny < 0) ny = -ny;
+						if (ny < ALIEN_CLIMB_WALL_VY)
+						{
+							notTooSteep = 1;
+							break;
+						}
+					}
+
 					/* skip to next report */
 					reportPtr = reportPtr->NextCollisionReportPtr;
 				}
@@ -982,10 +1049,40 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 					if (AvP.PlayerType == I_Alien)
 					{
 						VECTORCH viewDir;
+						VECTORCH climbNormal = {0,0,0};
 
-						viewDir.vx = Global_VDB_Ptr->VDB_Mat.mat13;
-						viewDir.vy = Global_VDB_Ptr->VDB_Mat.mat23;
-						viewDir.vz = Global_VDB_Ptr->VDB_Mat.mat33;
+						/* The look direction, and the two builds disagree about where it
+						 * lives in VDB_Mat.
+						 *
+						 * Flat takes COLUMN 3 (mat13/23/33), which is right for a matrix
+						 * the engine treats as view->world - RotateVector(v,M) computes
+						 * M^T v and is used for world->view everywhere else.
+						 *
+						 * The VR path builds VDB_Mat from the HMD quaternion and comes out
+						 * with the view axes as ROWS, so the forward is ROW 3. Measured on
+						 * device standing 1.15 m from a wall: probing along row 3 hit it at
+						 * lambda 2528, while column 3 hit something 8 m away. The two differ
+						 * only in the sign of X for a yaw-only view (m13 == -m31), so the
+						 * grab probe was firing MIRRORED and kept finding unrelated geometry
+						 * - walls would only grab when actually touched, since that test
+						 * does not use this vector. Matches the convention recorded for the
+						 * wall-climb view work, which measured the same thing.
+						 *
+						 * Kept per-path rather than picking one: flat is correct as it is,
+						 * and this vector also aims the Predator-style crouch jump below. */
+						#ifdef AVP_XR
+						extern int VR_SessionActive(void);
+						if (VR_SessionActive()) {
+							viewDir.vx = Global_VDB_Ptr->VDB_Mat.mat31;
+							viewDir.vy = Global_VDB_Ptr->VDB_Mat.mat32;
+							viewDir.vz = Global_VDB_Ptr->VDB_Mat.mat33;
+						} else
+						#endif
+						{
+							viewDir.vx = Global_VDB_Ptr->VDB_Mat.mat13;
+							viewDir.vy = Global_VDB_Ptr->VDB_Mat.mat23;
+							viewDir.vz = Global_VDB_Ptr->VDB_Mat.mat33;
+						}
 
 						if (AlienWallClimbing)
 						{
@@ -1001,7 +1098,23 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 								dynPtr->TimeNotInContactWithFloor = -1;
 							}
 						}
-						else if (alienJumpEdge && AlienFacingClimbableWall(dynPtr,&viewDir))
+						/* Grabbing a surface takes FORWARD as well as jump.
+						 *
+						 * On jump alone the grab fires off any climbable surface the probe
+						 * happens to find, so standing near a slope it triggers when you
+						 * did not ask for it and, worse, you end up hunting for the one
+						 * spot where it will - it reads as fiddly rather than deliberate.
+						 * Requiring the stick held forward makes it an explicit "go at that
+						 * surface" instead of a side effect of jumping, and it lets you
+						 * lean into the slope and jump rather than having to be stood
+						 * exactly at its edge.
+						 *
+						 * Rqst_Forward is set from the left stick past its deadzone
+						 * (usr_io.c) exactly as it is from the keyboard's forward key, so
+						 * this reads the same on a controller and at a desk. */
+						else if (alienJumpEdge
+						      && playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Forward
+						      && AlienFacingClimbableWall(dynPtr,&viewDir,&climbNormal))
 						{
 							/* On the floor, facing a wall: grab it and start
 							   climbing rather than hopping. Surface-stick gravity
@@ -1012,6 +1125,28 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 							AlienWallClimbing = 1;
 							AlienClimbLeftFloor = 0;
 							AlienClimbGraceTime = ONE_FIXED; /* ~1 second */
+
+							/* Carry the Alien ONTO the surface it just grabbed.
+							 *
+							 * Setting the flag alone only enables surface-stick gravity,
+							 * and that gravity cannot reorient until something is actually
+							 * touched - so grabbing a wall a metre away left the Alien
+							 * flagged as climbing while stood on the floor, gravity
+							 * straight down, nothing happening, until the grace period
+							 * quietly cancelled it. Measured: gravY pinned at 65536 and
+							 * leftFloor never set, for five seconds after a successful
+							 * grab. The grace period was always meant to cover "reach the
+							 * wall", so give it the means rather than relying on the player
+							 * to walk in during that second.
+							 *
+							 * Along -normal, i.e. into the surface, so it works for a wall,
+							 * an overhang or a ceiling alike. */
+							if (climbNormal.vx || climbNormal.vy || climbNormal.vz) {
+								dynPtr->LinImpulse.vx -= MUL_FIXED(climbNormal.vx, jumpSpeed);
+								dynPtr->LinImpulse.vy -= MUL_FIXED(climbNormal.vy, jumpSpeed);
+								dynPtr->LinImpulse.vz -= MUL_FIXED(climbNormal.vz, jumpSpeed);
+								dynPtr->TimeNotInContactWithFloor = -1;
+							}
 						}
 						else if (alienJumpEdge)
 						{
@@ -1196,6 +1331,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 		   GravityDirection to the contact surface; in open air it reverts to
 		   down after TimeNotInContactWithFloor. */
 		dynPtr->UseStandardGravity = AlienWallClimbing ? 0 : 1;
+
 	}
 
 

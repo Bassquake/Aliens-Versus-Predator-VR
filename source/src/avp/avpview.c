@@ -3964,6 +3964,22 @@ void AvpShowViewsVR(void)
             TEMPLATE_WEAPON_DATA *tw = &TemplateWeapon[wpn->WeaponIDNumber];
 
             if (PlayersWeapon.ObShape || PlayersWeapon.HModelControlBlock) {
+                /* The rig's view scale, computed HERE rather than beside the code that
+                   bakes it in, because the authored-at-hand branch below has to solve the
+                   rig (ProveHModel) to measure its hand anchor - and that solve is the one
+                   that ends up drawn. Applied afterwards, every bone came out at 1/wscale
+                   of its size: measured on device as a forearm of 431 units during a
+                   medicomp/cannon swap against 617 held, with ObMat carrying 1.430 in both
+                   (431 x 1.430 = 616). Only those two weapons take that branch, which is
+                   why every other weapon change looked right.
+                   See the note beside the bake below for what the two factors are. */
+                /* Cosmetic shrink of the first-person weapon. 1.0 = normal. */
+                #define VR_WEAPON_VIEW_SCALE 0.90f
+                float wscale = VR_WEAPON_VIEW_SCALE;
+                int wscale_baked = 0;
+                if (vr_weapon_ref_scale > 0.0f)
+                    wscale *= vr_y_scale / vr_weapon_ref_scale;
+
                 if (is_alien) {
                     /* The claw rig is a first-person HModel: its visible claws are
                      * offset from the model root by PlayersWeaponCameraOffset (the
@@ -4064,6 +4080,25 @@ void AvpShowViewsVR(void)
                        taken from it - the orientation stays the animation's, which is the
                        whole point of this path. */
                     VR_ComputeWeaponAnchor(wpn->WeaponIDNumber, &aw, &am);
+
+                    /* Scale FIRST, then solve. The anchor correction below reads where
+                       the palm landed, so the solve it reads and the rig that is finally
+                       drawn must be at the same scale - and this solve is the drawn one.
+                       Baked here rather than at the usual site further down, which would
+                       be too late; wscale_baked stops that site doing it twice. */
+                    {
+                        MATRIXCH *pm = &PlayersWeapon.ObMat;
+                        pm->mat11 = (int)(pm->mat11 * wscale);
+                        pm->mat12 = (int)(pm->mat12 * wscale);
+                        pm->mat13 = (int)(pm->mat13 * wscale);
+                        pm->mat21 = (int)(pm->mat21 * wscale);
+                        pm->mat22 = (int)(pm->mat22 * wscale);
+                        pm->mat23 = (int)(pm->mat23 * wscale);
+                        pm->mat31 = (int)(pm->mat31 * wscale);
+                        pm->mat32 = (int)(pm->mat32 * wscale);
+                        pm->mat33 = (int)(pm->mat33 * wscale);
+                        wscale_baked = 1;
+                    }
 
                     ProveHModel(ha, &PlayersWeapon);
                     rpalm = VR_FindRightHandSection(ha);
@@ -4253,7 +4288,6 @@ void AvpShowViewsVR(void)
                  * the (now-scaled) barrel bone DoHModel just recomputed. VR-only:
                  * the desktop/HUD weapon paths never run through here. 1.0 =
                  * normal (exact no-op); lower = smaller. Tune to taste. */
-                #define VR_WEAPON_VIEW_SCALE 0.90f
                 {
                     /* Keep the gun a constant on-screen size regardless of the
                      * eyeline/room scale (which recenter recomputes). The hand is
@@ -4261,9 +4295,8 @@ void AvpShowViewsVR(void)
                      * relative to the first-calibration reference: at the reference
                      * this equals VR_WEAPON_VIEW_SCALE (its tuned look), and it
                      * holds that apparent size across recenters. */
-                    float wscale = VR_WEAPON_VIEW_SCALE;
-                    if (vr_weapon_ref_scale > 0.0f)
-                        wscale *= vr_y_scale / vr_weapon_ref_scale;
+                    /* wscale is computed at the top of this block now - see the note
+                       there. The authored-at-hand branch has already baked it in. */
 
                     /* Scale about the GRIP (the controller), not the model origin.
                      * ObWorld sits a fixed offset FORWARD of the grip (the
@@ -4288,6 +4321,7 @@ void AvpShowViewsVR(void)
                     }
 
                     MATRIXCH *wm = &PlayersWeapon.ObMat;
+                    if (!wscale_baked) {
                     wm->mat11 = (int)(wm->mat11 * wscale);
                     wm->mat12 = (int)(wm->mat12 * wscale);
                     wm->mat13 = (int)(wm->mat13 * wscale);
@@ -4297,6 +4331,7 @@ void AvpShowViewsVR(void)
                     wm->mat31 = (int)(wm->mat31 * wscale);
                     wm->mat32 = (int)(wm->mat32 * wscale);
                     wm->mat33 = (int)(wm->mat33 * wscale);
+                    }
                 }
 
                 /* Ease between the hand-held pose and the released (animated) pose.
@@ -4526,6 +4561,7 @@ void AvpShowViewsVR(void)
                         vr_left_rig_drawn = 0;
                         RenderThisDisplayblock(&PlayersWeapon);
                     }
+
                 }
                 if (froze_ti && PlayersWeapon.HModelControlBlock)
                     PlayersWeapon.HModelControlBlock->timer_increment = saved_ti;

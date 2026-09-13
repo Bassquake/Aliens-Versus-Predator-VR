@@ -68,7 +68,7 @@
     <LocalDebuggerWorkingDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">K:/Coding/Aliens-Versus-Predator-VR/source/../build/windows/x64vr</LocalDebuggerWorkingDirectory>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">K:\Coding\Aliens-Versus-Predator-VR\build\windows\x64vr\Release\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">avp.dir\Release\</IntDir>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">avp_x64vr</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">avpvr_x64</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.exe</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateManifest>
@@ -218,7 +218,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying openxr_loader.dll next to avp_x64vr.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avp_x64vr.exe	Copying FFmpeg runtime DLLs next to avpvr_x64.exe	Pruning stale FFmpeg runtime DLLs next to avpvr_x64.exe	Updating assets next to avpvr_x64.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Release
 if %errorlevel% neq 0 goto :cmEnd
@@ -230,6 +230,15 @@ exit /b %1
 if %errorlevel% neq 0 goto :VCEnd
 setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenXR/lib/windows/x64/openxr_loader.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Release
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenAL32/lib/windows/x64/OpenAL32.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Release
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -273,8 +282,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <ImportLibrary>K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x64vr/Release/avp_x64vr.lib</ImportLibrary>
-      <ProgramDataBaseFile>K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Release/avp_x64vr.pdb</ProgramDataBaseFile>
+      <ImportLibrary>K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x64vr/Release/avpvr_x64.lib</ImportLibrary>
+      <ProgramDataBaseFile>K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Release/avpvr_x64.pdb</ProgramDataBaseFile>
       <SubSystem>Console</SubSystem>
     </Link>
     <ProjectReference>

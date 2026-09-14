@@ -1,4 +1,5 @@
 /* KJL 15:17:31 10/12/98 - user profile stuff */
+#include <stddef.h>   /* offsetof, for the short-profile check below */
 #include "list_tem.hpp"
 extern "C"
 {
@@ -8,6 +9,7 @@ extern "C"
 #include "stratdef.h"
 
 #include "avp_userprofile.h"
+#include "padinput.h"
 #include "language.h"
 #include "gammacontrol.h"
 #include <SDL3/SDL.h>
@@ -243,13 +245,40 @@ static int LoadUserProfiles(void)
 		}
 
 		AVP_USER_PROFILE *profilePtr = new AVP_USER_PROFILE;
-			
-		if (fread(profilePtr, 1, sizeof(AVP_USER_PROFILE), rif_file) != sizeof(AVP_USER_PROFILE))
+
+		/* Accept a profile written by an EARLIER version.
+		 *
+		 * This used to demand an exact size match, so the moment the struct gained the
+		 * controller fields every existing .prf stopped loading and simply vanished from
+		 * the profile list, taking the player's settings, key bindings and best times
+		 * with it.
+		 *
+		 * The controller block is appended at the END of the struct (see the note there),
+		 * so an older file is a prefix of the current one: zero the buffer first, read
+		 * whatever the file holds, and the fields it does not reach stay zero. Every one
+		 * of them is stored +1 precisely so that zero reads as "never written" and
+		 * decodes to its default.
+		 *
+		 * The floor is everything up to that block - a file shorter than that is from
+		 * before some earlier field and cannot be interpreted, so it is still rejected.
+		 * A LONGER file (written by a future version) is read up to our size and the
+		 * remainder ignored, which is the same contract in the other direction. */
+		memset(profilePtr, 0, sizeof(AVP_USER_PROFILE));
 		{
-	       		fclose(rif_file);
-			delete[] pszFullPath;
-			delete profilePtr;
-			continue;
+			const size_t minimumSize = offsetof(AVP_USER_PROFILE, UseControllerPlus1);
+			size_t got = fread(profilePtr, 1, sizeof(AVP_USER_PROFILE), rif_file);
+
+			if (got < minimumSize)
+			{
+				fclose(rif_file);
+				delete[] pszFullPath;
+				delete profilePtr;
+				continue;
+			}
+			if (got < sizeof(AVP_USER_PROFILE))
+				SDL_Log("PROFILE: '%s' predates controller support (%u of %u bytes) - "
+				        "loaded, controller settings defaulted",
+				        pszFullPath, (unsigned)got, (unsigned)sizeof(AVP_USER_PROFILE));
 		}
 
 		profilePtr->FileTime = gdf->timestamp;
@@ -299,6 +328,11 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
 	VRMoveDeadzone = 2;
+	UseController = 1;
+	PadVertSensitivity = 10;
+	PadHorizSensitivity = 10;
+	PadInvertVertical = 0;
+	Pad_ResetBindings();
 	VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 	/* Bindings keep whatever main.c initialised them to: those ARE the defaults. */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
@@ -332,6 +366,57 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	SaveSettingsToUserProfile(profilePtr);
 }
 			
+/* Replace a control setting that cannot have come from the menus with its default.
+ *
+ * A profile is an fwrite'n struct read straight back off disk with no version tag and
+ * no checksum, so ANY file in user_profiles is trusted to fill these fields. A .prf
+ * written by a build whose struct layout differed (or simply a truncated or corrupt
+ * one) lands arbitrary ints in them, and they are not inert: the menu turns the mouse
+ * sensitivities into a screen coordinate for the slider graphic, so a wild value used
+ * to crash the game on opening Mouse Configuration rather than merely looking wrong.
+ *
+ * Checked against the same bounds the menu itself enforces - the sliders run 0..
+ * DEFAULT_MOUSE?_SENSITIVITY*3 and the rest are yes/no text sliders - so anything this
+ * rejects was unreachable through the UI and is corruption by definition. Per field
+ * rather than all-or-nothing, since a single bad byte should not discard a whole
+ * profile's settings. */
+static void SanitiseControlMethods(CONTROL_METHODS *cm)
+{
+	if (cm->MouseXSensitivity > (unsigned int)(DEFAULT_MOUSEX_SENSITIVITY*3))
+		cm->MouseXSensitivity = DefaultControlMethods.MouseXSensitivity;
+	if (cm->MouseYSensitivity > (unsigned int)(DEFAULT_MOUSEY_SENSITIVITY*3))
+		cm->MouseYSensitivity = DefaultControlMethods.MouseYSensitivity;
+
+	if (cm->VAxisIsMovement      > 1) cm->VAxisIsMovement      = DefaultControlMethods.VAxisIsMovement;
+	if (cm->HAxisIsTurning       > 1) cm->HAxisIsTurning       = DefaultControlMethods.HAxisIsTurning;
+	if (cm->FlipVerticalAxis     > 1) cm->FlipVerticalAxis     = DefaultControlMethods.FlipVerticalAxis;
+	if (cm->AutoCentreOnMovement > 1) cm->AutoCentreOnMovement = DefaultControlMethods.AutoCentreOnMovement;
+}
+
+/* The joystick equivalent. Every field here is a yes/no toggle except the two
+   trackerball sensitivities, which the 1999 menus never exposed a range for. */
+static void SanitiseJoystickControlMethods(JOYSTICK_CONTROL_METHODS *jm)
+{
+	unsigned int *flags[] = {
+		&jm->JoystickEnabled,
+		&jm->JoystickVAxisIsMovement,     &jm->JoystickHAxisIsTurning,
+		&jm->JoystickFlipVerticalAxis,
+		&jm->JoystickPOVVAxisIsMovement,  &jm->JoystickPOVHAxisIsTurning,
+		&jm->JoystickPOVFlipVerticalAxis,
+		&jm->JoystickRudderEnabled,       &jm->JoystickRudderAxisIsTurning,
+		&jm->JoystickTrackerBallEnabled,  &jm->JoystickTrackerBallFlipVerticalAxis,
+	};
+	unsigned int i;
+
+	for (i = 0; i < sizeof(flags)/sizeof(flags[0]); i++)
+		if (*flags[i] > 1) *flags[i] = 0;
+
+	if (jm->JoystickTrackerBallHorizontalSensitivity > 1000)
+		jm->JoystickTrackerBallHorizontalSensitivity = DefaultJoystickControlMethods.JoystickTrackerBallHorizontalSensitivity;
+	if (jm->JoystickTrackerBallVerticalSensitivity > 1000)
+		jm->JoystickTrackerBallVerticalSensitivity = DefaultJoystickControlMethods.JoystickTrackerBallVerticalSensitivity;
+}
+
 extern void GetSettingsFromUserProfile(void)
 {
 	RequestedGammaSetting = UserProfilePtr->GammaSetting;
@@ -344,6 +429,8 @@ extern void GetSettingsFromUserProfile(void)
 	AlienInputSecondaryConfig = 	UserProfilePtr->AlienInputSecondaryConfig;
 	ControlMethods = 				UserProfilePtr->ControlMethods;
 	JoystickControlMethods = 		UserProfilePtr->JoystickControlMethods;
+	SanitiseControlMethods(&ControlMethods);
+	SanitiseJoystickControlMethods(&JoystickControlMethods);
 	MenuDetailLevelOptions = 		UserProfilePtr->DetailLevelSettings;
 	SmackerSoundVolume =			UserProfilePtr->SmackerSoundVolume;
 	EffectsSoundVolume =			UserProfilePtr->EffectsSoundVolume;
@@ -432,6 +519,45 @@ extern void GetSettingsFromUserProfile(void)
 				        "(older or corrupt profile) - defaults kept", sp);
 		}
 	}
+	/* Game controller. Same all-or-nothing validation as the VR bindings above: an
+	   out-of-range or duplicated set is rejected wholesale rather than half-applied,
+	   because a partly-garbled map is worse than the defaults. */
+	UseController = UserProfilePtr->UseControllerPlus1
+	              ? (UserProfilePtr->UseControllerPlus1 - 1) : 1;
+	if (UseController < 0 || UseController > 1) UseController = 1;
+	PadVertSensitivity  = UserProfilePtr->PadVertSensitivityPlus1
+	                    ? UserProfilePtr->PadVertSensitivityPlus1 - 1 : 10;
+	PadHorizSensitivity = UserProfilePtr->PadHorizSensitivityPlus1
+	                    ? UserProfilePtr->PadHorizSensitivityPlus1 - 1 : 10;
+	PadInvertVertical   = UserProfilePtr->PadInvertVerticalPlus1
+	                    ? UserProfilePtr->PadInvertVerticalPlus1 - 1 : 0;
+	if (PadVertSensitivity  < 0 || PadVertSensitivity  > 20) PadVertSensitivity  = 10;
+	if (PadHorizSensitivity < 0 || PadHorizSensitivity > 20) PadHorizSensitivity = 10;
+	if (PadInvertVertical   < 0 || PadInvertVertical   > 1)  PadInvertVertical   = 0;
+	for (int psp = 0; psp < PAD_SPECIES_COUNT; psp++)
+	{
+		int candidate[PAD_ACT_COUNT];
+		int ok = 1, i;
+
+		for (i = 0; i < PAD_ACT_COUNT; i++)
+		{
+			int stored = (i < 12) ? UserProfilePtr->PadBindingPlus1[psp][i] : 0;
+			candidate[i] = stored ? stored - 1 : PadBinding[psp][i];
+			if (candidate[i] < 0 || candidate[i] >= PAD_SRC_COUNT) ok = 0;
+		}
+		/* Duplicates are NOT rejected here, unlike the VR set.
+		   The VR menus cycle through bindings with VR_CycleBinding, which skips a source
+		   already in use, so a duplicate there can only mean a corrupt profile. These
+		   rows are plain TEXTSLIDERs that cycle every source, so a player can deliberately
+		   put two actions on one button - and rejecting that on load would silently throw
+		   away their whole map on the next launch. Sharing a button is harmless: both
+		   actions simply fire. */
+		if (ok)
+			for (i = 0; i < PAD_ACT_COUNT; i++) PadBinding[psp][i] = candidate[i];
+		else
+			SDL_Log("PROFILE: controller button bindings for species %d were not usable "
+			        "(older or corrupt profile) - defaults kept", psp);
+	}
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
 	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
 	GodModeCheatEnabled =			UserProfilePtr->GodModeCheat;
@@ -491,6 +617,16 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)
 			for (i = 0; i < VR_ACT_COUNT && i < 12; i++)
 				profilePtr->VRBindingPlus1[sp][i] = (unsigned char)(VRBinding[sp][i] + 1);
+	}
+	profilePtr->UseControllerPlus1 =	(unsigned char)(UseController + 1);
+	profilePtr->PadVertSensitivityPlus1 =	(unsigned char)(PadVertSensitivity + 1);
+	profilePtr->PadHorizSensitivityPlus1 =	(unsigned char)(PadHorizSensitivity + 1);
+	profilePtr->PadInvertVerticalPlus1 =	(unsigned char)(PadInvertVertical + 1);
+	{
+		int sp, i;
+		for (sp = 0; sp < PAD_SPECIES_COUNT; sp++)
+			for (i = 0; i < PAD_ACT_COUNT && i < 12; i++)
+				profilePtr->PadBindingPlus1[sp][i] = (unsigned char)(PadBinding[sp][i] + 1);
 	}
 	profilePtr->VRVignetteStrength =	VRVignetteStrength;
 	profilePtr->GiveAllWeaponsCheat =	GiveAllWeaponsCheatEnabled;

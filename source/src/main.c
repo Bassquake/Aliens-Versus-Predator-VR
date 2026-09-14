@@ -87,6 +87,7 @@
 #include "player.h"
 #include "mempool.h"
 #include "avpview.h"
+#include "padinput.h"
 #include "consbind.hpp"
 #include "progress_bar.h"
 #include "scrshot.hpp"
@@ -143,9 +144,163 @@ SDL_GLContext context;
 SDL_Surface *surface;
 
 SDL_Joystick *joy;
-#ifdef __ANDROID__
-static SDL_Gamepad *gamepad = NULL; /* Quest Touch controllers via gamepad API */
-#endif
+/* Not Android-only any more: the flat desktop builds open a pad through the same
+   handle so any controller gets SDL's standard layout (see padinput.h). */
+static SDL_Gamepad *gamepad = NULL;
+
+/* ---- Game controller support for the flat builds (see padinput.h) ------------- */
+
+/* Controls > Joystick Configuration > Use Controller. On by default: a pad that is
+   plugged in should simply work. Stored per profile. */
+int UseController = 1;
+
+/* Xbox-style layout, which SDL maps every other pad onto. In PAD_ACTION order:
+     fire primary   right trigger
+     fire secondary left trigger
+     jump           B
+     crouch         left stick click
+     use            A
+     vision         Y
+     taunt          X
+     special        left shoulder      (Marine jetpack / Predator recall disc)
+     flare          dpad left          (Marine only)
+     next weapon    dpad up
+     prev weapon    dpad down
+     zoom           right stick click  (Predator only)
+
+   The dpad is the items cluster: up/down cycle weapons and left throws a flare, so
+   weapon changes never need a thumb off the sticks for long. Crouch is the left stick
+   click, where a modern shooter puts it and the only control left once A, B, X and Y
+   are spoken for. A and B double as Enter and Back in the MENUS, but that mapping is
+   separate and menu-only, so there is no conflict with Use and Jump in play.
+   Both shoulders except the left, dpad right and Back are deliberately left free. */
+#define PAD_BINDING_DEFAULTS { PAD_SRC_RTRIGGER, PAD_SRC_LTRIGGER, PAD_SRC_B, PAD_SRC_LSTICK, PAD_SRC_A, PAD_SRC_Y, PAD_SRC_X, PAD_SRC_LSHOULDER, PAD_SRC_DPAD_LEFT, PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, PAD_SRC_RSTICK }
+
+/* Same layout for all three species - the buttons a player reaches for should not move
+   when they change character. Only the ACTIONS differ, which is what the three menus
+   show: SPECIAL is the Marine's jetpack and the Predator's recall disc, and FLARE is
+   Marine-only, so the Alien simply leaves those two unbound. */
+int PadBinding[PAD_SPECIES_COUNT][PAD_ACT_COUNT] = {
+    PAD_BINDING_DEFAULTS,   /* I_Marine   */
+    PAD_BINDING_DEFAULTS,   /* I_Predator */
+    PAD_BINDING_DEFAULTS    /* I_Alien    */
+};
+const int PadBindingDefault[PAD_SPECIES_COUNT][PAD_ACT_COUNT] = {
+    PAD_BINDING_DEFAULTS,
+    PAD_BINDING_DEFAULTS,
+    PAD_BINDING_DEFAULTS
+};
+
+/* Right-stick look. 10 = 1.0x, so a fresh profile's zero would mean "no look at all" -
+   hence these are stored +1 in the profile like every other field taken from Padding. */
+int PadVertSensitivity  = 10;
+int PadHorizSensitivity = 10;
+int PadInvertVertical   = 0;
+
+void Pad_ResetBindings(void)
+{
+    int sp, a;
+    for (sp = 0; sp < PAD_SPECIES_COUNT; sp++)
+        for (a = 0; a < PAD_ACT_COUNT; a++)
+            PadBinding[sp][a] = PadBindingDefault[sp][a];
+}
+
+/* Right-stick look, handed to usr_io.c which turns it into the same turn/pitch requests
+   the joystick and mouse produce. Stored rather than applied here because this runs in
+   the input poll, before the player's request flags are assembled. */
+float PadLookX = 0.0f, PadLookY = 0.0f;
+float PadMoveX = 0.0f, PadMoveY = 0.0f;
+void Pad_ApplyLook(float turn, float pitch) { PadLookX = turn; PadLookY = pitch; }
+void Pad_ApplyMove(float strafe, float forward) { PadMoveX = strafe; PadMoveY = forward; }
+
+int Pad_IsActive(void)
+{
+    return (UseController && gamepad != NULL);
+}
+
+/* Raw state of one source. Triggers are analogue, so they get a threshold - past half
+   travel counts as pressed, which is where a shooter's trigger normally breaks. */
+static int Pad_SourceLevel(int src)
+{
+    if (!Pad_IsActive() || src <= PAD_SRC_NONE || src >= PAD_SRC_COUNT) return 0;
+
+    switch (src) {
+        case PAD_SRC_A:          return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_SOUTH);
+        case PAD_SRC_B:          return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_EAST);
+        case PAD_SRC_X:          return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_WEST);
+        case PAD_SRC_Y:          return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_NORTH);
+        case PAD_SRC_LSHOULDER:  return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+        case PAD_SRC_RSHOULDER:  return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+        case PAD_SRC_LSTICK:     return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_LEFT_STICK);
+        case PAD_SRC_RSTICK:     return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_RIGHT_STICK);
+        case PAD_SRC_DPAD_UP:    return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_UP);
+        case PAD_SRC_DPAD_DOWN:  return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+        case PAD_SRC_DPAD_LEFT:  return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+        case PAD_SRC_DPAD_RIGHT: return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+        case PAD_SRC_START:      return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_START);
+        case PAD_SRC_BACK:       return SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_BACK);
+        case PAD_SRC_LTRIGGER:
+            return SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16384;
+        case PAD_SRC_RTRIGGER:
+            return SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16384;
+        default: return 0;
+    }
+}
+
+/* Which actions fire once per press rather than while held. Same split as the VR table:
+   it is a property of the ACTION, not of the control - binding weapon-cycle to a trigger
+   must still step one weapon per pull. */
+static int Pad_ActionIsTap(int action)
+{
+    switch (action) {
+        case PAD_ACT_FLARE:
+        case PAD_ACT_TAUNT:
+        case PAD_ACT_OPERATE:
+        /* VISION is an edge because the Predator's ChangePredatorVisionMode has no
+           debounce of its own (see usr_io.c) - held as a level it would cycle through
+           every mode each frame. The Marine and Alien reach it through Rqst_ChangeVision,
+           which does debounce internally, so a single pulse per press suits all three. */
+        case PAD_ACT_VISION:
+        case PAD_ACT_ZOOM:
+        case PAD_ACT_NEXT_WEAPON:
+        case PAD_ACT_PREV_WEAPON:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+int Pad_Action(int action)
+{
+    extern int GlobalFrameCounter;
+    /* Edges are recomputed ONCE per frame and then read from the table, so several sites
+       reading the same action in one frame all see it. Consuming on first read would give
+       it to whichever ran first. Same approach as VR_Action. */
+    static int prevLevel[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+    static int edgeThisFrame[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+    static int lastFrame = -1;
+    int sp = (int)AvP.PlayerType;
+
+    if (action < 0 || action >= PAD_ACT_COUNT) return 0;
+
+    if (GlobalFrameCounter != lastFrame) {
+        int a;
+        lastFrame = GlobalFrameCounter;
+        for (a = 0; a < PAD_ACT_COUNT; a++) {
+            int s2;
+            for (s2 = 0; s2 < PAD_SPECIES_COUNT; s2++) {
+                int lv = Pad_SourceLevel(PadBinding[s2][a]);
+                edgeThisFrame[s2][a] = (lv && !prevLevel[s2][a]);
+                prevLevel[s2][a] = lv;
+            }
+        }
+    }
+
+    if (sp < 0 || sp >= PAD_SPECIES_COUNT) sp = 0;
+    if (Pad_ActionIsTap(action)) return edgeThisFrame[sp][action];
+    return Pad_SourceLevel(PadBinding[sp][action]);
+}
+
 JOYINFOEX JoystickData;
 JOYCAPS JoystickCaps;
 
@@ -177,7 +332,9 @@ static int WantMouseGrab = 1;
 // Additional configuration
 int WantSound = 1;
 static int WantCDRom = 1;
-static int WantJoystick = 0;
+/* Look for a controller unless -j/--nojoy says otherwise. Was 0, which is why the flat
+   builds never opened one; the player-facing switch is UseController (padinput.h). */
+static int WantJoystick = 1;
 /* Run a VR-capable build on the flat desktop path (-noxr / --flat / AVP_NO_XR).
    Needed because the "no headset, fall back to flat" path only covers OpenXR
    calls that FAIL: xrCreateSession is allowed to block while the runtime brings
@@ -4101,6 +4258,45 @@ int axes, balls, hats;
     }
 #endif
 
+    /* Game controller: left stick moves, right stick looks.
+     *
+     * Fed into the same JoystickData the 1999 joystick code consumes, so every option in
+     * Joystick Configuration (invert, axis assignment, sensitivity) keeps working and
+     * nothing downstream needs to know a pad is involved. X/Y is the LEFT stick, which is
+     * what the movement path reads; the right stick is applied here as look, since the
+     * old code had no second stick and used a "rudder" axis instead.
+     *
+     * Deadzones are applied per stick and RESCALED, not clipped, so there is no jump as
+     * the stick leaves the dead area. */
+    if (Pad_IsActive()) {
+        const float DEAD = 0.20f;
+        float lx = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX)  / 32767.0f;
+        float ly = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY)  / 32767.0f;
+        float rx = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0f;
+        float ry = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0f;
+
+        #define PAD_DEADZONE(v) do {             float m = (v) < 0.0f ? -(v) : (v);             if (m <= DEAD) (v) = 0.0f;             else { m = (m - DEAD) / (1.0f - DEAD); (v) = ((v) < 0.0f) ? -m : m; }         } while (0)
+        PAD_DEADZONE(lx); PAD_DEADZONE(ly);
+        PAD_DEADZONE(rx); PAD_DEADZONE(ry);
+        #undef PAD_DEADZONE
+
+        /* Both sticks are applied DIRECTLY (usr_io.c turns these into movement and look
+           requests) rather than being poured into JoystickData.
+           
+           JoystickData runs through JoystickHAxisIsTurning / JoystickVAxisIsMovement,
+           which decide whether the horizontal axis turns or strafes and whether the
+           vertical moves or looks. Those are 1999 flight-stick options, they are no
+           longer shown in the menu, and whatever value a profile happens to carry would
+           silently rearrange the pad. Applying the sticks here fixes the layout:
+           left = move (strafe on X, forward/back on Y), right = look.
+
+           Y is negated so forward is positive: SDL reports a stick pushed forward as
+           negative on both sticks. PadLookY keeps SDL's sign because usr_io.c reads
+           positive as "look down", which is what pulling the stick back should do. */
+        Pad_ApplyMove(lx, -ly);
+        Pad_ApplyLook(rx, ry);
+    }
+
     if (joy == NULL) {
         return;
     }
@@ -4908,6 +5104,37 @@ int InitSDL()
     WantJoystick = 1;
     extern void VR_InitJoystickConfig(void);
     VR_InitJoystickConfig();
+#endif
+#ifndef __ANDROID__
+    /* Flat desktop: look for a game controller too.
+     *
+     * WantJoystick defaulted to 0 and was only forced on for VR, so a plugged-in pad was
+     * never opened and the desktop builds had no controller support at all. The gamepad
+     * API is tried FIRST because it gives every pad the same layout - Xbox, DualSense,
+     * Switch Pro all report A/B/X/Y, shoulders, triggers and dpad in the same places, so
+     * a binding means the same thing whatever is plugged in. The raw joystick path below
+     * still runs for anything SDL has no mapping for.
+     *
+     * Opening a device is harmless when the player has Use Controller off; Pad_IsActive()
+     * gates every read on the setting. -j / --nojoy still suppresses the lot. */
+    if (WantJoystick) {
+        SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+        {
+            int gp_count = 0;
+            SDL_JoystickID *gp_ids = SDL_GetGamepads(&gp_count);
+            if (gp_ids && gp_count > 0) {
+                gamepad = SDL_OpenGamepad(gp_ids[0]);
+                if (gamepad) {
+                    GotJoystick = 1;
+                    JoystickCaps.wCaps = 0;
+                    JoystickData.dwXpos = 32768;
+                    JoystickData.dwYpos = 32768;
+                    JoystickData.dwPOV  = (DWORD) -1;
+                }
+            }
+            SDL_free(gp_ids);
+        }
+    }
 #endif
 #ifdef __ANDROID__
     /* Use the SDL3 gamepad API — Quest Touch controllers are presented as
@@ -6009,7 +6236,10 @@ void CheckForWindowsMessages()
                 SDL_StopTextInput(window);
                 exit(0); //TODO
                 break;
-#ifdef __ANDROID__
+/* Hot-plug, on EVERY target. These were Android-only, so on desktop a pad
+   connected after launch was never opened, and one unplugged was never closed
+   nor the handle cleared - leaving Pad_IsActive() true against a device that
+   had gone. */
             case SDL_EVENT_GAMEPAD_ADDED:
                 if (!gamepad) {
                     gamepad = SDL_OpenGamepad(event.gdevice.which);
@@ -6029,7 +6259,6 @@ void CheckForWindowsMessages()
                     GotJoystick = 0;
                 }
                 break;
-#endif
             case SDL_EVENT_JOYSTICK_ADDED:
                 /* Open the first controller that connects if we don't have one yet. */
                 if (WantJoystick && !joy && !GotJoystick) {
@@ -6082,6 +6311,127 @@ void CheckForWindowsMessages()
         MouseVelY = 0;
     }
     
+    /* Game controller drives the MENUS as well as the game.
+     *
+     * The menu system reads the arrow keys, Enter and Escape, so the pad is translated
+     * into those rather than taught about menus: left stick and dpad move the
+     * selection and change a setting, A confirms, B goes back. The menu's own
+     * InputIsDebounced / KeyDepressedCounter then give first-press and auto-repeat for
+     * free, which is why the levels are driven as well as the debounced edges.
+     *
+     * Gated on a menu actually being up, because these are REAL key slots: driving
+     * KEY_UP during play would press whatever the player has bound to it. And when the
+     * menu closes every key this block drove is RELEASED - a synthetic key with no
+     * physical counterpart has no key-up of its own, and one left set is exactly how
+     * the 2D VR menu once jammed Operate on for a whole session. */
+    /* Any controller button counts as "any key".
+     *
+     * The credits, the intro logos and the "press any key to continue" waits all spin on
+     * `while (!DebouncedGotAnyKey)`, which is raised by a real key event, by a raw
+     * JOYSTICK button, or by the VR controller block - none of which fire for a gamepad.
+     * On desktop the pad is opened through the gamepad API, so `joy` is NULL and the raw
+     * joystick loop below reads nothing: the credits could not be skipped with a pad and
+     * sat there until they finished.
+     *
+     * Raised on the rising edge only, so holding a button does not re-trigger the next
+     * wait the instant it starts. Triggers included - they are buttons to a player even
+     * though SDL reports them as axes. This matches what a raw joystick button has always
+     * done here. */
+    if (Pad_IsActive()) {
+        static int padAnyPrev = 0;
+        int anyNow = 0;
+        int b;
+
+        for (b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; b++) {
+            if (SDL_GetGamepadButton(gamepad, (SDL_GamepadButton)b)) { anyNow = 1; break; }
+        }
+        if (!anyNow) {
+            if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER)  > 16384) anyNow = 1;
+            if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16384) anyNow = 1;
+        }
+
+        if (anyNow) {
+            if (!padAnyPrev) DebouncedGotAnyKey = 1;
+            GotAnyKey = 1;
+        }
+        padAnyPrev = anyNow;
+    }
+
+    /* Start / Menu opens the in-game menu.
+     *
+     * The pad's Windows button 8 on an Xbox pad, and the button every console shooter
+     * pauses with. AvP_TriggerInGameMenus reads
+     * DebouncedKeyboardInput[FixedInputConfig.PauseGame], which is KEY_ESCAPE, so pulse
+     * that - the same route the Quest's left menu button takes.
+     *
+     * ONLY the debounced edge is set, never the level: KEY_ESCAPE has no physical key-up
+     * here to clear it, and a latched Escape would re-open the menu every frame. And only
+     * while no menu is up, because in a menu B is already Back and Start would otherwise
+     * fight it. */
+    if (Pad_IsActive() && !AnyMenusAreRunning()) {
+        static int padStartPrev = 0;
+        int startNow = SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_START);
+
+        if (startNow && !padStartPrev)
+            DebouncedKeyboardInput[KEY_ESCAPE] = 1;
+        padStartPrev = startNow;
+    }
+
+    {
+        static int padMenuKeysHeld = 0;
+        static int padMenuKeys[6] = {0,0,0,0,0,0};
+        int inMenus = Pad_IsActive() && AnyMenusAreRunning();
+
+        if (inMenus) {
+            const float NAV = 0.5f;
+            float lx = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0f;
+            float ly = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY) / 32767.0f;
+            /* Stick Y is negative when pushed forward. */
+            int up    = (ly < -NAV) || SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_UP);
+            int down  = (ly >  NAV) || SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+            int left  = (lx < -NAV) || SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+            int right = (lx >  NAV) || SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+            int enter = SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_SOUTH); /* A */
+            int back  = SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_EAST);  /* B */
+
+            /* SET what the pad is pressing, but only ever CLEAR what the pad itself set
+               last frame. Assigning these outright overwrote the keyboard's own state
+               with the pad's - which is zero whenever the pad is not being touched - so
+               the keyboard stopped working in menus entirely. The VR build assigns
+               directly and gets away with it because a headset has no keyboard to
+               clobber. */
+            const int keys[6]  = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_CR, KEY_ESCAPE };
+            const int state[6] = { up, down, left, right, enter, back };
+            int k;
+
+            for (k = 0; k < 6; k++) {
+                if (state[k]) {
+                    if (!KeyboardInput[keys[k]]) DebouncedKeyboardInput[keys[k]] = 1;
+                    KeyboardInput[keys[k]] = 1;
+                    GotAnyKey = 1;
+                }
+                else if (padMenuKeys[k]) {
+                    /* Released, and it was ours - hand the slot back. */
+                    KeyboardInput[keys[k]] = 0;
+                }
+                padMenuKeys[k] = state[k];
+            }
+            padMenuKeysHeld = 1;
+        }
+        else if (padMenuKeysHeld) {
+            /* Menu closed: release only the keys the pad still holds. A synthetic key has
+               no physical key-up of its own, and one left set is how the 2D VR menu once
+               jammed Operate on for a whole session. */
+            const int keys[6] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_CR, KEY_ESCAPE };
+            int k;
+            for (k = 0; k < 6; k++) {
+                if (padMenuKeys[k]) KeyboardInput[keys[k]] = 0;
+                padMenuKeys[k] = 0;
+            }
+            padMenuKeysHeld = 0;
+        }
+    }
+
     if (GotJoystick) {
         float numbuttons;
         int x;

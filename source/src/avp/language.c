@@ -239,6 +239,40 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BINDSRC_RSTICKUP:   return "Right Stick Up";
 			case TEXTSTRING_BINDSRC_RSTICKDOWN: return "Right Stick Down";
 			case TEXTSTRING_BINDSRC_RSTICKCLICK:return "Right Stick Click";
+
+			/* Flat-build game controller. Face buttons are named by POSITION as SDL
+			   reports them (A = bottom, B = right, X = left, Y = top), which is what
+			   an Xbox pad is labelled; a DualSense player reads A as cross, B as
+			   circle and so on, in the same places. */
+			case TEXTSTRING_JOYSTICKCONTROLS_USECONTROLLER:      return "Use Controller";
+			case TEXTSTRING_JOYSTICKCONTROLS_USECONTROLLER_HELP: return "Use a connected game controller (Xbox, PlayStation, or any pad the system recognises).";
+			case TEXTSTRING_PADBIND_HELP:       return "Choose which controller button performs this action.";
+			case TEXTSTRING_PADSRC_NONE:        return "None";
+			case TEXTSTRING_PADSRC_A:           return "A / Cross";
+			case TEXTSTRING_PADSRC_B:           return "B / Circle";
+			case TEXTSTRING_PADSRC_X:           return "X / Square";
+			case TEXTSTRING_PADSRC_Y:           return "Y / Triangle";
+			case TEXTSTRING_PADSRC_LSHOULDER:   return "Left Shoulder";
+			case TEXTSTRING_PADSRC_RSHOULDER:   return "Right Shoulder";
+			case TEXTSTRING_PADSRC_LTRIGGER:    return "Left Trigger";
+			case TEXTSTRING_PADSRC_RTRIGGER:    return "Right Trigger";
+			case TEXTSTRING_PADSRC_LSTICK:      return "Left Stick Click";
+			case TEXTSTRING_PADSRC_RSTICK:      return "Right Stick Click";
+			case TEXTSTRING_PADSRC_DPADUP:      return "D-Pad Up";
+			case TEXTSTRING_PADSRC_DPADDOWN:    return "D-Pad Down";
+			case TEXTSTRING_PADSRC_DPADLEFT:    return "D-Pad Left";
+			case TEXTSTRING_PADSRC_DPADRIGHT:   return "D-Pad Right";
+			case TEXTSTRING_PADSRC_START:       return "Start";
+			case TEXTSTRING_PADSRC_BACK:        return "Back / Select";
+			case TEXTSTRING_PADSENSITIVITY:      return "Sensitivity";
+			case TEXTSTRING_PADSENSITIVITY_HELP: return "How far the right stick turns or looks on this axis.";
+			case TEXTSTRING_PADVERTSENSITIVITY:  return "Vertical Sensitivity";
+			case TEXTSTRING_PADHORIZSENSITIVITY: return "Horizontal Sensitivity";
+			case TEXTSTRING_PADCONFIG_HELP:      return "Choose which controller button performs each action for this species.";
+			case TEXTSTRING_ALIENPADCONFIG_TITLE:    return "Alien Configuration";
+			case TEXTSTRING_MARINEPADCONFIG_TITLE:   return "Marine Configuration";
+			case TEXTSTRING_PREDATORPADCONFIG_TITLE: return "Predator Configuration";
+			case TEXTSTRING_BIND_ZOOM:               return "Zoom";
 			case TEXTSTRING_USERPROFILE_HELP_VR: return "Press X or A button to auto-select a name and again to Continue.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press A to select a profile, or B to delete a profile.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";

@@ -159,6 +159,22 @@ typedef struct
 	unsigned char ReservedWasVRLeftHanded; //Left-Handed Mode, removed - byte kept so the blob layout does not shift
 	unsigned char VRMoveDeadzonePlus1;    //0=unset->2
 	unsigned char VRWorldScaleIndexPlus1; //0=unset->VR_WORLD_SCALE_DEFAULT_INDEX
+	/* Flat-build game controller (padinput.h). Both stored +1 so that ZERO - which is
+	   what every profile written before this existed has here - means "not set" and
+	   decodes to the default, exactly as the VR fields above do.
+
+	   Sized by the literal 11, not PAD_ACT_COUNT: this header is included where
+	   padinput.h is not, and the profile is an fwrite'n blob whose layout must not
+	   depend on which headers happen to be visible. The static assert in
+	   avp_userprofile.cpp keeps the two in step.
+
+	   The fields themselves are APPENDED AT THE END of this struct, not placed here -
+	   see the block after PersonalBests. Putting them here was tried and is exactly
+	   the mistake documented there: it shifts every field below, so a .prf written by
+	   such a build reads back 48 bytes out of step and lands arbitrary ints in
+	   ControlMethods. That is not merely wrong-looking, it crashed the Mouse
+	   Configuration menu, because the sliders turn those ints into screen
+	   coordinates. Padding[12] therefore stays exactly where it is. */
 	char Padding[12];
 
 	int CDPlayerVolume;
@@ -184,6 +200,27 @@ typedef struct
 	/* This feels a bit bloaty. */
 	AvP_GameStats_Stored PersonalBests[I_MaxDifficulties][AVP_ENVIRONMENT_END_OF_LIST];
 	/* Yes, it contains impossible!  So sue me! */
+
+	/* ---- Game controller (padinput.h). APPENDED AT THE END, deliberately. -----------
+	 *
+	 * Everything above this point is byte-for-byte what earlier versions wrote, so a
+	 * profile saved before controller support is simply a SHORT version of this struct.
+	 * LoadUserProfiles zeroes the buffer and accepts a short read, which leaves these
+	 * fields zero - and every one is stored +1 so that zero means "never written" and
+	 * decodes to its default. An upgraded player keeps their profile, their key
+	 * bindings and their best times, and gets the shipped controller defaults.
+	 *
+	 * These were first put where Padding[12] is, which shifted every field after it and
+	 * made old profiles unreadable. Do not do that: new fields go HERE, at the end.
+	 * Padding[12] is still available for anything that must sit in the old region. */
+	unsigned char UseControllerPlus1;         //0=unset->1 (on)
+	/* Per species, sized by the literals 3 and 12 with slack, like VRBindingPlus1. */
+	unsigned char PadBindingPlus1[3][12];
+	unsigned char ReservedWasPadSensitivity;  //overall "Sensitivity", removed
+	unsigned char PadVertSensitivityPlus1;    //0=unset->10
+	unsigned char PadHorizSensitivityPlus1;   //0=unset->10
+	unsigned char PadInvertVerticalPlus1;     //0=unset->0 (off)
+	char PadReserved[16];                     //room for the next option
 
 } AVP_USER_PROFILE;
 

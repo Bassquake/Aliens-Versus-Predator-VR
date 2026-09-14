@@ -127,6 +127,13 @@ enum AVPMENU_ID
 	AVPMENU_PREDATORCONTROLLERCONFIG,
 	AVPMENU_ALIENCONTROLLERCONFIG,
 
+	/* Game controller button maps, one screen per species (padinput.h). Appended, and
+	   AvPMenusData[] is indexed BY THIS ENUM, so new entries must be added to the end of
+	   both together. */
+	AVPMENU_ALIENPADCONFIG,
+	AVPMENU_MARINEPADCONFIG,
+	AVPMENU_PREDATORPADCONFIG,
+
 };
 
 enum AVPMENU_FONT_ID
@@ -206,6 +213,7 @@ enum AVPMENU_ELEMENT_ID
 
 	AVPMENU_ELEMENT_SAVESETTINGS,
 	AVPMENU_ELEMENT_RESETVRBINDINGS,
+	AVPMENU_ELEMENT_RESETPADBINDINGS,
 
 	AVPMENU_ELEMENT_SAVEGAME,
 	AVPMENU_ELEMENT_LOADGAME,
@@ -372,6 +380,7 @@ int AvP_MainMenus(void);
 int AvP_InGameMenus(void);
 
 int InGameMenusAreRunning(void);
+int AnyMenusAreRunning(void);
 
 void RenderBriefingText(int centreY, int brightness);
 void GetFilenameForSaveSlot(int i, unsigned char *filenamePtr);

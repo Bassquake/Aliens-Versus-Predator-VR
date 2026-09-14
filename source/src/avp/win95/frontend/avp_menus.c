@@ -11,6 +11,7 @@
 
 #include "avp_menudata.h"
 #include "avp_menus.h"
+#include "padinput.h"
 #include "avp_envinfo.h"
 
 #include "hud_layout.h"
@@ -62,6 +63,7 @@ extern void MakeSelectSessionMenu(void);
 
 extern void MakeInGameMenu(void);
 extern void MakeVRConfigMenu(int inGame);
+extern void MakeJoystickConfigMenu(int inGame);
 extern void MakeMarineKeyConfigMenu(void);
 extern void MakePredatorKeyConfigMenu(void);
 extern void MakeAlienKeyConfigMenu(void);
@@ -622,6 +624,15 @@ int InGameMenusAreRunning(void)
 {
 	return (AvPMenus.MenusState == MENUSSTATE_INGAMEMENUS);
 }
+
+/* Any menu at all - the frontend as well as the in-game one. Used to decide when a game
+   controller should drive the menu rather than the player, since the two want the same
+   buttons for different things. */
+int AnyMenusAreRunning(void)
+{
+	return (AvPMenus.MenusState == MENUSSTATE_MAINMENUS
+	     || AvPMenus.MenusState == MENUSSTATE_INGAMEMENUS);
+}
 extern void AvP_UpdateMenus(void)
 {
 //      DrawAvPMenuGfx(AVPMENUGFX_BIG_AVP_LOGO,50,50,16384);
@@ -1106,6 +1117,7 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 			break;
 		}
 
+
 		case AVPMENU_INGAME:
 		case AVPMENU_INNETGAME:
 		{
@@ -1155,6 +1167,10 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 		case AVPMENU_JOYSTICKCONTROLS:
 		{
 			PlayerJoystickControlMethods = JoystickControlMethods;
+			/* Rebuilt on open so it reflects the species being played right now: in a
+			   level only that species' button map is offered, the other two being noise
+			   at that point. */
+			MakeJoystickConfigMenu(AvPMenus.MenusState == MENUSSTATE_INGAMEMENUS);
 			break;
 		}
 
@@ -3767,6 +3783,41 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 			}
 			break;
 		}
+		case AVPMENU_ELEMENT_RESETPADBINDINGS:
+		{
+			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
+			{
+				/* Species taken from the MENU being shown, as the VR reset above does,
+				   because these are reachable from the main menu where there is no
+				   current species. From Joystick Configuration itself the row resets
+				   ALL THREE, which is what "Reset To Defaults" on a parent screen
+				   should mean. Live only until Use These Settings, again like the VR
+				   rows. */
+				int sp = -1;
+				switch (AvPMenus.CurrentMenu)
+				{
+					case AVPMENU_MARINEPADCONFIG:   sp = I_Marine;   break;
+					case AVPMENU_PREDATORPADCONFIG: sp = I_Predator; break;
+					case AVPMENU_ALIENPADCONFIG:    sp = I_Alien;    break;
+					default: break;
+				}
+				if (sp >= 0)
+				{
+					int i;
+					for (i = 0; i < PAD_ACT_COUNT; i++)
+						PadBinding[sp][i] = PadBindingDefault[sp][i];
+				}
+				else
+				{
+					Pad_ResetBindings();
+					PadVertSensitivity  = 10;
+					PadHorizSensitivity = 10;
+					PadInvertVertical   = 0;
+					UseController       = 1;
+				}
+			}
+			break;
+		}
 		case AVPMENU_ELEMENT_SAVESETTINGS:
 		{
 			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
@@ -3879,6 +3930,7 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 		case AVPMENU_ELEMENT_RESTARTGAME:
 		case AVPMENU_ELEMENT_KEYCONFIGOK:
 		case AVPMENU_ELEMENT_RESETVRBINDINGS:
+		case AVPMENU_ELEMENT_RESETPADBINDINGS:
 		case AVPMENU_ELEMENT_RESETKEYCONFIG:
 		case AVPMENU_ELEMENT_STARTMARINEDEMO:
 		case AVPMENU_ELEMENT_STARTPREDATORDEMO:
@@ -4260,7 +4312,27 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 		case AVPMENU_ELEMENT_SLIDER:
 		{
 			int x = MENU_CENTREX+MENU_ELEMENT_SPACING+3;
-			x+=(201*(*elementPtr->c.SliderValuePtr))/elementPtr->b.MaxSliderValue;
+			/* Clamp to the slider's own range before it becomes a screen coordinate.
+			 *
+			 * The value comes from a user profile, which is an fwrite'n blob read
+			 * straight off disk - so a corrupt or foreign .prf puts an arbitrary int
+			 * here. Unclamped, the multiply below overflows and x lands far outside
+			 * the 640x480 menu surface, and DrawAvPMenuGfx writes through it: a hard
+			 * crash on merely OPENING the menu, before the player touches anything.
+			 * (Seen with a profile written by a build whose struct layout differed:
+			 * mouse sensitivity read back as 858869327 against a maximum of 192.)
+			 *
+			 * Clamping only the drawn position, not the stored value - a bad value is
+			 * a load-time problem and is corrected there; this is the last line of
+			 * defence so that no value reachable from a file can scribble over memory. */
+			{
+				int sv  = *elementPtr->c.SliderValuePtr;
+				int max = elementPtr->b.MaxSliderValue;
+				if (max < 1) max = 1;
+				if (sv < 0)   sv = 0;
+				if (sv > max) sv = max;
+				x += (201*sv)/max;
+			}
 			RenderText(GetTextString(elementPtr->a.TextDescription),MENU_CENTREX-MENU_ELEMENT_SPACING,y,elementPtr->Brightness,AVPMENUFORMAT_RIGHTJUSTIFIED);
 
 			/* World Scale prints its actual value next to the bar. A bare bar is fine

@@ -29,7 +29,8 @@
 #include "ahudgadg.hpp"
 #include "avp_menus.h"
 #include <SDL3/SDL.h>
-#include "opengl.h"   /* VR_Action and the VR_ACT_* bindings */
+#include "opengl.h"
+#include "padinput.h"   /* VR_Action and the VR_ACT_* bindings */
 
 extern int InGameMenusAreRunning(void);
 extern void AvP_TriggerInGameMenus(void);
@@ -963,6 +964,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		#ifdef AVP_XR
 		 ||VR_Action(VR_ACT_CROUCH)
 		#endif
+		 ||Pad_Action(PAD_ACT_CROUCH)
 		)
 			playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Crouch = 1;
 		
@@ -971,6 +973,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		#ifdef AVP_XR
 		 ||VR_Action(VR_ACT_JUMP)
 		#endif
+		 ||Pad_Action(PAD_ACT_JUMP)
 		)
 			playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump = 1;
 
@@ -979,6 +982,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		#ifdef AVP_XR
 		 ||VR_Action(VR_ACT_OPERATE)
 		#endif
+		 ||Pad_Action(PAD_ACT_OPERATE)
 		)
 			playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Operate = 1;
 
@@ -993,6 +997,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||VR_Action(VR_ACT_VISION)
 				#endif
+				 ||Pad_Action(PAD_ACT_VISION)
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
 
@@ -1001,6 +1006,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||VR_Action(VR_ACT_FLARE)
 				#endif
+				 ||Pad_Action(PAD_ACT_FLARE)
 				)
 
 					ThrowAFlare();
@@ -1014,6 +1020,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				    harmless: the two are different species and never both live. */
 				 ||(VR_Action(VR_ACT_SPECIAL) && playerStatusPtr->JetpackEnabled)
 				#endif
+				 ||(Pad_Action(PAD_ACT_SPECIAL) && playerStatusPtr->JetpackEnabled)
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jetpack = 1;
 				/* The jetpack rumble is continuous while thrusting, so it lives in
@@ -1025,6 +1032,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||VR_Action(VR_ACT_TAUNT)
 				#endif
+				 ||Pad_Action(PAD_ACT_TAUNT)
 				)
 					StartPlayerTaunt();
 				
@@ -1062,6 +1070,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||VR_Action(VR_ACT_FLARE)
 				#endif
+				 ||Pad_Action(PAD_ACT_FLARE)
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
 
@@ -1074,6 +1083,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||xr_y_button_gameplay_tap
 				#endif
+				 ||Pad_Action(PAD_ACT_VISION)
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_CycleVisionMode = 1;
 
@@ -1105,6 +1115,17 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				{
 					if (CameraZoomLevel>0) CameraZoomLevel--;
 				}
+				/* Controller: one button has to serve both directions, so each press
+				   steps in and wraps back to no zoom past the last level - the same
+				   cycle the VR build gives the Y hold. Reaches 3, the keyboard's
+				   maximum, because this is the flat game on a monitor: the VR path
+				   stops at 2 only because a ~50x magnification fills a headset's whole
+				   field of view. */
+				if (Pad_Action(PAD_ACT_ZOOM))
+				{
+					if (CameraZoomLevel < 3) CameraZoomLevel++;
+					else CameraZoomLevel = 0;
+				}
 				#ifdef AVP_XR
 				/* Hold Y for >0.5s → step the zoom in; once past max zoom it wraps
 				 * back to normal (no zoom). One step per hold.
@@ -1133,6 +1154,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||VR_Action(VR_ACT_TAUNT)
 				#endif
+				 ||Pad_Action(PAD_ACT_TAUNT)
 				)
 					StartPlayerTaunt();
 
@@ -1141,6 +1163,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||VR_Action(VR_ACT_SPECIAL)
 				#endif
+				 ||Pad_Action(PAD_ACT_SPECIAL)
 				)
 					Recall_Disc();
 					
@@ -1174,6 +1197,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||VR_Action(VR_ACT_VISION)
 				#endif
+				 ||Pad_Action(PAD_ACT_VISION)
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_ChangeVision = 1;
 
@@ -1182,6 +1206,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||VR_Action(VR_ACT_TAUNT)
 				#endif
+				 ||Pad_Action(PAD_ACT_TAUNT)
 				)
 					StartPlayerTaunt();
 	
@@ -1217,7 +1242,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		if(!PaintBallMode.IsOn)
 		{
 			if(KeyboardInput[primaryInput->FirePrimaryWeapon]
-			 ||KeyboardInput[secondaryInput->FirePrimaryWeapon])
+			 ||KeyboardInput[secondaryInput->FirePrimaryWeapon]
+			 ||Pad_Action(PAD_ACT_FIRE_PRIMARY))
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_FirePrimaryWeapon = 1;
 			
 			if(KeyboardInput[primaryInput->LookUp]
@@ -1242,6 +1268,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			#ifdef AVP_XR
 			 ||VR_Action(VR_ACT_NEXT_WEAPON)
 			#endif
+			 ||Pad_Action(PAD_ACT_NEXT_WEAPON)
 			)
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_NextWeapon = 1;
 			
@@ -1250,6 +1277,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			#ifdef AVP_XR
 			 ||VR_Action(VR_ACT_PREV_WEAPON)
 			#endif
+			 ||Pad_Action(PAD_ACT_PREV_WEAPON)
 			)
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_PreviousWeapon = 1;
 
@@ -1263,7 +1291,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			}
 			
 			if(KeyboardInput[primaryInput->FireSecondaryWeapon]
-			 ||KeyboardInput[secondaryInput->FireSecondaryWeapon])
+			 ||KeyboardInput[secondaryInput->FireSecondaryWeapon]
+			 ||Pad_Action(PAD_ACT_FIRE_SECONDARY))
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_FireSecondaryWeapon = 1;
 			
 			/* fixed controls */
@@ -1574,6 +1603,69 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			}
 		}
 		
+		/* Left stick -> moving. Fixed layout, not subject to the old axis-assignment
+		   options: X strafes, Y moves, forward is positive. Increments are SIGNED and
+		   carry the stick's magnitude, exactly as the joystick axis code above does, so
+		   movement is analogue rather than all-or-nothing. */
+		if (Pad_IsActive())
+		{
+			if (PadMoveY != 0.0f)
+			{
+				int mv = (int)(PadMoveY * (float)ONE_FIXED);
+				if (mv > 0)
+					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Forward = 1;
+				else
+					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Backward = 1;
+				playerStatusPtr->Mvt_MotionIncrement = mv;
+			}
+			if (PadMoveX != 0.0f)
+			{
+				int sv = (int)(PadMoveX * (float)ONE_FIXED);
+				if (sv < 0)
+					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_SideStepLeft = 1;
+				else
+					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_SideStepRight = 1;
+				playerStatusPtr->Mvt_SideStepIncrement = sv;
+			}
+		}
+
+		/* Right stick -> looking, the same shape as the joystick axes above.
+		   Analogue, so the increments carry the stick's magnitude and the player gets
+		   fine aim near centre rather than a fixed turn rate. Vertical follows the
+		   existing "invert vertical" joystick option so both sticks agree. */
+		if (Pad_IsActive())
+		{
+			/* Per-axis sensitivity, 0..20 with 10 = 1.0x, so the defaults multiply out
+			   to exactly the raw stick and a player who never opens the menu gets what
+			   they had. There is no separate overall multiplier: these two already
+			   cover it, and a third control for the same thing only invited confusion
+			   about which one was doing the work. */
+			float lookX = PadLookX * ((float)PadHorizSensitivity / 10.0f);
+			float lookY = PadLookY * ((float)PadVertSensitivity  / 10.0f);
+			if (PadInvertVertical) lookY = -lookY;
+
+			if (lookX != 0.0f)
+			{
+				int t = (int)(lookX * (float)ONE_FIXED);
+				if (t < 0)
+					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_TurnLeft = 1;
+				else
+					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_TurnRight = 1;
+				playerStatusPtr->Mvt_AnalogueTurning = 1;
+				playerStatusPtr->Mvt_TurnIncrement = t;
+			}
+			if (lookY != 0.0f)
+			{
+				int pv = (int)(lookY * (float)ONE_FIXED);
+				if (pv < 0)
+					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_LookUp = 1;
+				else
+					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_LookDown = 1;
+				playerStatusPtr->Mvt_AnaloguePitching = 1;
+				playerStatusPtr->Mvt_PitchIncrement = pv;
+			}
+		}
+
 		/* check for rudder */
 		if ((JoystickCaps.wCaps & JOYCAPS_HASR) && JoystickControlMethods.JoystickRudderEnabled)
 		{

@@ -206,12 +206,20 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_PREDATORCONTROLLERCONFIG_TITLE: return "Predator Controller Configuration";
 			case TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE:    return "Alien Controller Configuration";
 
-			case TEXTSTRING_BIND_FIREPRIMARY:   return "Fire";
+			/* "Primary Fire" to pair with "Secondary Fire" below. Shared by the three
+			   VR binding screens and the three pad ones, so all six agree. */
+			case TEXTSTRING_BIND_FIREPRIMARY:   return "Primary Fire";
 			case TEXTSTRING_BIND_FIRESECONDARY: return "Secondary Fire";
 			case TEXTSTRING_BIND_JUMP:          return "Jump";
 			case TEXTSTRING_BIND_CROUCH:        return "Crouch";
-			case TEXTSTRING_BIND_OPERATE:       return "Use";
-			case TEXTSTRING_BIND_VISION:        return "Vision Mode";
+			/* "Operate" to match the keyboard config screens, which is where the
+			   action is named for every species. Shared by the three VR binding
+			   screens and the three pad ones, so all six agree. */
+			case TEXTSTRING_BIND_OPERATE:       return "Operate";
+			/* Only the Predator screens use this now - the Alien and Marine have their
+			   own species wording above. The Predator steps through several modes, so
+			   the plural is accurate for the one species that still sees it. */
+			case TEXTSTRING_BIND_VISION:        return "Cycle Vision Modes";
 			case TEXTSTRING_BIND_TAUNT:         return "Taunt";
 			case TEXTSTRING_BIND_JETPACK:       return "Jetpack";
 			case TEXTSTRING_BIND_RECALLDISC:    return "Recall Disc";
@@ -244,10 +252,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			   reports them (A = bottom, B = right, X = left, Y = top), which is what
 			   an Xbox pad is labelled; a DualSense player reads A as cross, B as
 			   circle and so on, in the same places. */
-			case TEXTSTRING_JOYSTICKCONTROLS_USECONTROLLER:      return "Use Controller";
-			case TEXTSTRING_JOYSTICKCONTROLS_USECONTROLLER_HELP: return "Use a connected game controller (Xbox, PlayStation, or any pad the system recognises).";
 			case TEXTSTRING_PADBIND_HELP:       return "Choose which controller button performs this action.";
-			case TEXTSTRING_PADSRC_NONE:        return "None";
+			case TEXTSTRING_PADSRC_NONE:        return "Unbound";
 			case TEXTSTRING_PADSRC_A:           return "A / Cross";
 			case TEXTSTRING_PADSRC_B:           return "B / Circle";
 			case TEXTSTRING_PADSRC_X:           return "X / Square";
@@ -272,7 +278,17 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_ALIENPADCONFIG_TITLE:    return "Alien Configuration";
 			case TEXTSTRING_MARINEPADCONFIG_TITLE:   return "Marine Configuration";
 			case TEXTSTRING_PREDATORPADCONFIG_TITLE: return "Predator Configuration";
-			case TEXTSTRING_BIND_ZOOM:               return "Zoom";
+			case TEXTSTRING_BIND_ZOOM:               return "Zoom (Always uses Cycle Vision Modes button)";
+			case TEXTSTRING_BIND_ZOOM_HELP:          return "Hold the Cycle Vision Modes button to step the zoom. It has no button of its own, so it follows whatever that is bound to.";
+			case TEXTSTRING_BIND_CLOAK:              return "Cloak";
+			case TEXTSTRING_BIND_GRAPPLE:            return "Grappling Hook";
+			case TEXTSTRING_BIND_RELOAD:             return "Reload";
+			case TEXTSTRING_BIND_ALIEN_CLAW:         return "Claw";
+			case TEXTSTRING_BIND_ALIEN_TAIL:         return "Tail";
+			case TEXTSTRING_BIND_ALIEN_VISION:       return "Navigate/Hunt Toggle";
+			case TEXTSTRING_BIND_MARINE_VISION:      return "Image Intensifier";
+			case TEXTSTRING_CHEATS_RESET:      return "Reset To Defaults";
+			case TEXTSTRING_CHEATS_RESET_HELP: return "Turn every cheat off and put all enemy speeds back to normal. Use These Settings still has to be chosen to keep it.";
 			case TEXTSTRING_USERPROFILE_HELP_VR: return "Press X or A button to auto-select a name and again to Continue.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press A to select a profile, or B to delete a profile.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";

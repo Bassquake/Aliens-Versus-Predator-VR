@@ -213,14 +213,21 @@ typedef struct
 	 * These were first put where Padding[12] is, which shifted every field after it and
 	 * made old profiles unreadable. Do not do that: new fields go HERE, at the end.
 	 * Padding[12] is still available for anything that must sit in the old region. */
-	unsigned char UseControllerPlus1;         //0=unset->1 (on)
-	/* Per species, sized by the literals 3 and 12 with slack, like VRBindingPlus1. */
-	unsigned char PadBindingPlus1[3][12];
-	unsigned char ReservedWasPadSensitivity;  //overall "Sensitivity", removed
+	/* Per species, sized by the literals 3 and 12 with slack, like VRBindingPlus1.
+	   NOTE: a retired "Use Controller" byte used to sit ahead of this and was DELETED
+	   outright rather than kept as reserved, which shifted this block and invalidated
+	   every .prf written before it. A deliberate one-off, safe only because the build
+	   had not been released. Once it has been, retire a field IN PLACE (as
+	   the ReservedWasVR* bytes above do) rather than removing it. */
+	/* 16 slots for 13 actions: the spare is what lets an action be ADDED without
+	   moving any field below, which is the whole point of keeping room here. Grown
+	   from 12 when PAD_ACT_RELOAD arrived and took the count past it; the 12 bytes
+	   came out of PadReserved, so sizeof(AVP_USER_PROFILE) did not change. */
+	unsigned char PadBindingPlus1[3][16];
 	unsigned char PadVertSensitivityPlus1;    //0=unset->10
 	unsigned char PadHorizSensitivityPlus1;   //0=unset->10
 	unsigned char PadInvertVerticalPlus1;     //0=unset->0 (off)
-	char PadReserved[16];                     //room for the next option
+	char PadReserved[4];                      //room for the next option
 
 } AVP_USER_PROFILE;
 

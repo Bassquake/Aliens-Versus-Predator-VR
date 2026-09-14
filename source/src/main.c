@@ -150,49 +150,80 @@ static SDL_Gamepad *gamepad = NULL;
 
 /* ---- Game controller support for the flat builds (see padinput.h) ------------- */
 
-/* Controls > Joystick Configuration > Use Controller. On by default: a pad that is
-   plugged in should simply work. Stored per profile. */
-int UseController = 1;
-
 /* Xbox-style layout, which SDL maps every other pad onto. In PAD_ACTION order:
      fire primary   right trigger
-     fire secondary left trigger
+     fire secondary right shoulder
      jump           B
      crouch         left stick click
-     use            A
+     operate        A
      vision         Y
      taunt          X
-     special        left shoulder      (Marine jetpack / Predator recall disc)
-     flare          dpad left          (Marine only)
+     special        Marine LT / Predator LB   (jetpack / recall disc)
+     flare/cloak    right stick click  (Marine flare / Predator cloak - one slot, see
+                                        PAD_ACT_FLARE in padinput.h)
      next weapon    dpad up
      prev weapon    dpad down
-     zoom           right stick click  (Predator only)
+     grapple        left trigger       (Predator only)
 
-   The dpad is the items cluster: up/down cycle weapons and left throws a flare, so
-   weapon changes never need a thumb off the sticks for long. Crouch is the left stick
-   click, where a modern shooter puts it and the only control left once A, B, X and Y
-   are spoken for. A and B double as Enter and Back in the MENUS, but that mapping is
-   separate and menu-only, so there is no conflict with Use and Jump in play.
-   Both shoulders except the left, dpad right and Back are deliberately left free. */
-#define PAD_BINDING_DEFAULTS { PAD_SRC_RTRIGGER, PAD_SRC_LTRIGGER, PAD_SRC_B, PAD_SRC_LSTICK, PAD_SRC_A, PAD_SRC_Y, PAD_SRC_X, PAD_SRC_LSHOULDER, PAD_SRC_DPAD_LEFT, PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, PAD_SRC_RSTICK }
+   The dpad is the weapon cluster: up/down cycle, and nothing else is on it, so weapon
+   changes never need a thumb off the sticks for long. Crouch is the left stick click,
+   where a modern shooter puts it and the only control left once A, B, X and Y are
+   spoken for. A and B double as Enter and Back in the MENUS, but that mapping is
+   separate and menu-only, so there is no conflict with Operate and Jump in play.
 
-/* Same layout for all three species - the buttons a player reaches for should not move
-   when they change character. Only the ACTIONS differ, which is what the three menus
-   show: SPECIAL is the Marine's jetpack and the Predator's recall disc, and FLARE is
-   Marine-only, so the Alien simply leaves those two unbound. */
-int PadBinding[PAD_SPECIES_COUNT][PAD_ACT_COUNT] = {
-    PAD_BINDING_DEFAULTS,   /* I_Marine   */
-    PAD_BINDING_DEFAULTS,   /* I_Predator */
-    PAD_BINDING_DEFAULTS    /* I_Alien    */
-};
-const int PadBindingDefault[PAD_SPECIES_COUNT][PAD_ACT_COUNT] = {
-    PAD_BINDING_DEFAULTS,
-    PAD_BINDING_DEFAULTS,
-    PAD_BINDING_DEFAULTS
-};
+   The Predator's ZOOM has no row and no binding of its own: it is a HOLD of whatever
+   vision is bound to (Y by default), the way the headset works. See Pad_ActionLong.
+
+   Left trigger carries the Marine's jetpack and the Predator's grapple - neither
+   species has the other's ability, so the trigger means one thing to whoever holds it.
+   That is also why the table below is per species rather than one shared row.
+
+   Dpad left/right, Start and Back are deliberately left free. */
+/* Per species, like VR_BINDING_DEFAULTS. The shared rows stay identical so the buttons a
+   player reaches for do not move when they change character; only the species-specific
+   abilities differ, and they have to - the Predator needs LB for its recall disc AND LT
+   for its grapple, while the Marine has neither and spends LT on the jetpack.
+   Indexed by I_PLAYER_TYPE: Marine 0, Predator 1, Alien 2. */
+#define PAD_BINDING_DEFAULTS { \
+    /* [I_Marine] */ { \
+        PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \
+        PAD_SRC_A, PAD_SRC_Y, PAD_SRC_X, \
+        PAD_SRC_LTRIGGER,       /* SPECIAL - jetpack */ \
+        PAD_SRC_RSTICK,         /* FLARE slot - the flare itself */ \
+        PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, \
+        PAD_SRC_NONE,            /* GRAPPLE - Predator only */ \
+        PAD_SRC_DPAD_LEFT       /* RELOAD */ \
+    }, \
+    /* [I_Predator] */ { \
+        PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \
+        PAD_SRC_A, PAD_SRC_Y, PAD_SRC_X, \
+        PAD_SRC_LSHOULDER,      /* SPECIAL - recall disc */ \
+        PAD_SRC_RSTICK,         /* FLARE slot - the cloak */ \
+        PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, \
+        PAD_SRC_LTRIGGER,        /* GRAPPLE */ \
+        PAD_SRC_DPAD_LEFT       /* RELOAD */ \
+    }, \
+    /* [I_Alien] */ { \
+        PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \
+        PAD_SRC_A, PAD_SRC_Y, PAD_SRC_X, \
+        PAD_SRC_NONE,           /* SPECIAL - no jetpack or disc */ \
+        PAD_SRC_NONE,           /* FLARE slot - no flare or cloak */ \
+        PAD_SRC_NONE, PAD_SRC_NONE, /* NEXT/PREV WEAPON - one weapon only (inventry.c) */ \
+        PAD_SRC_NONE,            /* GRAPPLE */ \
+        PAD_SRC_NONE            /* RELOAD - Marine and Predator only */ \
+    } \
+}
+
+int PadBinding[PAD_SPECIES_COUNT][PAD_ACT_COUNT] = PAD_BINDING_DEFAULTS;
+const int PadBindingDefault[PAD_SPECIES_COUNT][PAD_ACT_COUNT] = PAD_BINDING_DEFAULTS;
 
 /* Right-stick look. 10 = 1.0x, so a fresh profile's zero would mean "no look at all" -
    hence these are stored +1 in the profile like every other field taken from Padding. */
+/* 1 for one frame when Start has been held past the long-press threshold, consumed by
+   the three message-history sites in usr_io.c. The flat counterpart of
+   xr_menu_button_msg_history_edge, which is XR-only. */
+int pad_msg_history_edge = 0;
+
 int PadVertSensitivity  = 10;
 int PadHorizSensitivity = 10;
 int PadInvertVertical   = 0;
@@ -215,7 +246,7 @@ void Pad_ApplyMove(float strafe, float forward) { PadMoveX = strafe; PadMoveY = 
 
 int Pad_IsActive(void)
 {
-    return (UseController && gamepad != NULL);
+    return (gamepad != NULL);
 }
 
 /* Raw state of one source. Triggers are analogue, so they get a threshold - past half
@@ -259,47 +290,116 @@ static int Pad_ActionIsTap(int action)
         /* VISION is an edge because the Predator's ChangePredatorVisionMode has no
            debounce of its own (see usr_io.c) - held as a level it would cycle through
            every mode each frame. The Marine and Alien reach it through Rqst_ChangeVision,
-           which does debounce internally, so a single pulse per press suits all three. */
+           which does debounce internally, so a single pulse per press suits all three.
+           The PREDATOR does not use this signal: it reads the same binding through
+           Pad_ActionTapShort/Pad_ActionLong so that a hold zooms instead. */
         case PAD_ACT_VISION:
-        case PAD_ACT_ZOOM:
         case PAD_ACT_NEXT_WEAPON:
         case PAD_ACT_PREV_WEAPON:
+        /* The hook fires once per press, as the keyboard and VR paths do. */
+        case PAD_ACT_GRAPPLE:
+        /* Reload likewise - the keyboard path reads DebouncedKeyboardInput. */
+        case PAD_ACT_RELOAD:
             return 1;
         default:
             return 0;
     }
 }
 
-int Pad_Action(int action)
+/* Hold threshold for the tap/long split, shared by the pad and VR input paths so the
+   Predator's vision control behaves identically in a headset and on a pad. */
+#define INPUT_LONG_PRESS_SECS 0.5f
+
+/* Per-frame input state. File-static rather than function-static because three entry
+   points share it - see Pad_UpdateFrame. */
+static int   pad_prevLevel[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+static int   pad_edge     [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+static int   pad_tapShort [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+static int   pad_longEdge [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+static float pad_holdSecs [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+static int   pad_longFired[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+static int   pad_lastFrame = -1;
+
+/* Edges are recomputed ONCE per frame and then read from the tables, so several sites
+   reading the same action in one frame all see them. Consuming on first read would give
+   the edge to whichever ran first. Same approach as VR_Action. */
+static void Pad_UpdateFrame(void)
 {
     extern int GlobalFrameCounter;
-    /* Edges are recomputed ONCE per frame and then read from the table, so several sites
-       reading the same action in one frame all see it. Consuming on first read would give
-       it to whichever ran first. Same approach as VR_Action. */
-    static int prevLevel[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
-    static int edgeThisFrame[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
-    static int lastFrame = -1;
-    int sp = (int)AvP.PlayerType;
+    extern int RealFrameTime;
+    int a, sp;
 
-    if (action < 0 || action >= PAD_ACT_COUNT) return 0;
+    if (GlobalFrameCounter == pad_lastFrame) return;
+    pad_lastFrame = GlobalFrameCounter;
 
-    if (GlobalFrameCounter != lastFrame) {
-        int a;
-        lastFrame = GlobalFrameCounter;
-        for (a = 0; a < PAD_ACT_COUNT; a++) {
-            int s2;
-            for (s2 = 0; s2 < PAD_SPECIES_COUNT; s2++) {
-                int lv = Pad_SourceLevel(PadBinding[s2][a]);
-                edgeThisFrame[s2][a] = (lv && !prevLevel[s2][a]);
-                prevLevel[s2][a] = lv;
+    for (a = 0; a < PAD_ACT_COUNT; a++) {
+        for (sp = 0; sp < PAD_SPECIES_COUNT; sp++) {
+            int lv = Pad_SourceLevel(PadBinding[sp][a]);
+
+            pad_edge[sp][a]     = (lv && !pad_prevLevel[sp][a]);
+            pad_tapShort[sp][a] = 0;
+            pad_longEdge[sp][a] = 0;
+
+            if (lv && !pad_prevLevel[sp][a]) {
+                pad_holdSecs[sp][a]  = 0.0f;
+                pad_longFired[sp][a] = 0;
             }
+            if (lv) {
+                /* RealFrameTime is 16.16 seconds, as the VR path reads it. */
+                pad_holdSecs[sp][a] += (float)RealFrameTime / 65536.0f;
+                if (!pad_longFired[sp][a] && pad_holdSecs[sp][a] >= INPUT_LONG_PRESS_SECS) {
+                    pad_longEdge[sp][a]  = 1;
+                    pad_longFired[sp][a] = 1;
+                }
+            } else if (pad_prevLevel[sp][a]) {
+                /* Released: a press that never became a long press is a tap. */
+                if (!pad_longFired[sp][a]) pad_tapShort[sp][a] = 1;
+            }
+            pad_prevLevel[sp][a] = lv;
         }
     }
-
-    if (sp < 0 || sp >= PAD_SPECIES_COUNT) sp = 0;
-    if (Pad_ActionIsTap(action)) return edgeThisFrame[sp][action];
-    return Pad_SourceLevel(PadBinding[sp][action]);
 }
+
+static int Pad_CurrentSpecies(void)
+{
+    int sp = (int)AvP.PlayerType;
+    if (sp < 0 || sp >= PAD_SPECIES_COUNT) sp = 0;
+    return sp;
+}
+
+int Pad_Action(int action)
+{
+    if (action < 0 || action >= PAD_ACT_COUNT) return 0;
+    Pad_UpdateFrame();
+    if (Pad_ActionIsTap(action)) return pad_edge[Pad_CurrentSpecies()][action];
+    return Pad_SourceLevel(PadBinding[Pad_CurrentSpecies()][action]);
+}
+
+/* One control, two meanings - the Predator's vision button taps to cycle vision mode and
+   holds to step the zoom, exactly as the headset's Y does.
+ *
+ * Deliberately NOT two actions sharing a button: pad bindings permit duplicates (the
+ * profile loader says so explicitly), and a shared button fires both actions, so a tap
+ * would cycle the vision mode AND zoom at once. One binding read two ways is what
+ * separates them.
+ *
+ * The two are mutually exclusive by construction - the tap only fires on release, and
+ * only when the hold never reached the threshold - so a long hold cannot also cycle the
+ * vision mode on its way past. */
+int Pad_ActionTapShort(int action)
+{
+    if (action < 0 || action >= PAD_ACT_COUNT) return 0;
+    Pad_UpdateFrame();
+    return pad_tapShort[Pad_CurrentSpecies()][action];
+}
+
+int Pad_ActionLong(int action)
+{
+    if (action < 0 || action >= PAD_ACT_COUNT) return 0;
+    Pad_UpdateFrame();
+    return pad_longEdge[Pad_CurrentSpecies()][action];
+}
+
 
 JOYINFOEX JoystickData;
 JOYCAPS JoystickCaps;
@@ -333,7 +433,8 @@ static int WantMouseGrab = 1;
 int WantSound = 1;
 static int WantCDRom = 1;
 /* Look for a controller unless -j/--nojoy says otherwise. Was 0, which is why the flat
-   builds never opened one; the player-facing switch is UseController (padinput.h). */
+   builds never opened one. There is no in-game switch: a pad that is plugged in simply
+   works, and -j/--nojoy is the way to ignore one. */
 static int WantJoystick = 1;
 /* Run a VR-capable build on the flat desktop path (-noxr / --flat / AVP_NO_XR).
    Needed because the "no headset, fall back to flat" path only covers OpenXR
@@ -416,7 +517,7 @@ int VR_Reach(int range)
         VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
         VR_SRC_A, VR_SRC_Y, VR_SRC_X, \
         VR_SRC_L_GRIP,          /* SPECIAL - recall disc */ \
-        VR_SRC_NONE,            /* FLARE - Marine only */ \
+        VR_SRC_R_STICK_CLICK,   /* FLARE slot = the Predator's CLOAK (see usr_io.c) */ \
         VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN \
     }, \
     /* [I_Alien] */ { \
@@ -424,7 +525,7 @@ int VR_Reach(int range)
         VR_SRC_A, VR_SRC_Y, VR_SRC_X, \
         VR_SRC_NONE,            /* SPECIAL - Marine/Predator only */ \
         VR_SRC_NONE,            /* FLARE   - Marine only */ \
-        VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN \
+        VR_SRC_NONE, VR_SRC_NONE /* NEXT/PREV WEAPON - one weapon only, see the pad table */ \
     } }
 
 int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;
@@ -845,8 +946,6 @@ int xr_right_stick_click_pressed             = 0; /* 1 while the right stick is 
 int xr_right_thumbstick_down_pressed         = 0; /* 1 on right stick down edge (previous weapon) */
 int xr_y_button_gameplay_pressed             = 0; /* 1 while Y held in gameplay (vision toggle) */
 int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge */
-int xr_y_button_gameplay_tap                 = 0; /* 1 on Y release if it was a short tap (Predator cycle vision mode) */
-int xr_y_button_gameplay_long_edge           = 0; /* 1 once when Y is held past the long-press threshold (Predator zoom) */
 int xr_menu_button_msg_history_edge          = 0; /* 1 once when left menu button is held past the long-press threshold (message history) */
 int xr_x_button_gameplay_pressed             = 0; /* 1 on X press edge in gameplay (taunt) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
@@ -912,48 +1011,108 @@ static int VR_SourceLevel(int src)
     }
 }
 
-int VR_Action(int action)
+/* Per-frame input state. File-static rather than function-static because three entry
+   points share it - see VR_UpdateFrame. */
+static int   vr_prevLevel[VR_SPECIES_COUNT][VR_ACT_COUNT];
+static int   vr_edge     [VR_SPECIES_COUNT][VR_ACT_COUNT];
+static int   vr_tapShort [VR_SPECIES_COUNT][VR_ACT_COUNT];
+static int   vr_longEdge [VR_SPECIES_COUNT][VR_ACT_COUNT];
+static float vr_holdSecs [VR_SPECIES_COUNT][VR_ACT_COUNT];
+static int   vr_longFired[VR_SPECIES_COUNT][VR_ACT_COUNT];
+static int   vr_actLastFrame = -1;
+
+/* Edges are recomputed ONCE per frame for every action and then read from the
+   tables, so several sites reading the same action in one frame all see them - the
+   taunt is read once per species, for instance. Consuming the edge on first read
+   would give it to whichever site happened to run first. */
+static void VR_UpdateFrame(void)
 {
     extern int GlobalFrameCounter;
-
-    /* Edges are recomputed ONCE per frame for every action and then read from the
-       table, so several sites reading the same action in one frame all see it - the
-       taunt is read once per species, for instance. Consuming the edge on first read
-       would give it to whichever site happened to run first. */
-    static int prevLevel[VR_SPECIES_COUNT][VR_ACT_COUNT];
-    static int edgeThisFrame[VR_SPECIES_COUNT][VR_ACT_COUNT];
-    static int lastFrame = -1;
+    extern int RealFrameTime;
     extern int vr_suppress_edges_frames;
+    int a2, s2, suppress;
 
-    int sp = (int)AvP.PlayerType;
-    if (action < 0 || action >= VR_ACT_COUNT) return 0;
-    if (sp < 0 || sp >= VR_SPECIES_COUNT) sp = 0;
+    if (GlobalFrameCounter == vr_actLastFrame) return;
 
-    if (GlobalFrameCounter != lastFrame) {
-        int a2, s2;
-        /* Coming out of a 2D menu, every button still physically held reads as a fresh
-           PRESS: the gameplay levels are force-masked to 0 while xr_2d_mode is true, so
-           the remembered level is 0 while the finger is still down. You dismiss the pause
-           menu WITH A, and A is Operate - so the first gameplay frame fired a phantom
-           Use and threw whatever switch happened to be in view. Same hazard
-           xr_x_pause_latch guards on the way in; this is the way out.
+    /* Coming out of a 2D menu, every button still physically held reads as a fresh
+       PRESS: the gameplay levels are force-masked to 0 while xr_2d_mode is true, so
+       the remembered level is 0 while the finger is still down. You dismiss the pause
+       menu WITH A, and A is Operate - so the first gameplay frame fired a phantom
+       Use and threw whatever switch happened to be in view. Same hazard
+       xr_x_pause_latch guards on the way in; this is the way out.
 
-           The levels are still sampled into prevLevel during the suppressed frames, so
-           the button is simply adopted as "already held" and the next real edge needs a
-           genuine release and press. */
-        int suppress = (vr_suppress_edges_frames > 0);
-        if (suppress) vr_suppress_edges_frames--;
-        lastFrame = GlobalFrameCounter;
-        for (s2 = 0; s2 < VR_SPECIES_COUNT; s2++)
-            for (a2 = 0; a2 < VR_ACT_COUNT; a2++) {
-                int lv = VR_SourceLevel(VRBinding[s2][a2]);
-                edgeThisFrame[s2][a2] = (!suppress && lv && !prevLevel[s2][a2]);
-                prevLevel[s2][a2] = lv;
+       The levels are still sampled into prevLevel during the suppressed frames, so
+       the button is simply adopted as "already held" and the next real edge needs a
+       genuine release and press. */
+    suppress = (vr_suppress_edges_frames > 0);
+    if (suppress) vr_suppress_edges_frames--;
+    vr_actLastFrame = GlobalFrameCounter;
+
+    for (s2 = 0; s2 < VR_SPECIES_COUNT; s2++)
+        for (a2 = 0; a2 < VR_ACT_COUNT; a2++) {
+            int lv = VR_SourceLevel(VRBinding[s2][a2]);
+
+            vr_edge[s2][a2]     = (!suppress && lv && !vr_prevLevel[s2][a2]);
+            vr_tapShort[s2][a2] = 0;
+            vr_longEdge[s2][a2] = 0;
+
+            if (lv && !vr_prevLevel[s2][a2]) {
+                vr_holdSecs[s2][a2]  = 0.0f;
+                /* A suppressed press is adopted as "already held", so it must not be
+                   allowed to mature into a long press either. */
+                vr_longFired[s2][a2] = suppress;
             }
-    }
+            if (lv) {
+                vr_holdSecs[s2][a2] += (float)RealFrameTime / 65536.0f;
+                if (!vr_longFired[s2][a2] && vr_holdSecs[s2][a2] >= INPUT_LONG_PRESS_SECS) {
+                    vr_longEdge[s2][a2]  = 1;
+                    vr_longFired[s2][a2] = 1;
+                }
+            } else if (vr_prevLevel[s2][a2]) {
+                if (!vr_longFired[s2][a2]) vr_tapShort[s2][a2] = 1;
+            }
+            vr_prevLevel[s2][a2] = lv;
+        }
+}
 
-    if (VR_ActionIsTap(action)) return edgeThisFrame[sp][action];
-    return VR_SourceLevel(VRBinding[sp][action]);
+static int VR_CurrentSpecies(void)
+{
+    int sp = (int)AvP.PlayerType;
+    if (sp < 0 || sp >= VR_SPECIES_COUNT) sp = 0;
+    return sp;
+}
+
+int VR_Action(int action)
+{
+    if (action < 0 || action >= VR_ACT_COUNT) return 0;
+    VR_UpdateFrame();
+    if (VR_ActionIsTap(action)) return vr_edge[VR_CurrentSpecies()][action];
+    return VR_SourceLevel(VRBinding[VR_CurrentSpecies()][action]);
+}
+
+/* Short tap / long hold on the control bound to `action`, the headset counterpart of
+   Pad_ActionTapShort / Pad_ActionLong and sharing their threshold.
+ *
+ * The Predator's vision control taps to cycle vision mode and holds to step the zoom.
+ * This used to read the PHYSICAL Y button (xr_y_button_gameplay_tap / _long_edge), so
+ * rebinding Cycle Vision Modes moved the tap but left the zoom behind on Y. Reading the
+ * BINDING keeps the two together wherever the player puts them.
+ *
+ * The pair is mutually exclusive by construction - the tap only fires on release, and
+ * only when the hold never reached the threshold - so a hold cannot also cycle the
+ * vision mode on its way past. */
+int VR_ActionTapShort(int action)
+{
+    if (action < 0 || action >= VR_ACT_COUNT) return 0;
+    VR_UpdateFrame();
+    return vr_tapShort[VR_CurrentSpecies()][action];
+}
+
+int VR_ActionLong(int action)
+{
+    if (action < 0 || action >= VR_ACT_COUNT) return 0;
+    VR_UpdateFrame();
+    return vr_longEdge[VR_CurrentSpecies()][action];
 }
 static float xr_left_stick_x = 0.0f;
 static float xr_left_stick_y = 0.0f;
@@ -3856,20 +4015,15 @@ int axes, balls, hats;
             }
         }
 
-        /* Y button → vision toggle in gameplay (Marine Image Intensifier / Alien Alt
-         * Vision use the held signal). The Predator distinguishes a short tap (Cycle
-         * Vision Mode) from a long hold (Zoom In): _tap fires on release if the press
-         * stayed under the threshold, _long_edge fires once the moment the hold passes
-         * it, and a long hold suppresses the tap so zooming never also cycles vision. */
+        /* Y button level, still needed by the in-world scale tuner (left stick click +
+         * Y). The Predator's tap/hold split no longer lives here: it now reads the
+         * VISION BINDING through VR_ActionTapShort / VR_ActionLong, so rebinding
+         * Cycle Vision Modes moves the zoom hold with it instead of stranding it on
+         * this button. */
         xr_y_button_gameplay_pressed   = 0;
         xr_y_button_gameplay_edge      = 0;
-        xr_y_button_gameplay_tap       = 0;
-        xr_y_button_gameplay_long_edge = 0;
         if (!xr_2d_mode && xr_y_button_action && pfn_xrGetActionStateBoolean) {
             static int   y_prev = 0;
-            static float y_hold_secs = 0.0f;
-            static int   y_long_fired = 0;
-            const float  Y_LONG_PRESS_SECS = 0.5f; /* hold past this → zoom, not vision cycle */
             XrActionStateGetInfo yget = { XR_TYPE_ACTION_STATE_GET_INFO };
             yget.action = xr_y_button_action;
             XrActionStateBoolean ystate = { XR_TYPE_ACTION_STATE_BOOLEAN };
@@ -3877,28 +4031,10 @@ int axes, balls, hats;
                     && ystate.isActive) {
                 int y_cur = ystate.currentState ? 1 : 0;
                 xr_y_button_gameplay_pressed = y_cur;
-                if (y_cur && !y_prev) {
-                    xr_y_button_gameplay_edge = 1;
-                    y_hold_secs  = 0.0f;
-                    y_long_fired = 0;
-                }
-                if (y_cur) {
-                    extern int RealFrameTime;
-                    y_hold_secs += (float)RealFrameTime / 65536.0f;
-                    if (!y_long_fired && y_hold_secs >= Y_LONG_PRESS_SECS) {
-                        xr_y_button_gameplay_long_edge = 1;
-                        y_long_fired = 1;
-                    }
-                } else if (!y_cur && y_prev) {
-                    /* Released: a short press that never became a long-press is a tap. */
-                    if (!y_long_fired)
-                        xr_y_button_gameplay_tap = 1;
-                }
+                if (y_cur && !y_prev) xr_y_button_gameplay_edge = 1;
                 y_prev = y_cur;
             } else {
                 y_prev = 0;
-                y_hold_secs = 0.0f;
-                y_long_fired = 0;
             }
         }
 
@@ -6357,24 +6493,58 @@ void CheckForWindowsMessages()
         padAnyPrev = anyNow;
     }
 
-    /* Start / Menu opens the in-game menu.
+    /* Start / Menu: TAP opens the in-game menu, HOLD shows the mission log.
      *
      * The pad's Windows button 8 on an Xbox pad, and the button every console shooter
      * pauses with. AvP_TriggerInGameMenus reads
      * DebouncedKeyboardInput[FixedInputConfig.PauseGame], which is KEY_ESCAPE, so pulse
      * that - the same route the Quest's left menu button takes.
      *
+     * The two-stage hold mirrors the headset's X button (see the PCVR block above),
+     * sharing INPUT_LONG_PRESS_SECS. It differs in one way on purpose: there, holding on
+     * past the log stage goes on to open the pause menu, because X is that build's ONLY
+     * route to it. Here Start taps to pause already, so a hold shows the log and stops -
+     * the menu firing as well would make every log view pause the game.
+     *
+     * The menu therefore opens on RELEASE, not on the press, since until the button comes
+     * up we cannot know it was a tap.
+     *
      * ONLY the debounced edge is set, never the level: KEY_ESCAPE has no physical key-up
      * here to clear it, and a latched Escape would re-open the menu every frame. And only
      * while no menu is up, because in a menu B is already Back and Start would otherwise
      * fight it. */
-    if (Pad_IsActive() && !AnyMenusAreRunning()) {
-        static int padStartPrev = 0;
-        int startNow = SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_START);
+    {
+        static int   padStartPrev   = 0;
+        static float padStartHeld   = 0.0f;
+        static int   padStartLogged = 0;
 
-        if (startNow && !padStartPrev)
-            DebouncedKeyboardInput[KEY_ESCAPE] = 1;
-        padStartPrev = startNow;
+        pad_msg_history_edge = 0;
+
+        if (Pad_IsActive() && !AnyMenusAreRunning()) {
+            int startNow = SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_START);
+
+            if (startNow && !padStartPrev) { padStartHeld = 0.0f; padStartLogged = 0; }
+
+            if (startNow) {
+                extern int RealFrameTime;
+                padStartHeld += (float)RealFrameTime / 65536.0f;
+                if (!padStartLogged && padStartHeld >= INPUT_LONG_PRESS_SECS) {
+                    pad_msg_history_edge = 1;
+                    padStartLogged = 1;
+                }
+            } else if (padStartPrev && !padStartLogged) {
+                DebouncedKeyboardInput[KEY_ESCAPE] = 1;   /* short tap */
+            }
+            padStartPrev = startNow;
+        } else {
+            /* A menu is up, or the pad went away mid-hold. Forget the press entirely:
+               the tap that opened the menu must not be seen as a fresh release once it
+               closes, which would pulse ESC and re-open it. Same hazard x_hold_armed
+               guards in the VR block. */
+            padStartPrev   = 0;
+            padStartHeld   = 0.0f;
+            padStartLogged = 0;
+        }
     }
 
     {

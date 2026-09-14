@@ -108,6 +108,13 @@ extern const int VRBindingDefault[VR_SPECIES_COUNT][VR_ACT_COUNT];
 /* Current state of whatever is bound to this action. 0 when unbound. */
 extern int VR_Action(int action);
 
+/* The same binding read as a short tap or as a hold past ~0.5s - the headset
+   counterpart of Pad_ActionTapShort / Pad_ActionLong. Used for the Predator's vision
+   control, which taps to cycle vision mode and holds to step the zoom. Reading the
+   BINDING rather than a fixed button means rebinding moves both together. */
+extern int VR_ActionTapShort(int action);
+extern int VR_ActionLong(int action);
+
 /* World Scale, as a menu setting.
  *
  * The menu system's sliders are integer-only, so the setting is an INDEX and the scale

@@ -1543,8 +1543,6 @@ enum TEXTSTRING_ID
 
 	/* Flat-build game controller (padinput.h). Appended at the END so no existing
 	   string shifts. */
-	TEXTSTRING_JOYSTICKCONTROLS_USECONTROLLER,
-	TEXTSTRING_JOYSTICKCONTROLS_USECONTROLLER_HELP,
 	TEXTSTRING_PADBIND_HELP,
 
 	/* Pad source names. MUST stay consecutive and in PAD_SOURCE order: the TEXTSLIDER
@@ -1576,6 +1574,24 @@ enum TEXTSTRING_ID
 	TEXTSTRING_MARINEPADCONFIG_TITLE,
 	TEXTSTRING_PREDATORPADCONFIG_TITLE,
 	TEXTSTRING_BIND_ZOOM,
+	TEXTSTRING_BIND_ZOOM_HELP,
+	TEXTSTRING_BIND_CLOAK,
+	TEXTSTRING_BIND_GRAPPLE,
+	TEXTSTRING_BIND_RELOAD,
+
+	/* Species-specific names for actions whose generic label says little. The binding
+	   ROW is the same action either way - only the wording differs - so these sit
+	   alongside the generic TEXTSTRING_BIND_* rather than replacing them: the Predator
+	   still uses the generic ones. */
+	TEXTSTRING_BIND_ALIEN_CLAW,
+	TEXTSTRING_BIND_ALIEN_TAIL,
+	TEXTSTRING_BIND_ALIEN_VISION,
+	TEXTSTRING_BIND_MARINE_VISION,
+
+	/* Cheats menu "Reset To Defaults". Its own strings rather than the Controls
+	   ones, whose help text talks about control mappings. */
+	TEXTSTRING_CHEATS_RESET,
+	TEXTSTRING_CHEATS_RESET_HELP,
 
 	MAX_NEW_TEXTSTRINGS
 };

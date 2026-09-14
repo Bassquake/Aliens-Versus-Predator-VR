@@ -109,6 +109,8 @@ extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int VRVignetteStrength;
+extern int GiveAllWeaponsCheatEnabled; /* Extra Cheats: 0 = off */
+extern int GodModeCheatEnabled;        /* Extra Cheats: 0 = off */
 extern int EnemySpeedAlien;    /* Extra Cheats speed sliders: 10 = 1.0 .. 0 = 0.0 */
 extern int EnemySpeedMarine;
 extern int EnemySpeedPredator;
@@ -1376,7 +1378,13 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
    different brightnesses while sharing the cursor-skipping. */
 static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
 {
-	return (elementPtr->a.TextDescription == TEXTSTRING_VERSION);
+	/* TEXTSTRING_BIND_ZOOM is the Predator's "Zoom (Hold)" row. It is a readout, not a
+	   setting: zoom has no binding of its own - it is a hold of whatever cycles the
+	   vision modes - so the row points at that SAME binding in order to display the
+	   live button name, and must not be editable, or the player would be changing the
+	   vision binding from two places without realising it. Skipped by the cursor. */
+	return (elementPtr->a.TextDescription == TEXTSTRING_VERSION
+	     || elementPtr->a.TextDescription == TEXTSTRING_BIND_ZOOM);
 }
 
 /* Cycle a controller binding, skipping any control already used by another action.
@@ -1416,6 +1424,50 @@ static int VR_CycleBinding(int *valuePtr, int maxValue, int forward)
 		{
 			for (other = 0; other < VR_ACT_COUNT; other++)
 				if (other != act && VRBinding[sp][other] == v) { taken = 1; break; }
+		}
+		if (!taken) { *valuePtr = v; return 1; }
+	}
+	return 1;                           /* nothing free: leave it where it was */
+}
+
+/* The pad counterpart of VR_CycleBinding above, and for the same reason: two actions on
+ * one button would both fire, and the engine has no way to arbitrate that. A control
+ * already in use is simply not offered rather than allowed and then resolved.
+ *
+ * Unbound is exempt - any number of actions may be on nothing - which is what makes it
+ * always reachable while cycling, however full the pad is.
+ *
+ * Identified by the value POINTER landing inside PadBinding, exactly as the VR version
+ * uses VRBinding; the species and action indices fall out of the offset, so one function
+ * serves all three screens without being told which is open.
+ *
+ * The guard bounds the search to one full pass. If every other source were taken the
+ * value simply stays put, which is the correct outcome and cannot spin. */
+static int Pad_CycleBinding(int *valuePtr, int maxValue, int forward)
+{
+	int *first = &PadBinding[0][0];
+	int idx, sp, act, guard, v;
+
+	if (valuePtr < first || valuePtr >= first + PAD_SPECIES_COUNT*PAD_ACT_COUNT)
+		return 0;                       /* not a binding row - caller does its thing */
+
+	idx = (int)(valuePtr - first);
+	sp  = idx / PAD_ACT_COUNT;
+	act = idx % PAD_ACT_COUNT;
+	v   = *valuePtr;
+
+	for (guard = 0; guard <= maxValue; guard++)
+	{
+		int taken = 0, other;
+
+		v += forward ? 1 : -1;
+		if (v > maxValue) v = 0;
+		if (v < 0)        v = maxValue;
+
+		if (v != PAD_SRC_NONE)
+		{
+			for (other = 0; other < PAD_ACT_COUNT; other++)
+				if (other != act && PadBinding[sp][other] == v) { taken = 1; break; }
 		}
 		if (!taken) { *valuePtr = v; return 1; }
 	}
@@ -3069,6 +3121,9 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 				if (VR_CycleBinding(elementPtr->c.SliderValuePtr,
 				                    elementPtr->b.MaxSliderValue, forward))
 					break;
+				if (Pad_CycleBinding(elementPtr->c.SliderValuePtr,
+				                     elementPtr->b.MaxSliderValue, forward))
+					break;
 
 				if (forward)
 				{
@@ -3810,11 +3865,31 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 				else
 				{
 					Pad_ResetBindings();
-					PadVertSensitivity  = 10;
-					PadHorizSensitivity = 10;
-					PadInvertVertical   = 0;
-					UseController       = 1;
+					PadVertSensitivity  = PAD_VERT_SENSITIVITY_DEFAULT;
+					PadHorizSensitivity = PAD_HORIZ_SENSITIVITY_DEFAULT;
+					PadInvertVertical   = PAD_INVERT_VERTICAL_DEFAULT;
 				}
+			}
+			break;
+		}
+		case AVPMENU_ELEMENT_RESETCHEATS:
+		{
+			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
+			{
+				/* Same values SetDefaultProfileOptions uses for a brand new profile,
+				   so "reset" here and "never touched" agree. Enemy speed is a slider
+				   where 10 is NORMAL speed and 0 is stopped - it is the profile that
+				   stores it inverted, as (10 - speed), so that a zeroed byte in an
+				   older .prf decodes to full speed.
+
+				   Live only, exactly like the binding resets above: nothing is written
+				   until Use These Settings is chosen, so a reset can be backed out of
+				   by leaving the menu. */
+				GiveAllWeaponsCheatEnabled = 0;
+				GodModeCheatEnabled        = 0;
+				EnemySpeedAlien            = 10;
+				EnemySpeedMarine           = 10;
+				EnemySpeedPredator         = 10;
 			}
 			break;
 		}
@@ -3994,23 +4069,95 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 				textPtr = GetTextString(elementPtr->d.FirstTextSliderString+*(elementPtr->c.SliderValuePtr));
 			}
 
-			/* Controller bindings: mark the value this action started on.
+			/* The Predator's Zoom readout names the button it follows, marked as a
+			 * HOLD rather than as a binding.
 			 *
-			 * Detected by the slider's value POINTER landing inside VRBinding rather
-			 * than by menu id or row number - the three species menus share this code
-			 * and their layouts differ, so anything positional would drift. */
+			 * Deliberately ahead of, and exclusive with, the "(Default)" marker below.
+			 * The row's value pointer ALIASES the vision binding - that is how it shows
+			 * the live button - so it would otherwise qualify for "(Default)", which is
+			 * meaningless here: zoom has no binding of its own to be default or not.
+			 * Matched on the label, so it covers the pad row (whose pointer is in
+			 * PadBinding) and the VR one alike. */
+			if (elementPtr->a.TextDescription == TEXTSTRING_BIND_ZOOM)
+			{
+				static char holdText[64];
+				snprintf(holdText, sizeof(holdText), "%s (Hold)", textPtr);
+				textPtr = holdText;
+			}
+			/* Controller bindings, VR and pad alike: mark the value this action
+			 * started on, so it is obvious which button is the shipped one.
+			 *
+			 * Detected by the slider's value POINTER landing inside the binding array
+			 * rather than by menu id or row number - the six species menus share this
+			 * code and their layouts differ per species and per target, so anything
+			 * positional would drift. The index into the array gives the matching
+			 * entry in the *Default table directly, so this needs no per-row data. */
+			else
 			{
 				static char bindText[64];
-				const int *first = &VRBinding[0][0];
-				const int *val   = elementPtr->c.SliderValuePtr;
+				const int *val      = elementPtr->c.SliderValuePtr;
+				const int *vrFirst  = &VRBinding[0][0];
+				const int *padFirst = &PadBinding[0][0];
+				int isDefault = 0, matched = 0;
 
-				if (val >= first && val < first + VR_SPECIES_COUNT*VR_ACT_COUNT)
+				if (val >= vrFirst && val < vrFirst + VR_SPECIES_COUNT*VR_ACT_COUNT)
 				{
-					int idx = (int)(val - first);
-					if (*val == (&VRBindingDefault[0][0])[idx])
+					int idx = (int)(val - vrFirst);
+					matched   = 1;
+					isDefault = (*val == (&VRBindingDefault[0][0])[idx]);
+				}
+				else if (val >= padFirst && val < padFirst + PAD_SPECIES_COUNT*PAD_ACT_COUNT)
+				{
+					int idx = (int)(val - padFirst);
+					matched   = 1;
+					isDefault = (*val == (&PadBindingDefault[0][0])[idx]);
+				}
+
+				if (matched && isDefault)
+				{
+					snprintf(bindText, sizeof(bindText), "%s (Default)", textPtr);
+					textPtr = bindText;
+				}
+			}
+
+			/* Mouse and Joystick Configuration: mark whichever option is the shipped
+			 * default, the way the AV Options sliders label theirs ("2x (Default)",
+			 * "Trilinear (Default)").
+			 *
+			 * Appended here rather than baked into the label strings because these
+			 * rows share TEXTSTRING_NO/_YES and the axis strings with other menus,
+			 * and a TEXTSLIDER reads its labels as one CONTIGUOUS RUN (base + value)
+			 * - pointing them at a reworded run would have to restate the non-default
+			 * option too, and language.txt is encrypted so its exact wording cannot
+			 * be matched. A slider only ever displays its current value, so appending
+			 * when that value equals the default looks identical on screen.
+			 *
+			 * Matched by the value POINTER, as the binding rows above are, and the
+			 * expected value is read from DefaultControlMethods rather than written
+			 * out here, so changing a default cannot leave the marker behind. */
+			{
+				static char defText[64];
+				/* The joystick rows live in AvPMenu_JoystickControlsOptions, which is a
+				   COPY of its master array - but MakeJoystickConfigMenu copies the rows
+				   wholesale, so the value pointers are still these globals and matching
+				   on them works in either. */
+				const struct { const void *field; int dflt; } defaultRows[] = {
+					{ &PlayerControlMethods.VAxisIsMovement,      (int)DefaultControlMethods.VAxisIsMovement      },
+					{ &PlayerControlMethods.HAxisIsTurning,       (int)DefaultControlMethods.HAxisIsTurning       },
+					{ &PlayerControlMethods.FlipVerticalAxis,     (int)DefaultControlMethods.FlipVerticalAxis     },
+					{ &PlayerControlMethods.AutoCentreOnMovement, (int)DefaultControlMethods.AutoCentreOnMovement },
+					{ &PadInvertVertical,                         PAD_INVERT_VERTICAL_DEFAULT                     },
+				};
+				unsigned int k;
+
+				for (k = 0; k < sizeof(defaultRows)/sizeof(defaultRows[0]); k++)
+				{
+					if ((const void*)elementPtr->c.SliderValuePtr == defaultRows[k].field
+					 && *(const int*)defaultRows[k].field == defaultRows[k].dflt)
 					{
-						snprintf(bindText, sizeof(bindText), "%s (Default)", textPtr);
-						textPtr = bindText;
+						snprintf(defText, sizeof(defText), "%s (Default)", textPtr);
+						textPtr = defText;
+						break;
 					}
 				}
 			}

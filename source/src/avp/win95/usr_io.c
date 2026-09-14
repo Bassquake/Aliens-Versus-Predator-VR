@@ -47,8 +47,6 @@ extern int xr_right_thumbstick_click_pressed;
 extern int xr_right_thumbstick_down_pressed;
 extern int xr_y_button_gameplay_pressed;
 extern int xr_y_button_gameplay_edge;
-extern int xr_y_button_gameplay_tap;
-extern int xr_y_button_gameplay_long_edge;
 extern int xr_menu_button_msg_history_edge;
 extern int xr_x_button_gameplay_pressed;
 extern int xr_left_trigger_pressed;
@@ -1041,6 +1039,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||xr_menu_button_msg_history_edge
 				#endif
+				 /* Pad: Start held past the long-press threshold. */
+				 ||pad_msg_history_edge
 				)
 					MessageHistory_DisplayPrevious();
 					
@@ -1063,8 +1063,18 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			{
 				extern int CameraZoomLevel;
 				
-				/* Cloak (Period key) → right thumbstick push-in. cloakDebounce in
-				 * DoPlayerCloakingSystem handles one toggle per press. */
+				/* Cloak. Bound to the FLARE slot rather than a slot of its own: flare is
+				 * Marine-only and cloak is Predator-only, so the two never coexist and
+				 * one binding serves both - each species' config screen labels it for
+				 * itself. Defaults are right stick click in VR and RB on a pad.
+				 *
+				 * The VR default was VR_SRC_NONE until 2026-09-14, which meant cloak
+				 * could never fire in a headset at all: this test is the only thing
+				 * that reads VR_ACT_FLARE for the Predator, so nothing bound = no
+				 * cloak, and there was no menu row to notice it with either.
+				 *
+				 * cloakDebounce in DoPlayerCloakingSystem handles one toggle per
+				 * press, and both controller signals are tap/edge actions already. */
 				if(KeyboardInput[primaryInput->d.Cloak]
 				 ||KeyboardInput[secondaryInput->d.Cloak]
 				#ifdef AVP_XR
@@ -1081,9 +1091,11 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(DebouncedKeyboardInput[primaryInput->e.CycleVisionMode]
 				 ||DebouncedKeyboardInput[secondaryInput->e.CycleVisionMode]
 				#ifdef AVP_XR
-				 ||xr_y_button_gameplay_tap
+				 /* SHORT tap of whatever cycles vision; a hold is the zoom below. */
+				 ||VR_ActionTapShort(VR_ACT_VISION)
 				#endif
-				 ||Pad_Action(PAD_ACT_VISION)
+				 /* SHORT tap only - a hold of the same control is the zoom below. */
+				 ||Pad_ActionTapShort(PAD_ACT_VISION)
 				)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_CycleVisionMode = 1;
 
@@ -1094,6 +1106,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				 /* Left trigger only fires the hook if the predator has one. */
 				 ||(xr_left_trigger_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
 				#endif
+				 /* Same guard on a pad: LT by default, and inert without a hook. */
+				 ||(Pad_Action(PAD_ACT_GRAPPLE) && playerStatusPtr->GrapplingHookEnabled)
 				)
 				{
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_GrapplingHook = 1;
@@ -1115,13 +1129,19 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				{
 					if (CameraZoomLevel>0) CameraZoomLevel--;
 				}
-				/* Controller: one button has to serve both directions, so each press
-				   steps in and wraps back to no zoom past the last level - the same
-				   cycle the VR build gives the Y hold. Reaches 3, the keyboard's
+				/* Controller: HOLD the vision button (Y by default) past ~0.5s, exactly
+				   as the headset's Y works - a tap cycles vision mode, a hold zooms.
+				   There is no separate zoom binding: pad bindings allow two actions on
+				   one button and simply fire both, so a tap would cycle vision AND zoom
+				   together. The two meanings come from one control read two ways
+				   (Pad_ActionLong in main.c).
+
+				   One button has to serve both directions, so each hold steps in and
+				   wraps back to no zoom past the last level. Reaches 3, the keyboard's
 				   maximum, because this is the flat game on a monitor: the VR path
 				   stops at 2 only because a ~50x magnification fills a headset's whole
 				   field of view. */
-				if (Pad_Action(PAD_ACT_ZOOM))
+				if (Pad_ActionLong(PAD_ACT_VISION))
 				{
 					if (CameraZoomLevel < 3) CameraZoomLevel++;
 					else CameraZoomLevel = 0;
@@ -1140,7 +1160,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				 * The keyboard ZoomIn/ZoomOut path above still reaches 3, so a PCVR exe
 				 * running flat (-noxr) is unchanged, as is the desktop game. */
 				#define VR_PREDATOR_MAX_ZOOM_LEVEL 2
-				if (xr_y_button_gameplay_long_edge)
+				if (VR_ActionLong(VR_ACT_VISION))
 				{
 					if (CameraZoomLevel<VR_PREDATOR_MAX_ZOOM_LEVEL) CameraZoomLevel++;
 					else CameraZoomLevel = 0;
@@ -1172,6 +1192,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||xr_menu_button_msg_history_edge
 				#endif
+				 /* Pad: Start held past the long-press threshold. */
+				 ||pad_msg_history_edge
 				)
 					MessageHistory_DisplayPrevious();
 					
@@ -1215,6 +1237,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				#ifdef AVP_XR
 				 ||xr_menu_button_msg_history_edge
 				#endif
+				 /* Pad: Start held past the long-press threshold. */
+				 ||pad_msg_history_edge
 				)
 					MessageHistory_DisplayPrevious();
 					
@@ -1885,7 +1909,10 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			/* KEY_VOID = explicitly unbound; KEY_ESCAPE (value 0) = never set / not a
 			   valid reload binding, since Escape is the menu key. */
 			if ((kp!=KEY_VOID && kp!=KEY_ESCAPE && DebouncedKeyboardInput[kp])
-			  ||(ks!=KEY_VOID && ks!=KEY_ESCAPE && DebouncedKeyboardInput[ks]))
+			  ||(ks!=KEY_VOID && ks!=KEY_ESCAPE && DebouncedKeyboardInput[ks])
+			  /* Pad: D-pad Left by default. Inside the same species test above, so
+			     the Alien - which has no reload - never reaches it. */
+			  ||Pad_Action(PAD_ACT_RELOAD))
 			{
 				extern void PlayerRequestManualReload(void);
 				PlayerRequestManualReload();

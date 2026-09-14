@@ -265,7 +265,7 @@ static int LoadUserProfiles(void)
 		 * remainder ignored, which is the same contract in the other direction. */
 		memset(profilePtr, 0, sizeof(AVP_USER_PROFILE));
 		{
-			const size_t minimumSize = offsetof(AVP_USER_PROFILE, UseControllerPlus1);
+			const size_t minimumSize = offsetof(AVP_USER_PROFILE, PadBindingPlus1);
 			size_t got = fread(profilePtr, 1, sizeof(AVP_USER_PROFILE), rif_file);
 
 			if (got < minimumSize)
@@ -328,7 +328,6 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
 	VRMoveDeadzone = 2;
-	UseController = 1;
 	PadVertSensitivity = 10;
 	PadHorizSensitivity = 10;
 	PadInvertVertical = 0;
@@ -522,15 +521,12 @@ extern void GetSettingsFromUserProfile(void)
 	/* Game controller. Same all-or-nothing validation as the VR bindings above: an
 	   out-of-range or duplicated set is rejected wholesale rather than half-applied,
 	   because a partly-garbled map is worse than the defaults. */
-	UseController = UserProfilePtr->UseControllerPlus1
-	              ? (UserProfilePtr->UseControllerPlus1 - 1) : 1;
-	if (UseController < 0 || UseController > 1) UseController = 1;
 	PadVertSensitivity  = UserProfilePtr->PadVertSensitivityPlus1
-	                    ? UserProfilePtr->PadVertSensitivityPlus1 - 1 : 10;
+	                    ? UserProfilePtr->PadVertSensitivityPlus1 - 1 : PAD_VERT_SENSITIVITY_DEFAULT;
 	PadHorizSensitivity = UserProfilePtr->PadHorizSensitivityPlus1
-	                    ? UserProfilePtr->PadHorizSensitivityPlus1 - 1 : 10;
+	                    ? UserProfilePtr->PadHorizSensitivityPlus1 - 1 : PAD_HORIZ_SENSITIVITY_DEFAULT;
 	PadInvertVertical   = UserProfilePtr->PadInvertVerticalPlus1
-	                    ? UserProfilePtr->PadInvertVerticalPlus1 - 1 : 0;
+	                    ? UserProfilePtr->PadInvertVerticalPlus1 - 1 : PAD_INVERT_VERTICAL_DEFAULT;
 	if (PadVertSensitivity  < 0 || PadVertSensitivity  > 20) PadVertSensitivity  = 10;
 	if (PadHorizSensitivity < 0 || PadHorizSensitivity > 20) PadHorizSensitivity = 10;
 	if (PadInvertVertical   < 0 || PadInvertVertical   > 1)  PadInvertVertical   = 0;
@@ -541,19 +537,54 @@ extern void GetSettingsFromUserProfile(void)
 
 		for (i = 0; i < PAD_ACT_COUNT; i++)
 		{
-			int stored = (i < 12) ? UserProfilePtr->PadBindingPlus1[psp][i] : 0;
+			int stored = (i < 16) ? UserProfilePtr->PadBindingPlus1[psp][i] : 0;
 			candidate[i] = stored ? stored - 1 : PadBinding[psp][i];
 			if (candidate[i] < 0 || candidate[i] >= PAD_SRC_COUNT) ok = 0;
 		}
-		/* Duplicates are NOT rejected here, unlike the VR set.
-		   The VR menus cycle through bindings with VR_CycleBinding, which skips a source
-		   already in use, so a duplicate there can only mean a corrupt profile. These
-		   rows are plain TEXTSLIDERs that cycle every source, so a player can deliberately
-		   put two actions on one button - and rejecting that on load would silently throw
-		   away their whole map on the next launch. Sharing a button is harmless: both
-		   actions simply fire. */
+		/* Duplicates are UNBOUND rather than rejected, which is the difference from the
+		   VR set above.
+		   The menu no longer creates them - Pad_CycleBinding skips a source already in
+		   use, exactly as the VR side does - so a clash in a file comes from a profile
+		   written before that existed. Rejecting the whole set, as the VR path does,
+		   would throw away the player's entire map over one bad row; leaving it alone
+		   would let one button keep firing two actions. Clearing the later row is the
+		   middle course: everything else survives, the clash is gone, and the cleared
+		   row shows as Unbound so it is visible rather than silent.
+
+		   FIRST occurrence wins, and the action order is not arbitrary - fire, jump and
+		   crouch come before the situational abilities, so a clash is resolved in favour
+		   of the more fundamental control. Unbound is exempt: any number of actions may
+		   sit on nothing. */
 		if (ok)
+		{
+			for (i = 0; i < PAD_ACT_COUNT; i++)
+			{
+				int j;
+				/* Start and Back are reserved by the frontend and no longer offered,
+				   so a binding on one can only come from an older profile. Start in
+				   particular would fire its action every time the in-game menu was
+				   opened. */
+				if (candidate[i] > PAD_SRC_LAST_BINDABLE)
+				{
+					SDL_Log("PROFILE: species %d action %d was bound to a reserved "
+					        "control (older profile) - unbound", psp, i);
+					candidate[i] = PAD_SRC_NONE;
+				}
+				if (candidate[i] == PAD_SRC_NONE) continue;
+				for (j = 0; j < i; j++)
+				{
+					if (candidate[j] == candidate[i])
+					{
+						SDL_Log("PROFILE: species %d actions %d and %d shared one "
+						        "control (older profile) - action %d unbound",
+						        psp, j, i, i);
+						candidate[i] = PAD_SRC_NONE;
+						break;
+					}
+				}
+			}
 			for (i = 0; i < PAD_ACT_COUNT; i++) PadBinding[psp][i] = candidate[i];
+		}
 		else
 			SDL_Log("PROFILE: controller button bindings for species %d were not usable "
 			        "(older or corrupt profile) - defaults kept", psp);
@@ -618,14 +649,13 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 			for (i = 0; i < VR_ACT_COUNT && i < 12; i++)
 				profilePtr->VRBindingPlus1[sp][i] = (unsigned char)(VRBinding[sp][i] + 1);
 	}
-	profilePtr->UseControllerPlus1 =	(unsigned char)(UseController + 1);
 	profilePtr->PadVertSensitivityPlus1 =	(unsigned char)(PadVertSensitivity + 1);
 	profilePtr->PadHorizSensitivityPlus1 =	(unsigned char)(PadHorizSensitivity + 1);
 	profilePtr->PadInvertVerticalPlus1 =	(unsigned char)(PadInvertVertical + 1);
 	{
 		int sp, i;
 		for (sp = 0; sp < PAD_SPECIES_COUNT; sp++)
-			for (i = 0; i < PAD_ACT_COUNT && i < 12; i++)
+			for (i = 0; i < PAD_ACT_COUNT && i < 16; i++)
 				profilePtr->PadBindingPlus1[sp][i] = (unsigned char)(PadBinding[sp][i] + 1);
 	}
 	profilePtr->VRVignetteStrength =	VRVignetteStrength;

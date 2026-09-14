@@ -28,10 +28,13 @@ typedef enum PAD_ACTION
     PAD_ACT_VISION,
     PAD_ACT_TAUNT,
     PAD_ACT_SPECIAL,        /* Marine jetpack / Predator disc recall */
-    PAD_ACT_FLARE,          /* Marine flare */
+    PAD_ACT_FLARE,          /* Marine flare, AND the Predator's cloak - the two are
+                               mutually exclusive per species, so they share one slot
+                               and each screen labels it for its own species. */
     PAD_ACT_NEXT_WEAPON,
     PAD_ACT_PREV_WEAPON,
-    PAD_ACT_ZOOM,           /* Predator only - steps the vision zoom */
+    PAD_ACT_GRAPPLE,        /* Predator only - the grappling hook */
+    PAD_ACT_RELOAD,         /* Marine and Predator - manual reload */
     PAD_ACT_COUNT
 } PAD_ACTION;
 
@@ -60,14 +63,32 @@ typedef enum PAD_SOURCE
     PAD_SRC_COUNT
 } PAD_SOURCE;
 
+/* Highest source the binding menus offer.
+ *
+ * Start and Back are reserved by the frontend - Start opens the in-game menu - so they
+ * are not bindable: an action on Start would fire every time the menu was opened. They
+ * are deliberately the LAST two entries above so that excluding them is a cap rather
+ * than a hole in the middle, which a TEXTSLIDER (base + value) could not express.
+ * KEEP THEM LAST if more sources are ever added. */
+#define PAD_SRC_LAST_BINDABLE (PAD_SRC_START - 1)
+
 /* One map PER SPECIES, as the VR bindings are: the actions differ (a Marine's jetpack is
    a Predator's recall disc, and only the Marine throws flares), so each gets its own
    screen and its own map. Indexed by I_PLAYER_TYPE - Marine 0, Predator 1, Alien 2.
    Sized by the literal 3 so this header does not need gamedef.h. */
 #define PAD_SPECIES_COUNT 3
 
+/* Shipped defaults for the scalar settings.
+ *
+ * Named once and shared by the three places that have to agree on them: the profile
+ * decode (where a zero byte means "written before this option existed" and must come
+ * out as the default), Reset To Defaults, and the "(Default)" marker the menu puts
+ * beside whichever option is the default. They were literals in each. */
+#define PAD_VERT_SENSITIVITY_DEFAULT  10
+#define PAD_HORIZ_SENSITIVITY_DEFAULT 10
+#define PAD_INVERT_VERTICAL_DEFAULT   0
+
 /* Menu-editable, profile-stored. */
-extern int UseController;                      /* 0 = off, 1 = on (default) */
 extern int PadBinding[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
 extern const int PadBindingDefault[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
 
@@ -84,6 +105,18 @@ extern void Pad_ResetBindings(void);
    flare, taunt, operate) report a press EDGE; the rest report the level. */
 extern int Pad_Action(int action);
 
+/* The same binding read as a short tap or as a hold past ~0.5s. Used for the Predator's
+   vision button, which taps to cycle vision mode and holds to step the zoom - one
+   control doing two jobs, as the headset's Y does.
+
+   Not two actions bound to the same button: pad bindings deliberately ALLOW duplicates
+   (see the profile loader), and a shared button simply fires both actions - so a tap
+   would cycle the vision mode AND zoom at once. One binding read two ways is what keeps
+   them apart. The two signals are mutually exclusive, so a hold never also fires the
+   tap. */
+extern int Pad_ActionTapShort(int action);
+extern int Pad_ActionLong(int action);
+
 /* Stick positions in -1..1 with the deadzone already removed, applied by usr_io.c.
    LEFT stick: X strafes, Y moves (positive = forward).
    RIGHT stick: X turns, Y looks (positive = look down, matching a pulled-back stick). */
@@ -92,7 +125,12 @@ extern float PadMoveX, PadMoveY;
 extern void Pad_ApplyLook(float turn, float pitch);
 extern void Pad_ApplyMove(float strafe, float forward);
 
-/* 1 while a usable gamepad is connected AND Use Controller is on. */
+/* 1 for one frame when Start has been held past the long-press threshold: the mission
+   log. Read by the per-species message-history sites in usr_io.c, alongside the keyboard
+   binding and the headset's equivalent. */
+extern int pad_msg_history_edge;
+
+/* 1 while a usable gamepad is connected. */
 extern int Pad_IsActive(void);
 
 #endif

@@ -322,7 +322,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 
 	if (stringID == TEXTSTRING_MAINMENU_SUBTITLE)
 #ifdef AVP_XR
-		return "VR Edition";
+		return "Classic 2000 VR";
 #else
 		return "Classic 2000";
 #endif

@@ -192,7 +192,7 @@ static SDL_Gamepad *gamepad = NULL;
         PAD_SRC_RSTICK,         /* FLARE slot - the flare itself */ \
         PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, \
         PAD_SRC_NONE,            /* GRAPPLE - Predator only */ \
-        PAD_SRC_DPAD_LEFT       /* RELOAD */ \
+        PAD_SRC_DPAD_RIGHT      /* RELOAD */ \
     }, \
     /* [I_Predator] */ { \
         PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \
@@ -201,7 +201,7 @@ static SDL_Gamepad *gamepad = NULL;
         PAD_SRC_RSTICK,         /* FLARE slot - the cloak */ \
         PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, \
         PAD_SRC_LTRIGGER,        /* GRAPPLE */ \
-        PAD_SRC_DPAD_LEFT       /* RELOAD */ \
+        PAD_SRC_DPAD_RIGHT      /* RELOAD */ \
     }, \
     /* [I_Alien] */ { \
         PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \

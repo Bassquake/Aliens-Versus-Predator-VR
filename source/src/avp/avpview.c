@@ -892,6 +892,14 @@ static int vr_left_hmc_valid = 0;
    is still solved against the RIGHT controller and only marked not-drawn. */
 int vr_left_rig_drawn = 0;
 
+/* GlobalFrameCounter of the left pistol's last shot, so its muzzle flash can be drawn.
+   The RIGHT gun's flash is gated on the weapon being in a FIRING state, but the left
+   shot fires outside the state machine and RESTORES that state, so it is invisible to
+   that test - the same reason its sound had to be played explicitly. A frame stamp
+   rather than a countdown because the eye pass runs twice per frame and only reads it. */
+extern int GlobalFrameCounter;
+static int vr_left_flash_frame = -1000;
+
 /* Look a section up in the left-hand rig. NULL when the split is not running, so
    callers can fall back to the primary rig. */
 SECTION_DATA *VR_LeftRigSection(const char *name)
@@ -3591,6 +3599,30 @@ void AvpShowViewsVR(void)
                                     if (casing)
                                         MakePistolCasing(&casing->World_Offset, &casing->SecMat);
                                 }
+                                {   /* the shot itself, as the state callback would.
+                                     *
+                                     * DoPlayerSounds (psndproj.c) plays the pistol off
+                                     * the weapon's CurrentState - FIRING_PRIMARY or
+                                     * FIRING_SECONDARY - but this shot saves and RESTORES
+                                     * that state a few lines below, precisely so the
+                                     * right gun's state machine is left undisturbed. By
+                                     * the time DoPlayerSounds runs the state is back to
+                                     * idle, so the left gun fired silently. Played here
+                                     * for the same reason the casing is ejected here.
+                                     *
+                                     * playerNoise is what lets NPCs HEAR the shot; the
+                                     * state-driven path sets it alongside the sound, so a
+                                     * silent left gun was also an unheard one. */
+                                    extern int playerNoise;
+                                    Sound_Play(SID_SHOTGUN,"h");
+                                    playerNoise = 1;
+                                }
+                                vr_left_flash_frame = GlobalFrameCounter;
+                                /* Light the room from the shot, as the right gun's state
+                                   transition does (weapons.c, beside its own muzzle
+                                   flash). Without this the left gun flashed visually but
+                                   cast no light, so firing it in the dark lit nothing. */
+                                AddLightingEffectToObject(Player, LFX_MUZZLEFLASH);
                                 XR_Haptic_Left(0.5f, 80.0f);
                             }
 
@@ -4624,7 +4656,13 @@ void AvpShowViewsVR(void)
                     || ((wpn->WeaponIDNumber == WEAPON_MARINE_PISTOL
                       || wpn->WeaponIDNumber == WEAPON_TWO_PISTOLS)
                         && wpn->CurrentState == WEAPONSTATE_FIRING_SECONDARY);
-                if (tw->MuzzleFlashShapeName && !tw->PrimaryIsMeleeWeapon && firing) {
+                /* The left pistol flashes on its own stamp - see vr_left_flash_frame.
+                   Two frames so it survives a frame where the eye pass and the shot
+                   land either side of the counter tick. */
+                int leftFlashing = (wpn->WeaponIDNumber == WEAPON_TWO_PISTOLS)
+                                && (GlobalFrameCounter - vr_left_flash_frame <= 1);
+                if (tw->MuzzleFlashShapeName && !tw->PrimaryIsMeleeWeapon
+                    && (firing || leftFlashing)) {
                     /* Commit the weapon (colour + depth) on its own flush first so
                        its depth is in the buffer before the flash is drawn. The
                        weapon+flash otherwise share one batch, and we need the
@@ -4639,17 +4677,38 @@ void AvpShowViewsVR(void)
                        flushed here, so it still layers on top of them. */
                     PositionPlayersWeaponMuzzleFlash();
                     if (AvP.PlayerType == I_Marine) {
-                        VECTORCH dir = { PlayersWeaponMuzzleFlash.ObMat.mat31,
-                                         PlayersWeaponMuzzleFlash.ObMat.mat32,
-                                         PlayersWeaponMuzzleFlash.ObMat.mat33 };
                         enum MUZZLE_FLASH_ID fid =
                             (wpn->WeaponIDNumber == WEAPON_SMARTGUN)
                                 ? MUZZLE_FLASH_SMARTGUN
                             : (wpn->WeaponIDNumber == WEAPON_FRISBEE_LAUNCHER)
                                 ? MUZZLE_FLASH_SKEETER
                             : MUZZLE_FLASH_AMORPHOUS;
-                        DrawMuzzleFlash(&PlayersWeaponMuzzleFlash.ObWorld, &dir, fid);
-                    } else {
+                        if (firing) {
+                            VECTORCH dir = { PlayersWeaponMuzzleFlash.ObMat.mat31,
+                                             PlayersWeaponMuzzleFlash.ObMat.mat32,
+                                             PlayersWeaponMuzzleFlash.ObMat.mat33 };
+                            DrawMuzzleFlash(&PlayersWeaponMuzzleFlash.ObWorld, &dir, fid);
+                        }
+                        if (leftFlashing) {
+                            /* "Dum Flash L" - the LEFT pistol's own flash bone, on the
+                               second rig, which is the one the left gun is drawn from.
+                               NOT "Dum Flash": this rig is a copy of the WHOLE two-pistol
+                               model, so that name is the RIGHT pistol's bone, and using
+                               it put the flash out to the right by the inter-pistol
+                               distance. Name read off a dump of the rig on device; the
+                               casing bone beside it is "Dum L Pistol round". No bone, no
+                               flash, rather than one in the wrong place. */
+                            SECTION_DATA *lf = VR_LeftRigSection("Dum Flash L");
+                            if (!lf) lf = VR_LeftRigSection("Dum flash L");
+                            if (!lf) lf = VR_LeftRigSection("dum flash L");
+                            if (lf) {
+                                VECTORCH ldir = { lf->SecMat.mat31,
+                                                  lf->SecMat.mat32,
+                                                  lf->SecMat.mat33 };
+                                DrawMuzzleFlash(&lf->World_Offset, &ldir, fid);
+                            }
+                        }
+                    } else if (firing) {
                         RenderThisDisplayblock(&PlayersWeaponMuzzleFlash);
                     }
                     glDepthMask(GL_FALSE);

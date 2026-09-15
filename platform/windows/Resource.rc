@@ -63,8 +63,8 @@ IDI_ICON1               ICON                    "avp_multi.ico"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,7,0,0
- PRODUCTVERSION 0,7,0,0
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -89,12 +89,12 @@ BEGIN
 #else
             VALUE "FileDescription", "Aliens Versus Predator"
 #endif
-            VALUE "FileVersion", "0.7.0.0"
+            VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "avp.exe"
             VALUE "LegalCopyright", "Copyright (C) 2026"
             VALUE "OriginalFilename", "avp.exe"
             VALUE "ProductName", "Aliens versus Predator"
-            VALUE "ProductVersion", "0.7.0.0"
+            VALUE "ProductVersion", "1.0.0.0"
         END
     END
     BLOCK "VarFileInfo"

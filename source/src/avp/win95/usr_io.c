@@ -51,6 +51,7 @@ extern int xr_menu_button_msg_history_edge;
 extern int xr_x_button_gameplay_pressed;
 extern int xr_left_trigger_pressed;
 extern int xr_left_trigger_gameplay_edge;
+extern int xr_left_squeeze_gameplay_edge;
 extern int xr_left_squeeze_gameplay_pressed;
 extern void XR_Haptic_Left(float amplitude, float duration_ms);
 #endif
@@ -1103,8 +1104,10 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 				if(DebouncedKeyboardInput[primaryInput->h.GrapplingHook]
 				 ||DebouncedKeyboardInput[secondaryInput->h.GrapplingHook]
 				#ifdef AVP_XR
-				 /* Left trigger only fires the hook if the predator has one. */
-				 ||(xr_left_trigger_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
+				 /* Left GRIP, and only if the predator actually has a hook. Moved off the
+				    left trigger, which is now the Predator's secondary fire - the grip
+				    was freed by the recall disc going to the right one. */
+				 ||(xr_left_squeeze_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
 				#endif
 				 /* Same guard on a pad: LT by default, and inert without a hook. */
 				 ||(Pad_Action(PAD_ACT_GRAPPLE) && playerStatusPtr->GrapplingHookEnabled)
@@ -1113,7 +1116,7 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_GrapplingHook = 1;
 					#ifdef AVP_XR
 					/* Confirm the fire with a single pulse on the press edge. */
-					if(xr_left_trigger_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
+					if(xr_left_squeeze_gameplay_edge && playerStatusPtr->GrapplingHookEnabled)
 						XR_Haptic_Left(0.6f, 80.0f);
 					#endif
 				}

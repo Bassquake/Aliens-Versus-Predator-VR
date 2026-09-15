@@ -158,15 +158,16 @@ static SDL_Gamepad *gamepad = NULL;
      operate        A
      vision         Y
      taunt          X
-     special        Marine LT / Predator LB   (jetpack / recall disc)
+     special        Marine LB / Predator LT   (jetpack / recall disc)
      flare/cloak    right stick click  (Marine flare / Predator cloak - one slot, see
                                         PAD_ACT_FLARE in padinput.h)
      next weapon    dpad up
      prev weapon    dpad down
-     grapple        left trigger       (Predator only)
+     grapple        left shoulder      (Predator only)
+     reload         dpad right         (Marine and Predator; the Alien has none)
 
-   The dpad is the weapon cluster: up/down cycle, and nothing else is on it, so weapon
-   changes never need a thumb off the sticks for long. Crouch is the left stick click,
+   The dpad is the items cluster: up/down cycle weapons and right reloads, so none of
+   it needs a thumb off the sticks for long. Crouch is the left stick click,
    where a modern shooter puts it and the only control left once A, B, X and Y are
    spoken for. A and B double as Enter and Back in the MENUS, but that mapping is
    separate and menu-only, so there is no conflict with Operate and Jump in play.
@@ -174,11 +175,12 @@ static SDL_Gamepad *gamepad = NULL;
    The Predator's ZOOM has no row and no binding of its own: it is a HOLD of whatever
    vision is bound to (Y by default), the way the headset works. See Pad_ActionLong.
 
-   Left trigger carries the Marine's jetpack and the Predator's grapple - neither
-   species has the other's ability, so the trigger means one thing to whoever holds it.
-   That is also why the table below is per species rather than one shared row.
+   The left-hand controls differ by species, which is why the table below is per
+   species rather than one shared row: the Marine puts its jetpack on LB and has no
+   grapple, while the Predator needs LB for the grapple AND LT for the recall disc.
 
-   Dpad left/right, Start and Back are deliberately left free. */
+   Dpad left, Start and Back are deliberately left free, as are whichever left-hand
+   controls a species does not use - LT on the Marine, both shoulders on the Alien. */
 /* Per species, like VR_BINDING_DEFAULTS. The shared rows stay identical so the buttons a
    player reaches for do not move when they change character; only the species-specific
    abilities differ, and they have to - the Predator needs LB for its recall disc AND LT
@@ -188,7 +190,7 @@ static SDL_Gamepad *gamepad = NULL;
     /* [I_Marine] */ { \
         PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \
         PAD_SRC_A, PAD_SRC_Y, PAD_SRC_X, \
-        PAD_SRC_LTRIGGER,       /* SPECIAL - jetpack */ \
+        PAD_SRC_LSHOULDER,      /* SPECIAL - jetpack */ \
         PAD_SRC_RSTICK,         /* FLARE slot - the flare itself */ \
         PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, \
         PAD_SRC_NONE,            /* GRAPPLE - Predator only */ \
@@ -197,11 +199,11 @@ static SDL_Gamepad *gamepad = NULL;
     /* [I_Predator] */ { \
         PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \
         PAD_SRC_A, PAD_SRC_Y, PAD_SRC_X, \
-        PAD_SRC_LSHOULDER,      /* SPECIAL - recall disc */ \
+        PAD_SRC_LTRIGGER,       /* SPECIAL - recall disc */ \
         PAD_SRC_RSTICK,         /* FLARE slot - the cloak */ \
         PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, \
-        PAD_SRC_LTRIGGER,        /* GRAPPLE */ \
-        PAD_SRC_DPAD_RIGHT      /* RELOAD */ \
+        PAD_SRC_LSHOULDER,      /* GRAPPLE */ \
+        PAD_SRC_DPAD_RIGHT      /* RELOAD - same button as the Marine's */ \
     }, \
     /* [I_Alien] */ { \
         PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \
@@ -516,7 +518,7 @@ int VR_Reach(int range)
     /* [I_Predator] */ { \
         VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
         VR_SRC_A, VR_SRC_Y, VR_SRC_X, \
-        VR_SRC_L_GRIP,          /* SPECIAL - recall disc */ \
+        VR_SRC_L_TRIGGER,       /* SPECIAL - recall disc */ \
         VR_SRC_R_STICK_CLICK,   /* FLARE slot = the Predator's CLOAK (see usr_io.c) */ \
         VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN \
     }, \
@@ -949,9 +951,10 @@ int xr_y_button_gameplay_edge                = 0; /* 1 on Y press edge */
 int xr_menu_button_msg_history_edge          = 0; /* 1 once when left menu button is held past the long-press threshold (message history) */
 int xr_x_button_gameplay_pressed             = 0; /* 1 on X press edge in gameplay (taunt) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
-int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (currently unbound - the Marine jetpack moved to the left grip) */
-int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger press edge (Predator grappling hook) */
-int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squeeze is held (Predator recall disc, Marine jetpack) */
+int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (Predator secondary fire; bindings read this) */
+int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger press edge (currently unused - the hook moved to the left grip) */
+int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squeeze is held (Marine jetpack; bindings read this) */
+int xr_left_squeeze_gameplay_edge            = 0; /* 1 on left grip press edge (Predator grappling hook) */
 
 /* Read whatever physical control this action is bound to.
  *
@@ -3917,17 +3920,27 @@ int axes, balls, hats;
                 xr_grip_right_squeeze_pressed = sstate.currentState ? 1 : 0;
         }
 
-        /* Left grip squeeze → Predator recall disc (gameplay only). Recall_Disc has
-         * its own field-charge gate and is safe to call every frame while held, so
-         * this mirrors the keyboard binding's held signal. */
+        /* Left grip squeeze (gameplay only). Two signals from one read: the LEVEL
+         * feeds the ordinary bindings (VR_SRC_L_GRIP), while the press EDGE drives the
+         * Predator's grappling hook, which fires once per squeeze. The hook moved here
+         * from the left trigger; the ability gate stays in usr_io.c where the player
+         * status is available. */
         xr_left_squeeze_gameplay_pressed = 0;
+        xr_left_squeeze_gameplay_edge    = 0;
         if (!xr_2d_mode && xr_left_squeeze_action && pfn_xrGetActionStateBoolean) {
+            static int ls_prev = 0;
             XrActionStateGetInfo lsget = { XR_TYPE_ACTION_STATE_GET_INFO };
             lsget.action = xr_left_squeeze_action;
             XrActionStateBoolean lsstate = { XR_TYPE_ACTION_STATE_BOOLEAN };
             if (XR_SUCCEEDED(pfn_xrGetActionStateBoolean(xr_session, &lsget, &lsstate))
-                    && lsstate.isActive)
-                xr_left_squeeze_gameplay_pressed = lsstate.currentState ? 1 : 0;
+                    && lsstate.isActive) {
+                int ls_cur = lsstate.currentState ? 1 : 0;
+                xr_left_squeeze_gameplay_pressed = ls_cur;
+                if (ls_cur && !ls_prev) xr_left_squeeze_gameplay_edge = 1;
+                ls_prev = ls_cur;
+            } else {
+                ls_prev = 0;
+            }
         }
 
         /* A button → operate (gameplay only). Read the raw state ONCE here and

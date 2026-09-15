@@ -164,6 +164,15 @@ extern PARTICLE_DESC ParticleDescription[];
 
 extern void InitialiseParticleSystem(void);
 extern void MakeParticle(VECTORCH *positionPtr, VECTORCH *velocityPtr, enum PARTICLE_ID particleID);
+
+/* Draw-only diagnostic markers with an explicit colour and size (particle.c). Filled by
+   the sound system each frame, drawn last in RenderParticlesOnly so they sit on top.
+   Compiled only with AVP_SOUND_DIAGNOSTICS (psnd.h); every caller is behind the same
+   flag, so these vanish together with them. */
+#if AVP_SOUND_DIAGNOSTICS
+extern void SoundMarker_Clear(void);
+extern void SoundMarker_Add(VECTORCH *pos, int r, int g, int b, int size);
+#endif
 extern void HandleParticleSystem(void);
 #ifdef AVP_XR
 extern void RenderParticlesOnly(void);

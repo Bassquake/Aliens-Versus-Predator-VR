@@ -47,6 +47,34 @@ typedef struct sound3ddata
   covers +- 4 octaves in 128ths of a semi-tone
   -----------------------------------------------------------------------------*/
 #define SOUND_NOACTIVEINDEX			(-1)
+
+/* ---- Spatial audio diagnostics (OFF) ---------------------------------------
+ *
+ * Set to 1 to draw where every 3D sound is coming from and what the audio path believes
+ * about it. Built to chase reports that alien screams did not come from the alien, and
+ * kept because it is the only way to check spatial audio WITHOUT LISTENING - which
+ * matters here: stereo panning cannot be verified by ear with single-sided hearing.
+ *
+ * With it on you get, all visible to the player:
+ *   - a small WHITE dot at each 3D sound's world position (psnd.c)
+ *   - an ORANGE pip where the audio believes that sound is, reconstructed from the
+ *     vectors actually handed to alListenerfv - it sits on the white one when the
+ *     listener frame agrees with the view (openal.c)
+ *   - a RED/GREEN axis gizmo ~1.2 m ahead naming row 1 and row 2 of the listener
+ *     matrix, which is how the row-vs-column convention was settled (particle.c)
+ *   - a throttled SNDPAN: log line giving the pan as a number
+ *
+ * It costs real work per sound and the markers are visible in game, so it must ship at
+ * 0. The marker list itself (SoundMarker_Add/_Render, particle.c) is general and worth
+ * reusing for any future spatial debugging. */
+#define AVP_SOUND_DIAGNOSTICS 0
+
+/* Raise the NEXT 3D sound played by this many game units (Y is DOWN, so the value is
+   subtracted). Consumed and cleared by the next Sound_Play, then carried on that sound
+   for its lifetime so Sound_Update3d keeps it. Used by the scream layer to emit
+   vocalisations from a character's head rather than from its origin, which sits on the
+   floor. Zero, and every other sound behaves exactly as before. */
+extern void Sound_SetPendingEmitHeight(int units);
 #define SOUND_PLATFORMERROR			(-1)
 
 #define VOLUME_MAX		(127)		

@@ -19,6 +19,49 @@
 #include "showcmds.h"
 #include "avp_userprofile.h"
 #include "cdplayer.h"
+#include "particle.h"
+#include <SDL3/SDL.h>
+
+
+#if AVP_SOUND_DIAGNOSTICS
+/* Marked only while a level is actually running: SoundSys_Management is driven by the
+   frontend and the loading screens too, where there is no world to put a particle in. */
+static void SoundMarker_Mark(VECTORCH *pos, int everyFrame)
+{
+	extern int GlobalFrameCounter;
+
+	if (AvP.GameMode != I_GM_Playing) return;
+	/* Continuing sounds are marked periodically rather than every frame - one particle
+	   per active 3D sound per frame swamps both the particle system and the view. A
+	   sound STARTING is marked unconditionally, so a short one cannot slip between
+	   ticks and look like silence. */
+	if (!everyFrame && (GlobalFrameCounter & 7) != 0) return;
+
+	{
+		/* PARTICLE_ELECTRICALPLASMASPHERE, and the choice is not cosmetic:
+		 *
+		 *   - MakeParticle SWITCHES on the id and its `default:` case deallocates the
+		 *     particle again ("initialised wrongly"). Only the ~32 ids with a case
+		 *     survive - PARTICLE_STAR is NOT one of them, which is why the first
+		 *     attempt produced nothing at all.
+		 *   - This one is left alone by the per-frame update: no velocity, no gravity,
+		 *     no collision, so it stays exactly where the sound is.
+		 *   - It fades its alpha over ~0.5s and grows, so overlapping marks read as one
+		 *     soft blob rather than a hard dot.
+		 *
+		 * Anything with a LifeTime of 0 (PARTICLE_BLUEPLASMASPHERE) lasts a single
+		 * frame and is no use here. */
+		static unsigned int marks = 0;
+		/* Small and white: this is the TRUTH marker, and the audio's opinion is drawn
+		   over it - so it has to be a dot to aim at, not a cloud to hide in. */
+		SoundMarker_Add(pos, 255, 255, 255, 50);
+		marks++;
+		if ((marks & 127) == 0)
+			SDL_Log("SNDMARK: %u markers placed; latest at %d,%d,%d",
+			        marks, pos->vx, pos->vy, pos->vz);
+	}
+}
+#endif
 
 /* Patrick 5/6/97 -------------------------------------------------------------
   Internal globals
@@ -109,6 +152,11 @@ void SoundSys_Management(void)
 
 	if(!SoundSwitchedOn) return;
 
+#if AVP_SOUND_DIAGNOSTICS
+	/* Once per frame, before the sounds refill it. Not per eye - the render only reads. */
+	SoundMarker_Clear();
+#endif
+
 	/* go through all the active sounds */
 	for(i=0;i<SOUND_MAXACTIVE;i++)
 	{
@@ -124,6 +172,11 @@ void SoundSys_Management(void)
 		{
 			PlatDo3dSound(i);
 			num3dUpdates++;
+#if AVP_SOUND_DIAGNOSTICS
+			/* Current position, not the one it started at - the point is to follow a
+			   moving source such as an alien screaming while it runs at you. */
+			SoundMarker_Mark(&ActiveSounds[i].threedeedata.position, 0);
+#endif
 		}		
 	}
 
@@ -336,6 +389,16 @@ void SoundSys_ChangeVolume(int volume)
 /* Patrick 5/6/97 -------------------------------------------------------------
   Functions for playing and controlling individual sounds
   ----------------------------------------------------------------------------*/
+/* See Sound_SetPendingEmitHeight in psnd.h. One-shot: set by the caller immediately
+   before a play, consumed by the next Sound_Play whether or not that sound turns out to
+   be 3D, so it can never leak onto an unrelated sound later. */
+static int PendingEmitHeight = 0;
+
+void Sound_SetPendingEmitHeight(int units)
+{
+	PendingEmitHeight = units;
+}
+
 void Sound_Play(SOUNDINDEX soundNumber, char *format, ...)
 {	
 	int newIndex;
@@ -523,10 +586,17 @@ fprintf(stderr, "PSND: Play: new = %d. num = %d, p = %d, v = %d, pi = %d, l = %d
 fprintf(stderr, "PSND: Play: %d %d %s l:%d\n", newIndex, soundNumber, GameSounds[soundNumber].wavName, loop);
 #endif
 
+	ActiveSounds[newIndex].emitHeight = PendingEmitHeight;
+	PendingEmitHeight = 0;
+
 	if(worldPosn) 
 	{
 		VECTORCH zeroPosn = {0,0,0};
+#if AVP_SOUND_DIAGNOSTICS
+		SoundMarker_Mark(worldPosn, 1);
+#endif
 		ActiveSounds[newIndex].threedeedata.position = *worldPosn;
+		ActiveSounds[newIndex].threedeedata.position.vy -= ActiveSounds[newIndex].emitHeight;
 		ActiveSounds[newIndex].threedeedata.velocity = zeroPosn;
 		ActiveSounds[newIndex].threedeedata.inner_range = 0;
 		ActiveSounds[newIndex].threedeedata.outer_range = 32000;
@@ -535,7 +605,11 @@ fprintf(stderr, "PSND: Play: %d %d %s l:%d\n", newIndex, soundNumber, GameSounds
 	}
 	else if (p_3ddata)
 	{
+#if AVP_SOUND_DIAGNOSTICS
+		SoundMarker_Mark(&p_3ddata->position, 1);
+#endif
 		ActiveSounds[newIndex].threedeedata = *p_3ddata;
+		ActiveSounds[newIndex].threedeedata.position.vy -= ActiveSounds[newIndex].emitHeight;
 		ActiveSounds[newIndex].threedee = 1;
 	}
 	else 
@@ -674,6 +748,10 @@ void Sound_Update3d(int activeSoundNumber, VECTORCH* posn)
 	if(ActiveSounds[activeSoundNumber].soundIndex == SID_NOSOUND) return;
 
 	ActiveSounds[activeSoundNumber].threedeedata.position = *posn;
+	/* Re-apply: callers pass the emitter's ORIGIN every frame, so without this a moving
+	   source would be dragged back to its feet the frame after it started. */
+	ActiveSounds[activeSoundNumber].threedeedata.position.vy -=
+		ActiveSounds[activeSoundNumber].emitHeight;
 }
 
 void Sound_UpdateNew3d(int activeSoundNumber, SOUND3DDATA * s3d)

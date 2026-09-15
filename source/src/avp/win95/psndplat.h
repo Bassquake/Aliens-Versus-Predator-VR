@@ -60,6 +60,12 @@ typedef struct activesoundsample
 	unsigned int marine_ignore	:1;
 	unsigned int reverb_off :1;
 	SOUND3DDATA threedeedata;
+	/* Vertical offset from the position the CALLER gives to the point the sound is
+	   actually emitted from - see Sound_SetPendingEmitHeight. Lives on the sound rather
+	   than being applied once at the call, because Sound_Update3d overwrites the
+	   position wholesale every frame for moving sources, which would otherwise drag a
+	   scream straight back down to the emitter's feet. Runtime only; never serialised. */
+	int emitHeight;
 	
 //	LPDIRECTSOUNDBUFFER dsBufferP;
 //	LPDIRECTSOUND3DBUFFER ds3DBufferP;

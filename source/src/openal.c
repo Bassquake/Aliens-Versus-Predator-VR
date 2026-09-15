@@ -18,13 +18,14 @@
 #include "dynamics.h"
 #include "dynblock.h"
 #include "stratdef.h"
+#include "particle.h"   /* MakeParticle, for the sound-direction markers */
 
 #if 0
 #define OPENAL_DEBUG
 #endif
 
 ACTIVESOUNDSAMPLE ActiveSounds[SOUND_MAXACTIVE];
-ACTIVESOUNDSAMPLE BlankActiveSound = {SID_NOSOUND,ASP_Minimum,0,0,NULL,0,0,0,0,0, { {0,0,0},{0,0,0},0,0 }, 0, 0, { 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0 }, NULL, NULL, NULL};
+ACTIVESOUNDSAMPLE BlankActiveSound = {SID_NOSOUND,ASP_Minimum,0,0,NULL,0,0,0,0,0, { {0,0,0},{0,0,0},0,0 }, 0, 0, 0, { 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0 }, NULL, NULL, NULL};
 SOUNDSAMPLEDATA BlankGameSound = {0,0,0,0,0,NULL,0,0,NULL,0};
 SOUNDSAMPLEDATA GameSounds[SID_MAXIMUM];
 
@@ -711,6 +712,132 @@ int PlatSoundHasStopped(int activeIndex)
 	return 0;
 }
 
+#if AVP_SOUND_DIAGNOSTICS
+/* ---- Which ear? (diagnostic) -----------------------------------------------
+ *
+ * Reports, in words, the side OpenAL will pan each 3D sound to. Written because panning
+ * cannot always be checked by listening - single-sided deafness makes a stereo image
+ * unverifiable by ear - so the audio path has to state what it is doing and be checked
+ * against the on-screen sound markers (AVP_SOUND_MARKERS in psnd.c) instead.
+ *
+ * Derived from the vectors ACTUALLY handed to alListenerfv, not from a re-derivation, so
+ * it cannot agree with the code while the code disagrees with the runtime:
+ *     right = at X up            (OpenAL's own convention)
+ *     pan   = dot(dir, right)    -1 hard left .. +1 hard right
+ *
+ * It also prints what the OLD column-reading listener would have given, so the two can
+ * be compared against where the marker actually is. If a marker on your left reads
+ * LEFT, the fix is right; if it reads RIGHT, it is not. */
+static ALfloat snd_listener_or[6];
+static int     snd_listener_or_valid = 0;
+
+/* Draw where the AUDIO thinks the sound is, as a second marker.
+ *
+ * The white sphere from psnd.c is the truth - it is placed at the world position the
+ * game handed to the sound system. This one is placed where that position ends up after
+ * being read through the LISTENER FRAME actually sent to OpenAL: decompose the source
+ * direction onto OpenAL's (right, up, at) and re-compose it on the view's own axes.
+ *
+ * Agreement is the whole test. Two markers on top of each other means the audio frame
+ * matches what you are looking at. An orange marker mirrored to the other side means the
+ * listener orientation is wrong - which is readable at a glance, needs no hearing, and
+ * keeps working as a regression check long after this bug.
+ *
+ * Deliberately NOT derived from the same expression as the listener: it starts from the
+ * or[] array that was really sent, so it cannot silently agree with a broken listener. */
+static void SoundPan_DrawAudioOpinion(VECTORCH *rel)
+{
+	extern int GlobalFrameCounter;
+	extern MATRIXCH vr_listener_mat;
+	extern int vr_listener_mat_valid;
+	float at[3], up[3], rt[3], a, u, r;
+	float fwd[3], upv[3], rgt[3];
+	VECTORCH apparent;
+	/* The SAME matrix the listener was built from. This read Global_VDB_Ptr->VDB_Mat,
+	   which in VR is NOT vr_listener_mat: the listener frame is captured once per frame
+	   in avpview.c, while VDB_Mat carries whatever the per-eye pass last left in it. The
+	   marker was therefore comparing audio built from one frame against a reconstruction
+	   built from another, and drifted apart as the head turned - with no audio fault at
+	   all. That drift was the tool, not the bug. */
+	MATRIXCH *m = vr_listener_mat_valid ? &vr_listener_mat : &Global_VDB_Ptr->VDB_Mat;
+	int i;
+
+	if (!snd_listener_or_valid) return;
+	if (AvP.GameMode != I_GM_Playing) return;
+	if ((GlobalFrameCounter & 7) != 0) return;
+
+	for (i = 0; i < 3; i++) { at[i] = snd_listener_or[i]; up[i] = snd_listener_or[3+i]; }
+	rt[0] = at[1]*up[2] - at[2]*up[1];
+	rt[1] = at[2]*up[0] - at[0]*up[2];
+	rt[2] = at[0]*up[1] - at[1]*up[0];
+
+	a = rel->vx*at[0] + rel->vy*at[1] + rel->vz*at[2];
+	u = rel->vx*up[0] + rel->vy*up[1] + rel->vz*up[2];
+	r = rel->vx*rt[0] + rel->vy*rt[1] + rel->vz*rt[2];
+
+	/* The view's own axes, with the SAME row/column rule the listener uses: the VR
+	   VDB_Mat carries its axes as ROWS, the flat one as COLUMNS. */
+	#ifdef AVP_XR
+	if (vr_listener_mat_valid) {
+		fwd[0] = m->mat31/65536.0f; fwd[1] = m->mat32/65536.0f; fwd[2] = m->mat33/65536.0f;
+		upv[0] = -m->mat21/65536.0f; upv[1] = -m->mat22/65536.0f; upv[2] = -m->mat23/65536.0f;
+	} else
+	#endif
+	{
+		fwd[0] = m->mat13/65536.0f; fwd[1] = m->mat23/65536.0f; fwd[2] = m->mat33/65536.0f;
+		upv[0] = -m->mat12/65536.0f; upv[1] = -m->mat22/65536.0f; upv[2] = -m->mat32/65536.0f;
+	}
+	rgt[0] = fwd[1]*upv[2] - fwd[2]*upv[1];
+	rgt[1] = fwd[2]*upv[0] - fwd[0]*upv[2];
+	rgt[2] = fwd[0]*upv[1] - fwd[1]*upv[0];
+
+	apparent.vx = Global_VDB_Ptr->VDB_World.vx + (int)(r*rgt[0] + u*upv[0] + a*fwd[0]);
+	apparent.vy = Global_VDB_Ptr->VDB_World.vy + (int)(r*rgt[1] + u*upv[1] + a*fwd[1]);
+	apparent.vz = Global_VDB_Ptr->VDB_World.vz + (int)(r*rgt[2] + u*upv[2] + a*fwd[2]);
+
+	/* Orange, smaller than the white truth dot and added after it, so it reads as a
+	   pip sitting ON the white one when the two agree. */
+	SoundMarker_Add(&apparent, 255, 130, 0, 34);
+
+}
+
+static void SoundPan_Report(int activeIndex, VECTORCH *rel, int distance)
+{
+	extern int GlobalFrameCounter;
+	static unsigned int n = 0;
+	float at[3], up[3], right[3], dir[3], len, pan;
+	const char *side;
+	int i;
+
+	if (!snd_listener_or_valid) return;
+	if (distance <= 0) return;
+	/* One line every 64th report: enough to watch a scream cross the stereo field,
+	   few enough to read. */
+	if (((++n) & 63) != 0) return;
+
+	for (i = 0; i < 3; i++) { at[i] = snd_listener_or[i]; up[i] = snd_listener_or[3+i]; }
+
+	right[0] = at[1]*up[2] - at[2]*up[1];
+	right[1] = at[2]*up[0] - at[0]*up[2];
+	right[2] = at[0]*up[1] - at[1]*up[0];
+
+	dir[0] = (float)rel->vx; dir[1] = (float)rel->vy; dir[2] = (float)rel->vz;
+	len = (float)sqrt(dir[0]*dir[0] + dir[1]*dir[1] + dir[2]*dir[2]);
+	if (len < 1.0f) return;
+	for (i = 0; i < 3; i++) dir[i] /= len;
+
+	pan = dir[0]*right[0] + dir[1]*right[1] + dir[2]*right[2];
+	side = (pan < -0.15f) ? "LEFT " : (pan > 0.15f) ? "RIGHT" : "centre";
+
+	SDL_Log("SNDPAN: [%2d] %-20s dist=%6d  pan=%+.2f %s  (ahead=%+.2f)",
+	        activeIndex,
+	        GameSounds[ActiveSounds[activeIndex].soundIndex].wavName,
+	        distance, pan, side,
+	        dir[0]*at[0] + dir[1]*at[1] + dir[2]*at[2]);
+}
+
+#endif /* AVP_SOUND_DIAGNOSTICS */
+
 int PlatDo3dSound(int activeIndex)
 {
 	int distance;
@@ -792,6 +919,10 @@ int PlatDo3dSound(int activeIndex)
 		ActiveSounds[activeIndex].PropSetP_pos[2] = (ALfloat)relativePosn.vz;
 		
 		alSourcefv (ActiveSounds[activeIndex].ds3DBufferP, AL_POSITION, ActiveSounds[activeIndex].PropSetP_pos);
+#if AVP_SOUND_DIAGNOSTICS
+		SoundPan_Report(activeIndex, &relativePosn, distance);
+		SoundPan_DrawAudioOpinion(&relativePosn);
+#endif
 
 #ifdef OPENAL_DEBUG
 fprintf(stderr, "OPENAL: Sound : (%f, %f, %f) [%d] [%d,%d]\n", ActiveSounds[activeIndex].PropSetP_pos[0], ActiveSounds[activeIndex].PropSetP_pos[1], ActiveSounds[activeIndex].PropSetP_pos[2], activeIndex, ActiveSounds[activeIndex].threedeedata.inner_range, ActiveSounds[activeIndex].threedeedata.outer_range);
@@ -981,29 +1112,32 @@ void PlatUpdatePlayer()
 		MATRIXCH *listenerMat = vr_listener_mat_valid ? &vr_listener_mat
 		                                              : &Global_VDB_Ptr->VDB_Mat;
 
-		if (AvP.PlayerType != I_Alien) {
-			#ifdef AVP_XR
-			if (vr_listener_mat_valid) {
-				/* VR: use the full head orientation (incl. pitch & roll) so vertical
-				 * direction is reproduced - looking up/down with the headset now pans
-				 * sounds above/below. Same form as the Alien branch. */
-				or[0] = (float) ((listenerMat->mat13) / 65536.0F);
-				or[1] = (float) ((listenerMat->mat23) / 65536.0F);
-				or[2] = (float) ((listenerMat->mat33) / 65536.0F);
-				or[3] = -(float) ((listenerMat->mat12) / 65536.0F);
-				or[4] = -(float) ((listenerMat->mat22) / 65536.0F); /* negated for openal */
-				or[5] = -(float) ((listenerMat->mat32) / 65536.0F);
-			} else
-			#endif
-			{
-				or[0] = (float) ((listenerMat->mat13) / 65536.0F);
-				or[1] = 0.0;
-				or[2] = (float) ((listenerMat->mat33) / 65536.0F);
-				or[3] = 0.0;
-				or[4] = -1.0; /* negated for openal */
-				or[5] = 0.0;
-			}
-		} else {
+		/* ONE listener for every species.
+		 *
+		 * The species split that used to be here gave the Alien full 3D on flat while the
+		 * marine and predator got a YAW-ONLY listener - at's vertical component forced to
+		 * 0 and up pinned to world up - so on flat those two heard no elevation at all: a
+		 * sound above or below arrived as though it were level. The Alien was excepted
+		 * because it climbs walls and ceilings, where that is unmissable. It was just as
+		 * wrong for the other two, only easier to miss. Now they all match.
+		 *
+		 * WHICH AXES to read is the thing that genuinely differs, and it is measured, not
+		 * assumed: the VR VDB_Mat is world->view with its ROWS as the view axes - row 1
+		 * right, row 2 down, row 3 forward - while the flat one is view->world, so its
+		 * COLUMNS are the axes. Reading columns in VR mirrored the at-vector in X and
+		 * swapped left and right progressively as the player turned, which is the bug
+		 * this whole exercise started from. */
+		#ifdef AVP_XR
+		if (vr_listener_mat_valid) {
+			or[0] = (float) ((listenerMat->mat31) / 65536.0F);
+			or[1] = (float) ((listenerMat->mat32) / 65536.0F);
+			or[2] = (float) ((listenerMat->mat33) / 65536.0F);
+			or[3] = -(float) ((listenerMat->mat21) / 65536.0F);
+			or[4] = -(float) ((listenerMat->mat22) / 65536.0F); /* negated for openal */
+			or[5] = -(float) ((listenerMat->mat23) / 65536.0F);
+		} else
+		#endif
+		{
 			or[0] = (float) ((listenerMat->mat13) / 65536.0F);
 			or[1] = (float) ((listenerMat->mat23) / 65536.0F);
 			or[2] = (float) ((listenerMat->mat33) / 65536.0F);
@@ -1038,6 +1172,13 @@ void PlatUpdatePlayer()
 		pos[1] = 0.0f;
 		pos[2] = 0.0f;
 		
+#if AVP_SOUND_DIAGNOSTICS
+		{
+			int k;
+			for (k = 0; k < 6; k++) snd_listener_or[k] = or[k];
+			snd_listener_or_valid = 1;
+		}
+#endif
 		alListenerfv (AL_ORIENTATION, or);
 		alListenerfv (AL_VELOCITY, vel);
 		alListenerfv (AL_POSITION, pos);

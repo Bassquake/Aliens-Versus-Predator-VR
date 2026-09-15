@@ -1860,6 +1860,119 @@ void MakeParticle(VECTORCH *positionPtr, VECTORCH *velocityPtr, enum PARTICLE_ID
    translucent geometry + light-flare rendering from the current eye's viewpoint.
    Called once per frame on non-VR; called once per VR eye (HandleParticleSystem
    on eye 0, RenderParticlesOnly on eye 1). */
+#if AVP_SOUND_DIAGNOSTICS
+/* ---- Sound direction markers (diagnostic) ---------------------------------
+ *
+ * A tiny draw-only marker list, filled by the sound system each frame and drawn here.
+ * MakeParticle was used first and is the wrong tool: it owns lifetime, physics and SIZE,
+ * so a marker could not be made small (ELECTRICALPLASMASPHERE rewrites its own size to
+ * ~2248 and grows), and PARTICLE_STAR is silently deallocated by its default case.
+ * RenderParticle takes an explicit Colour and Size and draws immediately, which is all a
+ * marker needs - and being draw-only it is safe to call once per eye.
+ *
+ * Drawn LAST so the markers sit on top of the world and of each other, in the order
+ * added: truth first, then what the audio believes, so the second is visible over the
+ * first. */
+#define MAX_SOUND_MARKERS 192
+typedef struct { VECTORCH pos; int colour; int size; } SOUND_MARKER;
+static SOUND_MARKER SoundMarkers[MAX_SOUND_MARKERS];
+static int NumSoundMarkers = 0;
+
+void SoundMarker_Clear(void)
+{
+	NumSoundMarkers = 0;
+}
+
+void SoundMarker_Add(VECTORCH *pos, int r, int g, int b, int size)
+{
+	if (NumSoundMarkers >= MAX_SOUND_MARKERS) return;
+	SoundMarkers[NumSoundMarkers].pos    = *pos;
+	SoundMarkers[NumSoundMarkers].colour = RGBALIGHT_MAKE(r, g, b, 255);
+	SoundMarkers[NumSoundMarkers].size   = size;
+	NumSoundMarkers++;
+}
+
+/* Axis probes, drawn unconditionally from the render side.
+ *
+ * They were first added from the per-sound path, which is why they never appeared: they
+ * went in AFTER the white and orange markers, so a full list dropped them first, and
+ * they existed at all only while a 3D sound was in range. Here they are independent of
+ * whether anything is making a noise.
+ *
+ * Row 3 is confirmed FORWARD by measurement (a probe along it stays dead ahead however
+ * the head turns). These name the other two axes, which is what fixes the UP vector -
+ * and since OpenAL derives right = at X up, a wrong-signed up mirrors the stereo image
+ * left-to-right while leaving forward correct, which is the symptom exactly.
+ *
+ *     RED   = +row 1   right or left?
+ *     GREEN = +row 2   below or above?
+ *
+ * Engine convention is Y-down, so row 2 is EXPECTED to point at the floor, making up
+ * -row2 - what the listener assumes today. */
+static void SoundMarker_DrawAxisProbes(void)
+{
+	extern MATRIXCH vr_listener_mat;
+	extern int vr_listener_mat_valid;
+	MATRIXCH *lm;
+	/* A gizmo floating in FRONT of the eye, not axes drawn from it.
+	 *
+	 * The first attempt put each probe 2 m straight along its axis from the head, and
+	 * nothing appeared: +row2 is (expected to be) down, so that marker sat 2 m INSIDE
+	 * THE FLOOR, and the row1 one could be inside a wall. Hanging the gizmo a metre and
+	 * a bit ahead - along row 3, already measured as forward - puts all three marks in
+	 * open air where they can actually be seen, and the direction each arm points still
+	 * names its axis. */
+	const int FWD  = 2040;   /* ~1.2 m ahead */
+	const int ARM  = 680;    /* ~0.4 m out   */
+	VECTORCH c, probe;
+	PARTICLE p;
+
+	if (!Global_VDB_Ptr) return;
+	lm = vr_listener_mat_valid ? &vr_listener_mat : &Global_VDB_Ptr->VDB_Mat;
+
+	c.vx = Global_VDB_Ptr->VDB_World.vx + MUL_FIXED(FWD, lm->mat31);
+	c.vy = Global_VDB_Ptr->VDB_World.vy + MUL_FIXED(FWD, lm->mat32);
+	c.vz = Global_VDB_Ptr->VDB_World.vz + MUL_FIXED(FWD, lm->mat33);
+
+	p.ParticleID = PARTICLE_ELECTRICALPLASMASPHERE;
+
+	/* Centre of the gizmo, so the arms can be read against something. */
+	p.Position = c; p.Colour = RGBALIGHT_MAKE(160,160,160,255); p.Size = 90;
+	RenderParticle(&p);
+
+	/* RED = +row 1 */
+	probe.vx = c.vx + MUL_FIXED(ARM, lm->mat11);
+	probe.vy = c.vy + MUL_FIXED(ARM, lm->mat12);
+	probe.vz = c.vz + MUL_FIXED(ARM, lm->mat13);
+	p.Position = probe; p.Colour = RGBALIGHT_MAKE(255,0,0,255); p.Size = 150;
+	RenderParticle(&p);
+
+	/* GREEN = +row 2 */
+	probe.vx = c.vx + MUL_FIXED(ARM, lm->mat21);
+	probe.vy = c.vy + MUL_FIXED(ARM, lm->mat22);
+	probe.vz = c.vz + MUL_FIXED(ARM, lm->mat23);
+	p.Position = probe; p.Colour = RGBALIGHT_MAKE(0,255,0,255); p.Size = 150;
+	RenderParticle(&p);
+}
+
+static void SoundMarker_Render(void)
+{
+	int i;
+
+	SoundMarker_DrawAxisProbes();
+	for (i = 0; i < NumSoundMarkers; i++)
+	{
+		PARTICLE p;
+		p.Position   = SoundMarkers[i].pos;
+		p.ParticleID = PARTICLE_ELECTRICALPLASMASPHERE;  /* just the sprite; size/colour are ours */
+		p.Colour     = SoundMarkers[i].colour;
+		p.Size       = SoundMarkers[i].size;
+		RenderParticle(&p);
+	}
+}
+
+#endif /* AVP_SOUND_DIAGNOSTICS */
+
 #ifdef AVP_XR
 void RenderParticlesOnly(void)
 #else
@@ -2275,6 +2388,12 @@ static void RenderParticlesOnly(void)
 	//RenderBoom();
    	//RenderFog();
 	D3D_DecalSystem_End();
+
+#if AVP_SOUND_DIAGNOSTICS
+	/* Last, so the markers are drawn over everything else. Per eye, which is correct:
+	   the list is filled once per frame by the sound system and only read here. */
+	SoundMarker_Render();
+#endif
 }
 
 void HandleParticleSystem(void)

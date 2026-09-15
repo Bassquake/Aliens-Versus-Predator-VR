@@ -282,8 +282,8 @@ int       vr_left_hand_valid = 0;
 /* Per-weapon VR alignment offsets, indexed by WeaponIDNumber. Each row is
  * { forward, right, up, pitch_deg } — same meaning as the VR_WEAPON_OFFSET_*
  * defaults in opengl.h. Leave a weapon at VR_WPN_DEFAULT to use those shared
- * defaults, or edit its row to tune that one gun. Marine/Predator guns use this
- * (the Alien claw rig has its own VR_CLAW_* offsets). */
+ * defaults, or edit its row to tune that one gun. Used by the Marine/Predator guns
+ * AND by the Alien's claw/tail rig (see the WEAPON_ALIEN_CLAW row). */
 #define VR_WPN_DEFAULT \
     { VR_WEAPON_OFFSET_FORWARD, VR_WEAPON_OFFSET_RIGHT, VR_WEAPON_OFFSET_UP, \
       VR_WEAPON_PITCH_DEG, VR_WEAPON_ROLL_DEG, VR_WEAPON_YAW_DEG }
@@ -319,6 +319,16 @@ static VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
     [WEAPON_PRED_MEDICOMP]       = { -160,  0,   0,   12,    0,    77 },
 	//[WEAPON_PRED_MEDICOMP]       = { -410,  -270,   95,   26,    -27,    70 }, Before needles
     [WEAPON_PRED_STAFF]          = VR_WPN_DEFAULT,
+    /* --- Alien ---
+       The claws/tail rig is positioned by the is_alien branch rather than by
+       VR_ComputeWeaponAnchor, but it reads ITS trim from here so that the in-world hand
+       tuner - which edits this table - can adjust it like any other weapon. These were
+       compile-time VR_CLAW_* macros in opengl.h, which is exactly why the tuner appeared
+       to do nothing for the Alien.
+       The pitch is -45 where the old macro said +45: the hand-written rotation it
+       replaced turned the opposite way to VR_RotateAboutAxis, and matching the shared
+       helper keeps "positive pitch tips the fingers up" true here too. */
+    [WEAPON_ALIEN_CLAW]          = { -1220,  -260,    -210,  -29,    0,    0 },
     /* --- Misc / non-gun (unused by this path, kept at default for safety) --- */
     [WEAPON_CUDGEL]              = VR_WPN_DEFAULT,
 };
@@ -817,8 +827,9 @@ static void VR_SplitMark(SECTION_DATA *s, SECTION_DATA *root, int hide_subtree,
 /* Strip the uniform scale from a matrix, leaving a pure rotation, and return the
    scale as a float. Needed because the transforms below invert matrices with
    TransposeMatrixCH, which is the inverse ONLY for an orthonormal matrix - and
-   PlayersWeapon.ObMat has the VR_WEAPON_VIEW_SCALE factor baked into it by the block
-   above, which propagates into every section's SecMat. Left un-normalised, the
+   PlayersWeapon.ObMat has the view-scale factor baked into it by the block above
+   (VR_WEAPON_VIEW_SCALE, or VR_ALIEN_VIEW_SCALE for the claws/tail rig), which
+   propagates into every section's SecMat. Left un-normalised, the
    position term comes out wrong by a factor of s^2 and the arm ends up partly
    following the wrong controller. */
 static float VR_NormaliseRotation(MATRIXCH *m)
@@ -4012,7 +4023,13 @@ void AvpShowViewsVR(void)
                    See the note beside the bake below for what the two factors are. */
                 /* Cosmetic shrink of the first-person weapon. 1.0 = normal. */
                 #define VR_WEAPON_VIEW_SCALE 0.90f
-                float wscale = VR_WEAPON_VIEW_SCALE;
+                /* The Alien gets its own, smaller figure. Its claws AND tail are one
+                 * rig - Alien_Visible_Weapon (weapons.c) swaps which the shared
+                 * PlayersWeaponHModelController shows, so a single factor covers both -
+                 * and unlike a gun, which is held out at arm's length, the claws sit
+                 * right at the eye, so the same 0.90 reads as far bigger on them. */
+                #define VR_ALIEN_VIEW_SCALE 0.55f
+                float wscale = is_alien ? VR_ALIEN_VIEW_SCALE : VR_WEAPON_VIEW_SCALE;
                 int wscale_baked = 0;
                 if (vr_weapon_ref_scale > 0.0f)
                     wscale *= vr_y_scale / vr_weapon_ref_scale;
@@ -4040,13 +4057,15 @@ void AvpShowViewsVR(void)
 
                     if (vr_right_hand_valid) {
                         /* Controller-attached: rig root = hand + off rotated into the
-                         * controller frame; orientation follows the controller. The
-                         * VR_CLAW_* offsets nudge the claws in the controller local
-                         * frame (X=right, Y=forward, Z=up); tune them in opengl.h. */
+                         * controller frame; orientation follows the controller. The trim
+                         * nudges the claws in the controller local frame (X=right,
+                         * Y=forward, Z=up), and comes from the shared per-weapon table so
+                         * the in-world hand tuner reaches it. */
+                        VR_WEAPON_OFFSET claw = vr_weapon_offset[WEAPON_ALIEN_CLAW];
                         VECTORCH rootw = off;
-                        rootw.vx += VR_CLAW_OFFSET_RIGHT;
-                        rootw.vy += VR_CLAW_OFFSET_FORWARD;
-                        rootw.vz += VR_CLAW_OFFSET_UP;
+                        rootw.vx += claw.right;
+                        rootw.vy += claw.forward;
+                        rootw.vz += claw.up;
                         RotateVector(&rootw, &vr_right_hand_mat);
                         rootw.vx += vr_right_hand_world.vx;
                         rootw.vy += vr_right_hand_world.vy;
@@ -4059,21 +4078,13 @@ void AvpShowViewsVR(void)
                         RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
                         PlayersWeapon.ObView = ov;
                         PlayersWeapon.ObMat  = vr_right_hand_mat;
-#if VR_CLAW_PITCH_DEG != 0
-                        /* Optional claw tilt about the controller's local X axis.
-                         * Rows are axes: Y' = ca*Y - sa*Z ; Z' = sa*Y + ca*Z. */
-                        {
-                            MATRIXCH m = PlayersWeapon.ObMat;
-                            float a  = (float)(VR_CLAW_PITCH_DEG) * (SDL_PI_F / 180.0f);
-                            float ca = SDL_cosf(a), sa = SDL_sinf(a);
-                            PlayersWeapon.ObMat.mat21 = (int)(ca * m.mat21 - sa * m.mat31);
-                            PlayersWeapon.ObMat.mat22 = (int)(ca * m.mat22 - sa * m.mat32);
-                            PlayersWeapon.ObMat.mat23 = (int)(ca * m.mat23 - sa * m.mat33);
-                            PlayersWeapon.ObMat.mat31 = (int)(sa * m.mat21 + ca * m.mat31);
-                            PlayersWeapon.ObMat.mat32 = (int)(sa * m.mat22 + ca * m.mat32);
-                            PlayersWeapon.ObMat.mat33 = (int)(sa * m.mat23 + ca * m.mat33);
-                        }
-#endif
+                        /* Claw tilt, through the same helper and the same axis mapping
+                         * and order VR_ComputeWeaponAnchor uses, so a pitch/roll/yaw
+                         * tuned here means what it means on a gun. Each is a no-op at 0,
+                         * so roll and yaw cost nothing until someone tunes them. */
+                        VR_RotateAboutAxis(&PlayersWeapon.ObMat, 0,  claw.pitch_deg);
+                        VR_RotateAboutAxis(&PlayersWeapon.ObMat, 2, -claw.roll_deg);
+                        VR_RotateAboutAxis(&PlayersWeapon.ObMat, 1,  claw.yaw_deg);
                     } else {
                         /* Head-locked fallback when the controller pose is unavailable,
                          * so the claws never vanish. Mirrors PositionPlayersWeapon()'s
@@ -4330,7 +4341,7 @@ void AvpShowViewsVR(void)
                      * eyeline/room scale (which recenter recomputes). The hand is
                      * placed at a distance ∝ vr_y_scale, so scale by the same ratio
                      * relative to the first-calibration reference: at the reference
-                     * this equals VR_WEAPON_VIEW_SCALE (its tuned look), and it
+                     * this equals the species' view scale (its tuned look), and it
                      * holds that apparent size across recenters. */
                     /* wscale is computed at the top of this block now - see the note
                        there. The authored-at-hand branch has already baked it in. */

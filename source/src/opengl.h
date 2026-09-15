@@ -237,17 +237,13 @@ typedef struct { int forward, right, up, pitch_deg, roll_deg, yaw_deg; } VR_WEAP
  * alignment). Caller must have checked vr_right_hand_valid. */
 void VR_ComputeWeaponAnchor(int weaponID, VECTORCH *out_world, MATRIXCH *out_mat);
 
-/* --- Alien claw rig alignment tuning ------------------------------------
- * Same idea as the weapon offsets above, but a SEPARATE set: the claw rig is
- * placed from the eye/"Camera Root" offset (not a gun grip) and its model
- * orientation follows the controller directly with no barrel fix, so it needs
- * its own values. Offsets are in the controller local frame; PITCH_DEG tilts
- * the claws about the local X axis (+claws down / -claws up). Units and sign
- * conventions match the weapon offsets. Alien only. */
-#define VR_CLAW_OFFSET_FORWARD  -900
-#define VR_CLAW_OFFSET_RIGHT    -200
-#define VR_CLAW_OFFSET_UP       0
-#define VR_CLAW_PITCH_DEG       45
+/* --- Alien claw rig alignment ---------------------------------------------
+ * The claws/tail rig used to have its own VR_CLAW_* constants here. It now takes its
+ * trim from vr_weapon_offset[WEAPON_ALIEN_CLAW] in avpview.c, alongside every gun,
+ * because that table is what the in-world hand tuner edits - as constants these could
+ * only be changed by a rebuild, and the tuner silently did nothing for the Alien.
+ * The rig is still POSITIONED differently (from the eye/"Camera Root" offset rather
+ * than a gun grip, with no barrel fix); only where its numbers live has changed. */
 #endif
 
 #endif

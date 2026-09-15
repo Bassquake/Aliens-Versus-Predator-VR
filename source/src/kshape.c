@@ -285,15 +285,28 @@ void SetupShapePipeline(void)
  *
  * Same defect as the hitbox ray in los.c; anywhere else that transposes a possibly-scaled
  * matrix has it too. */
+/* The uniform scale SetWToLMatFromObMat last stripped, 16.16. ONE_FIXED when the
+   matrix was already orthonormal. Needed because stripping it from the MATRIX is only
+   half the job - see LocalViewToObjectSpace below. */
+static int WToLScale = ONE_FIXED;
+
 static void SetWToLMatFromObMat(const MATRIXCH *obMat)
 {
 	CopyMatrix((MATRIXCH *)obMat, &WToLMat);
+	WToLScale = ONE_FIXED;
 #ifdef AVP_XR
 	{
 		float sx = (float)WToLMat.mat11, sy = (float)WToLMat.mat12, sz = (float)WToLMat.mat13;
 		float scale = (float)sqrt(sx*sx + sy*sy + sz*sz) / (float)ONE_FIXED;
-		if (scale > 1.001f) {
+		/* BOTH directions. This tested `scale > 1.001f` alone, which was true while the
+		   only scaling in play was VR World Scale (never below 1.0). The first-person
+		   weapon and the Alien claw rig scale DOWN - 0.90 and 0.75 - so they slipped
+		   past the test, WToLMat kept the scale, and the transpose stopped being an
+		   inverse. Symptom: back-face tests went wrong and faces vanished from the
+		   claws, coming and going as a recentre moved the scale across 1.0. */
+		if ((scale > 1.001f || scale < 0.999f) && scale > 0.0001f) {
 			float inv = 1.0f / scale;
+			WToLScale = (int)(scale * (float)ONE_FIXED);
 			WToLMat.mat11 = (int)(WToLMat.mat11 * inv); WToLMat.mat12 = (int)(WToLMat.mat12 * inv); WToLMat.mat13 = (int)(WToLMat.mat13 * inv);
 			WToLMat.mat21 = (int)(WToLMat.mat21 * inv); WToLMat.mat22 = (int)(WToLMat.mat22 * inv); WToLMat.mat23 = (int)(WToLMat.mat23 * inv);
 			WToLMat.mat31 = (int)(WToLMat.mat31 * inv); WToLMat.mat32 = (int)(WToLMat.mat32 * inv); WToLMat.mat33 = (int)(WToLMat.mat33 * inv);
@@ -301,6 +314,31 @@ static void SetWToLMatFromObMat(const MATRIXCH *obMat)
 	}
 #endif
 	TransposeMatrixCH(&WToLMat);
+}
+
+/* Finish taking the camera into OBJECT space after WToLMat has rotated it there.
+ *
+ * Stripping the scale from WToLMat gives the right AXES but leaves the vector at world
+ * length, and the back-face test in frustum.c subtracts LocalView from a raw model
+ * vertex - object-space units. A model drawn at scale s has its vertices s times
+ * smaller than the world distance implies, so the camera's object-space position is the
+ * world offset DIVIDED by s.
+ *
+ * It matters most exactly where it is least obvious: a first-person rig sits centimetres
+ * from the eye, so LocalView and the vertices are comparable in size and an error of s
+ * flips the dot product's sign on grazing faces rather than merely nudging it. Far-away
+ * objects hide the same error, because there LocalView dwarfs any vertex.
+ *
+ * No-op when nothing was stripped, so the flat build and every unscaled object are
+ * untouched. */
+static void LocalViewToObjectSpace(void)
+{
+	if (WToLScale != ONE_FIXED && WToLScale > 0) {
+		float inv = (float)ONE_FIXED / (float)WToLScale;
+		LocalView.vx = (int)(LocalView.vx * inv);
+		LocalView.vy = (int)(LocalView.vy * inv);
+		LocalView.vz = (int)(LocalView.vz * inv);
+	}
 }
 
 void ChooseLightingModel(DISPLAYBLOCK *dispPtr)
@@ -3992,6 +4030,7 @@ void AddShape(DISPLAYBLOCK *dptr, VIEWDESCRIPTORBLOCK *VDB_Ptr)
 
 	MakeVector(&VDB_Ptr->VDB_World, &dptr->ObWorld, &LocalView);
 	RotateVector(&LocalView, &WToLMat);
+	LocalViewToObjectSpace();
 
 	#if 0
 	{
@@ -4326,6 +4365,7 @@ void AddHierarchicalShape(DISPLAYBLOCK *dptr, VIEWDESCRIPTORBLOCK *VDB_Ptr)
 
 	MakeVector(&VDB_Ptr->VDB_World, &dptr->ObWorld, &LocalView);
 	RotateVector(&LocalView, &WToLMat);
+	LocalViewToObjectSpace();
 
 	if (!(PIPECLEANER_CHEATMODE||BALLSOFFIRE_CHEATMODE) || !dptr->ObStrategyBlock)
 	{

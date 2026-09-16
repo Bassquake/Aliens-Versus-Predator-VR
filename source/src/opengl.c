@@ -34,6 +34,7 @@
 static GLuint g_prog = 0;
 static GLint  g_aPos, g_aUV, g_aColor;
 static GLint  g_uSpecularPass;
+static GLint  g_uClipOffset;
 static GLint  g_uNoTex = -1;
 
 static const char *game_vs =
@@ -41,10 +42,17 @@ static const char *game_vs =
 		"attribute vec4 aPos;\n"          // v[4] — already in clip space (homogeneous)
 		"attribute vec2 aUV;\n"
 		"attribute vec4 aColor;\n"
+		"uniform   vec2 uClipOffset;\n"   // off-axis (asymmetric) frustum shift; 0 = centred
 		"varying vec2  vUV;\n"
 		"varying vec4  vColor;\n"
 		"void main() {\n"
-		"    gl_Position = aPos;\n"       // already clip-space, pass straight through
+		// The engine projects on the CPU and hands us homogeneous clip coords, so an
+		// off-axis principal point is a constant NDC translation - which in clip space is
+		// a shift proportional to w. This is how the VR eye pass renders the headset's
+		// real canted frustum without touching any of the ~20 per-vertex projection
+		// sites: those keep emitting a centred frustum and this moves the principal
+		// point. Zero on every other path, so flat rendering is bit-identical.
+		"    gl_Position = vec4(aPos.xy + uClipOffset * aPos.w, aPos.zw);\n"
 		"    vUV    = aUV;\n"
 		"    vColor = aColor;\n"  // ubyte → float
 		"}\n";
@@ -110,12 +118,14 @@ void InitGameShader(void)
     g_aUV           = glGetAttribLocation(g_prog,  "aUV");
     g_aColor        = glGetAttribLocation(g_prog,  "aColor");
     g_uSpecularPass = glGetUniformLocation(g_prog, "uSpecularPass");
+    g_uClipOffset   = glGetUniformLocation(g_prog, "uClipOffset");
     GLint uTex      = glGetUniformLocation(g_prog, "uTex");
     g_uNoTex        = glGetUniformLocation(g_prog, "uNoTexture");
     glUseProgram(g_prog);
     glUniform1i(uTex,           0);
     glUniform1i(g_uNoTex,       0);
     glUniform1i(g_uSpecularPass,0);
+    if (g_uClipOffset >= 0) glUniform2f(g_uClipOffset, 0.0f, 0.0f);
 
 }
 
@@ -429,6 +439,30 @@ float vr_hud_clip_scale = 1.0f;
 float vr_hud_offset_x   = 0.0f;
 float vr_hud_offset_y   = 0.0f;
 
+/* The current eye's OFF-AXIS correction, in NDC — the same shift OGL_SetClipOffset
+ * applies to world geometry (see game_vs). The HUD needs it for a different reason than
+ * the world does, and needs it just as much.
+ *
+ * With the canted frustum rendered properly, an eye image's CENTRE is no longer its
+ * optical axis: on the Oculus runtime it is ~8 deg off, in opposite directions per eye.
+ * So a HUD element drawn at the same clip coord in both eyes is no longer the same
+ * DIRECTION in both eyes — it picks up ~16 deg of divergent disparity and stops being
+ * fusable, which is what "the HUD is not aligned" looks like once the world is right.
+ * Adding the eye's shift here places the HUD relative to the optical axis instead, which
+ * is what puts it back at infinity, with vr_hud_offset_x's per-eye convergence then
+ * bringing it to its intended depth.
+ *
+ * Deliberately SEPARATE from vr_hud_offset_x rather than folded into it: three places
+ * invert this mapping to turn a world direction into a HUD pixel (the two crosshairs in
+ * avpview.c and the Predator smart-target box in hud.c), all of them as
+ * (clip_from_ProjX - vr_hud_offset) / vr_hud_clip_scale. A world direction's true NDC and
+ * a HUD element's final NDC both carry this shift, so it cancels in the inverse — and
+ * those three sites keep working untouched ONLY as long as it is not inside
+ * vr_hud_offset_x. Fold it in and all three crosshairs go out by ~12% of the half-width,
+ * in opposite directions per eye. */
+float vr_eye_clip_off_x = 0.0f;
+float vr_eye_clip_off_y = 0.0f;
+
 #if defined(_MSC_VER)
 #define ALIGN16 __declspec(align(16))
 #else
@@ -506,6 +540,53 @@ void OGL_ApplyTextureFilterSettings(void)
 	pglBindTexture(GL_TEXTURE_2D, 0);
 }
 
+/* Off-axis frustum shift for the current view, in NDC. Zero for every flat/mono path;
+ * the VR eye pass sets it per eye so the headset's canted frustum is rendered as given
+ * instead of being replaced by a centred approximation. See the note in game_vs.
+ *
+ * Cached because it has to be re-applied by RestoreGameShaderState: uniforms are program
+ * state and do survive glUseProgram, but that function exists precisely to put known
+ * state back after an external blit has had its way with the context, and a silent
+ * dependency on GL preserving this one is not worth the risk. */
+static float g_clip_off_x = 0.0f, g_clip_off_y = 0.0f;
+
+void OGL_SetClipOffset(float x, float y)
+{
+	if (x == g_clip_off_x && y == g_clip_off_y)
+		return;                      /* no projection change, so nothing to flush */
+	if (g_uClipOffset < 0) {
+		g_clip_off_x = x;
+		g_clip_off_y = y;
+		return;
+	}
+
+	/* glUniform* writes to whatever program is CURRENT, and the callers are not all at a
+	 * point where that is guaranteed to be the game program - the clear at the end of the
+	 * VR eye pass runs right after PlatformSpecificShowViewExit. Bind, write, put back. */
+	GLint prev = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &prev);
+	if ((GLuint)prev != g_prog)
+		glUseProgram(g_prog);
+
+	/* FLUSH FIRST, and this is the whole reason the flush is in here rather than at the
+	 * call sites. Triangles are BATCHED into varr/tarr and only drawn on a texture or
+	 * translucency change, so a uniform is not per-primitive state: changing it applies
+	 * retroactively to every vertex still queued. The weapon and hands are drawn LAST in
+	 * the eye's 3D pass, so clearing the offset for the HUD was catching the tail of the
+	 * weapon still in the batch and drawing it unshifted against a shifted world - a
+	 * cluster of misaligned faces beside the right hand, ~115 px out and opposite per eye
+	 * (reported on Air Link 2026-09-16, left eye). Draining the batch under the OLD value
+	 * is correct: those vertices were emitted under the old projection. */
+	FlushTriangleBuffers(1);
+
+	g_clip_off_x = x;
+	g_clip_off_y = y;
+	glUniform2f(g_uClipOffset, g_clip_off_x, g_clip_off_y);
+
+	if ((GLuint)prev != g_prog)
+		glUseProgram((GLuint)prev);
+}
+
 // In opengl.c — call this to re-bind game shader attribs after any external blit
 void RestoreGameShaderState(void)
 {
@@ -520,6 +601,8 @@ void RestoreGameShaderState(void)
 	glVertexAttribPointer(g_aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(varr[0]), varr[0].c);
 	glActiveTexture(GL_TEXTURE0);
 	glUniform1i(g_uNoTex, 0);
+	if (g_uClipOffset >= 0)
+		glUniform2f(g_uClipOffset, g_clip_off_x, g_clip_off_y);
 	/* Reset texture filter cache — HUD text rendering leaves
 	   CurrentFilteringMode=BILINEAR_OFF, which causes eye 1's 3D scene
 	   to apply GL_NEAREST to world textures instead of GL_LINEAR. */
@@ -1146,8 +1229,8 @@ void D3D_Rectangle(int x0, int y0, int x1, int y1, int r, int g, int b, int a)
 	y[3] = -(y[3] - ScreenDescriptorBlock.SDB_CentreY)/ScreenDescriptorBlock.SDB_CentreY;
 
 	for (i = 0; i < 4; i++) {
-		x[i] = x[i] * vr_hud_clip_scale + vr_hud_offset_x;
-		y[i] = y[i] * vr_hud_clip_scale + vr_hud_offset_y;
+		x[i] = x[i] * vr_hud_clip_scale + vr_hud_offset_x + vr_eye_clip_off_x;
+		y[i] = y[i] * vr_hud_clip_scale + vr_hud_offset_y + vr_eye_clip_off_y;
 	}
 
 	for (i = 0; i < 4; i++) {
@@ -2244,8 +2327,8 @@ void D3D_HUDQuad_Output(int imageNumber, struct VertexTag *quadVerticesPtr, unsi
 		x =  (x - ScreenDescriptorBlock.SDB_CentreX)/ScreenDescriptorBlock.SDB_CentreX;
 		y = quadVerticesPtr[i].Y;
 		y = -(y - ScreenDescriptorBlock.SDB_CentreY)/ScreenDescriptorBlock.SDB_CentreY;
-		x = x * vr_hud_clip_scale + vr_hud_offset_x;
-		y = y * vr_hud_clip_scale + vr_hud_offset_y;
+		x = x * vr_hud_clip_scale + vr_hud_offset_x + vr_eye_clip_off_x;
+		y = y * vr_hud_clip_scale + vr_hud_offset_y + vr_eye_clip_off_y;
 
 		s = TEXCOORD_FIXED(quadVerticesPtr[i].U<<16, RecipW);
 		t = TEXCOORD_FIXED(quadVerticesPtr[i].V<<16, RecipH);

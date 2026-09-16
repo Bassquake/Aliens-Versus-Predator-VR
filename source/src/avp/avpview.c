@@ -41,6 +41,21 @@ typedef struct {
 
 extern XrView     *xr_views;
 extern uint32_t    view_count;
+/* Set in main.c when the reference space is created / the views are located.
+ * See the long comment there: floor_offset_y is 0 on STAGE and a nominal standing
+ * eye height on LOCAL, and every place below that treats a located Y as a height
+ * ABOVE THE FLOOR has to add it. Pure Y *differences* must add it on both sides or
+ * not at all - VR_STAGE_Y() is used throughout so the question never comes up. */
+extern float       xr_space_floor_offset_y;
+extern int         xr_space_is_stage;
+extern const char *xr_space_name;
+/* Per-eye projection for the headset's real (canted) frustum: focal length for
+ * VDB_ProjX/Y plus the off-axis principal point as an NDC shift. Defined in main.c next
+ * to the xrEndFrame that submits the matching fov - see the derivation there. */
+void VR_EyeProjection(const XrFovf *fov, int w, int h,
+                      int *projX, int *projY, float *clip_off_x, float *clip_off_y);
+extern int         xr_view_pose_valid;
+#define VR_STAGE_Y(raw_y) ((raw_y) + xr_space_floor_offset_y)
 extern bool        xr_enabled;
 extern int         xr_session_running;
 extern VRSwapchain *vr_swapchains;
@@ -2492,7 +2507,7 @@ void AvpShowViewsVR(void)
     float eye_mid_x = 0.0f, eye_mid_y = 0.0f, eye_mid_z = 0.0f;
     if (view_count >= 2) {
         eye_mid_x = (xr_views[0].pose.position.x + xr_views[1].pose.position.x) * 0.5f;
-        eye_mid_y = (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f;
+        eye_mid_y = VR_STAGE_Y((xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f);
         eye_mid_z = (xr_views[0].pose.position.z + xr_views[1].pose.position.z) * 0.5f;
     }
 
@@ -2513,7 +2528,13 @@ void AvpShowViewsVR(void)
         ref_captured  = false;
         vr_recalibrate = 0;
     }
-    if (!ref_captured && view_count > 0) {
+    /* Only ever take the reference from a pose the runtime says is really tracked.
+     * This latches ONCE for the session, and everything downstream - world scale,
+     * room-scale origin, heading - is derived from it, so a single untracked frame
+     * captured here is wrong until the next recentre. The gate costs nothing when
+     * tracking is up (the flag is set on the same frame the views were located) and
+     * simply defers the capture by a frame or two when it is not. */
+    if (!ref_captured && view_count > 0 && xr_view_pose_valid) {
         ref_head_x   = eye_mid_x;
         ref_head_y   = eye_mid_y;
         ref_head_z   = eye_mid_z;
@@ -2577,8 +2598,30 @@ void AvpShowViewsVR(void)
            0.99*ONE_FIXED caps that error at ~1% (~18 units); a body tilted past
            ~8 degrees simply holds the last good scale, which is the intent. */
         body_upright = (Player->ObStrategyBlock->DynPtr->OrientMat.mat22 > 64881); /* 0.99*ONE_FIXED => tilt < ~8 deg */
-    if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright)
-        cached_vr_y_scale = (float)game_eye_to_floor / ref_head_y;
+    /* Clamp the divisor to a plausible human eye height before it becomes a world
+     * scale. ref_head_y is a measured physical height and the scale is inversely
+     * proportional to it, so a bogus small value does not degrade the picture - it
+     * destroys it: vr_y_scale is game units per real metre, so at 0.05 m it comes out
+     * ~34x too large and the eye separation it places (IPD x vr_y_scale, in game
+     * units) grows by the same factor. Against a fixed-size world that reads as a
+     * doll's house held against your face - the two images converge a few centimetres
+     * out and cannot be fused at all. The old floor was 0.01 m, which admits exactly
+     * that. The band is the same one the weapon reference below already clamps to,
+     * for the same reason - it just never protected the scale itself.
+     *
+     * Two ways a bogus value got here, both now also addressed at source: a LOCAL
+     * reference space (head-relative origin, so a located eye Y near 0 - see
+     * VR_STAGE_Y and the space-creation comment in main.c) and a capture taken from
+     * an untracked pose (see the xr_view_pose_valid gate above). The clamp stays as
+     * the backstop, because it is the one thing that holds whatever the runtime does. */
+    #define VR_REF_HEAD_MIN_M 0.80f
+    #define VR_REF_HEAD_MAX_M 2.20f
+    if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright) {
+        float ref_y = ref_head_y;
+        if (ref_y < VR_REF_HEAD_MIN_M) ref_y = VR_REF_HEAD_MIN_M;
+        if (ref_y > VR_REF_HEAD_MAX_M) ref_y = VR_REF_HEAD_MAX_M;
+        cached_vr_y_scale = (float)game_eye_to_floor / ref_y;
+    }
     /* Follow the menu slider. Polled rather than hooked, the same way the texture
        filter settings are: this catches the slider, a profile load and "Use these
        settings" alike. Only on CHANGE, so the world-scale tuner (which writes
@@ -2598,6 +2641,55 @@ void AvpShowViewsVR(void)
        the scale is finalised, so the camera, the room-scale offsets and the weapon's
        reference scale all follow from one number. */
     float vr_y_scale = cached_vr_y_scale * vr_world_scale;
+
+    /* One-shot stereo diagnostic. Everything that decides whether the world fuses is
+     * here in one line: the space type (STAGE vs LOCAL changes what a located Y
+     * means), the captured eye height, and the resulting units-per-metre against the
+     * ~2200 the game is built around. A scale far off that is the signature of a bad
+     * ref_head_y, and the printed IPD says what the runtime actually reported. */
+    {
+        static int logged_vr_scale = 0;
+        if (!logged_vr_scale && ref_captured && view_count >= 2) {
+            logged_vr_scale = 1;
+            /* 3D distance, not the X delta: the eyes separate along the head's own
+             * right axis, which only lines up with reference-space X when the head
+             * happens to face down -Z. */
+            float ex = xr_views[1].pose.position.x - xr_views[0].pose.position.x;
+            float ey = xr_views[1].pose.position.y - xr_views[0].pose.position.y;
+            float ez = xr_views[1].pose.position.z - xr_views[0].pose.position.z;
+            float ipd = SDL_sqrtf(ex * ex + ey * ey + ez * ez);
+            SDL_Log("VR scale: space=%s ref_head_y=%.3fm eye_to_floor=%d "
+                    "units_per_metre=%.0f (nominal %d) world_scale=%.2f ipd=%.1fmm "
+                    "eye_sep=%.0f units",
+                    xr_space_name,
+                    ref_head_y, game_eye_to_floor, cached_vr_y_scale,
+                    GAME_UNITS_PER_METRE, vr_world_scale,
+                    ipd * 1000.0f, ipd * vr_y_scale);
+            /* Per-eye, because everything that can break stereo while leaving the
+             * menus alone lives in these numbers: the pose the eye is placed at, the
+             * frustum it is rendered with, and the target it is rendered into. Printed
+             * raw (metres / degrees) so they can be compared against another runtime
+             * without reading any of the conversion code. */
+            for (int e = 0; e < (int)view_count && e < 2; e++) {
+                const XrFovf *f = &xr_views[e].fov;
+                const float RAD2DEG = 180.0f / SDL_PI_F;
+                int   dprojX = 0, dprojY = 0;
+                float doffx = 0.0f, doffy = 0.0f;
+                VR_EyeProjection(f, eye_fbo_w, eye_fbo_h, &dprojX, &dprojY, &doffx, &doffy);
+                SDL_Log("VR eye%d: pos=(%.4f %.4f %.4f) quat=(%.4f %.4f %.4f %.4f) "
+                        "fov L/R/U/D=%.2f/%.2f/%.2f/%.2f deg "
+                        "clip_off=%.4f/%.4f fbo=%dx%d ProjX/Y=%d/%d",
+                        e,
+                        xr_views[e].pose.position.x, xr_views[e].pose.position.y,
+                        xr_views[e].pose.position.z,
+                        xr_views[e].pose.orientation.x, xr_views[e].pose.orientation.y,
+                        xr_views[e].pose.orientation.z, xr_views[e].pose.orientation.w,
+                        f->angleLeft * RAD2DEG, f->angleRight * RAD2DEG,
+                        f->angleUp * RAD2DEG, f->angleDown * RAD2DEG,
+                        doffx, doffy, eye_fbo_w, eye_fbo_h, dprojX, dprojY);
+            }
+        }
+    }
 
     /* Anchor for the first-person weapon's on-screen size. The gun is a fixed
      * game-unit model placed at the hand, and the hand's distance from the eye
@@ -2631,9 +2723,11 @@ void AvpShowViewsVR(void)
          * World Scale change, and the character crouching, exactly as before. A user who
          * recentres standing at the nominal height gets the same size they get today. */
         float rh = ref_head_y;
-        /* Recentred lying down, or a bogus pose, must not yield giant arms. */
-        if (rh < 0.80f) rh = 0.80f;
-        if (rh > 2.20f) rh = 2.20f;
+        /* Recentred lying down, or a bogus pose, must not yield giant arms. Same band
+         * as the world-scale clamp above, and deliberately the same macros: they are
+         * two uses of one judgement about what a real eye height can be. */
+        if (rh < VR_REF_HEAD_MIN_M) rh = VR_REF_HEAD_MIN_M;
+        if (rh > VR_REF_HEAD_MAX_M) rh = VR_REF_HEAD_MAX_M;
         vr_weapon_ref_scale = vr_y_scale * (rh / VR_NOMINAL_EYE_HEIGHT_M);
     }
 
@@ -2716,7 +2810,7 @@ void AvpShowViewsVR(void)
             gdx = rdx; gdz = rdz; \
         } \
         (out_world).vx = base_world.vx + (int)(gdx * vr_y_scale); \
-        (out_world).vy = Player->ObWorld.vy - (int)((pose).position.y * vr_y_scale); \
+        (out_world).vy = Player->ObWorld.vy - (int)(VR_STAGE_Y((pose).position.y) * vr_y_scale); \
         (out_world).vz = base_world.vz - (int)(gdz * vr_y_scale); \
         QUAT gq; \
         gq.quatw =  (int)((pose).orientation.w * ONE_FIXED); \
@@ -3003,7 +3097,7 @@ void AvpShowViewsVR(void)
         Global_VDB_Ptr->VDB_World.vx = base_world.vx
             + (int)(phys_dx * vr_y_scale);
         Global_VDB_Ptr->VDB_World.vy = Player->ObWorld.vy
-            - (int)(xr_views[eye].pose.position.y * vr_y_scale);
+            - (int)(VR_STAGE_Y(xr_views[eye].pose.position.y) * vr_y_scale);
         /* Dead: keep the head ~10 cm above the feet/floor (smaller vy = higher up)
          * so the collapsed death-drop scale can't sink the view through the floor. */
         if (vr_view_is_dead &&
@@ -3074,7 +3168,7 @@ void AvpShowViewsVR(void)
              * standing geometry rather than to the collapsing live one. */
             VECTORCH off;
             off.vx =  (int)(phys_dx * vr_y_scale);
-            off.vy =  (int)((ref_head_y - xr_views[eye].pose.position.y) * vr_y_scale);
+            off.vy =  (int)((ref_head_y - VR_STAGE_Y(xr_views[eye].pose.position.y)) * vr_y_scale);
             off.vz = -(int)(phys_dz * vr_y_scale);
             RotateVector(&off, &climb_RT);          /* off = R * off */
             Global_VDB_Ptr->VDB_World.vx = base_world.vx + off.vx;
@@ -3426,17 +3520,29 @@ void AvpShowViewsVR(void)
          * head motion and the scene becomes wrong). This is why the Alien's
          * original wide-angle view can't be reproduced in stereoscopic VR — it
          * only works on flatscreen, where the non-VR path already widens it. */
-        float tan_hx = (SDL_tanf(SDL_fabsf(xr_views[eye].fov.angleLeft))
-                       + SDL_tanf(SDL_fabsf(xr_views[eye].fov.angleRight))) * 0.5f;
-        float tan_hy = (SDL_tanf(SDL_fabsf(xr_views[eye].fov.angleUp))
-                       + SDL_tanf(SDL_fabsf(xr_views[eye].fov.angleDown))) * 0.5f;
-        Global_VDB_Ptr->VDB_ProjX = (tan_hx > 0.01f) ? (int)((eye_fbo_w * 0.5f) / tan_hx) : eye_fbo_w / 4;
-        Global_VDB_Ptr->VDB_ProjY = (tan_hy > 0.01f) ? (int)((eye_fbo_h * 0.5f) / tan_hy) : eye_fbo_h / 4;
+        int   eye_projX = 0, eye_projY = 0;
+        float eye_clip_off_x = 0.0f, eye_clip_off_y = 0.0f;
+        VR_EyeProjection(&xr_views[eye].fov, eye_fbo_w, eye_fbo_h,
+                         &eye_projX, &eye_projY, &eye_clip_off_x, &eye_clip_off_y);
+        Global_VDB_Ptr->VDB_ProjX = eye_projX;
+        Global_VDB_Ptr->VDB_ProjY = eye_projY;
 
         PrepareVDBForShowView(Global_VDB_Ptr);
         PlatformSpecificShowViewEntry(Global_VDB_Ptr, &ScreenDescriptorBlock);
         TranslationSetup();
 		RestoreGameShaderState();
+        /* Off-axis shift for THIS eye's frustum. Scoped to the 3D pass only: it is
+         * cleared at PlatformSpecificShowViewExit below, before the HUD is drawn. The
+         * HUD is screen-space and is placed by its own clip coords, so shifting it would
+         * give it opposite disparity in each eye - it would sit at the wrong depth
+         * instead of at infinity. World geometry, weapons and hands all live inside this
+         * window and must be shifted. */
+        OGL_SetClipOffset(eye_clip_off_x, eye_clip_off_y);
+        /* Same shift for the HUD, which is drawn AFTER the 3D pass and so cannot use the
+         * shader uniform above. Both are needed: the world so the geometry matches the
+         * runtime's frustum, the HUD so it stays fusable against it. */
+        vr_eye_clip_off_x = eye_clip_off_x;
+        vr_eye_clip_off_y = eye_clip_off_y;
 
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
@@ -4719,6 +4825,11 @@ void AvpShowViewsVR(void)
         }
 
         PlatformSpecificShowViewExit(Global_VDB_Ptr, &ScreenDescriptorBlock);
+        /* End of the 3D pass: world geometry is done, so the vertex-shader shift comes
+         * off. vr_eye_clip_off_x/y deliberately STAY set - the HUD is drawn below and
+         * needs them; they are cleared with the other HUD clip controls after
+         * MaintainHUD. */
+        OGL_SetClipOffset(0.0f, 0.0f);
         HeadUpDisplayZOffset = 0;
 
         /* Head-locked HUD: render into the eye FBO while still bound.
@@ -4771,8 +4882,11 @@ void AvpShowViewsVR(void)
          * extent the mirror has to keep on screen. Captured here rather than read
          * at mirror time because both values are reset to 1.0/0.0 right after
          * MaintainHUD, well before the eye pass ends. */
-        vr_mirror_hud_lo = vr_hud_offset_y - vr_hud_clip_scale;
-        vr_mirror_hud_hi = vr_hud_offset_y + vr_hud_clip_scale;
+        /* + vr_eye_clip_off_y, because that is added to the HUD's clip y as well (see
+         * opengl.c) and the mirror crop has to track where the HUD actually lands, not
+         * where the tuning offsets alone would put it. */
+        vr_mirror_hud_lo = vr_hud_offset_y + vr_eye_clip_off_y - vr_hud_clip_scale;
+        vr_mirror_hud_hi = vr_hud_offset_y + vr_eye_clip_off_y + vr_hud_clip_scale;
 #endif
         /* Recompute GunMuzzleSightX/Y in HUD-pixel space so the crosshair drawn by
          * MaintainHUD lands at the same clip-space position as the 3D aim point.
@@ -4793,6 +4907,9 @@ void AvpShowViewsVR(void)
             aim_vs.vz = vr_right_hand_mat.mat23;
             RotateVector(&aim_vs, &Global_VDB_Ptr->VDB_Mat);   /* world → view */
             if (aim_vs.vz > 0) {
+                /* Raw, with NO off-axis shift: the HUD carries the same shift (see
+                 * vr_eye_clip_off_x in opengl.c), so it cancels in this inverse and
+                 * adding it here would double it. */
                 float aim_clip_x = (float)aim_vs.vx / aim_vs.vz
                                  * (float)Global_VDB_Ptr->VDB_ProjX / (eye_fbo_w * 0.5f);
                 float aim_clip_y = -(float)aim_vs.vy / aim_vs.vz
@@ -4831,6 +4948,9 @@ void AvpShowViewsVR(void)
             aim_vs.vz = vr_left_hand_mat.mat23;
             RotateVector(&aim_vs, &Global_VDB_Ptr->VDB_Mat);   /* world -> view */
             if (aim_vs.vz > 0) {
+                /* Raw, with NO off-axis shift: the HUD carries the same shift (see
+                 * vr_eye_clip_off_x in opengl.c), so it cancels in this inverse and
+                 * adding it here would double it. */
                 float aim_clip_x = (float)aim_vs.vx / aim_vs.vz
                                  * (float)Global_VDB_Ptr->VDB_ProjX / (eye_fbo_w * 0.5f);
                 float aim_clip_y = -(float)aim_vs.vy / aim_vs.vz
@@ -4864,6 +4984,8 @@ void AvpShowViewsVR(void)
 #endif
         vr_hud_clip_scale = 1.0f;
         vr_hud_offset_x   = 0.0f;
+        vr_eye_clip_off_x = 0.0f;
+        vr_eye_clip_off_y = 0.0f;
         vr_hud_offset_y   = 0.0f;
         /* Flush remaining batched HUD geometry into the eye FBO */
         FlushRenderBuffer();
@@ -4947,6 +5069,8 @@ void AvpShowViewsVR(void)
             float saved_hud_scale = vr_hud_clip_scale;
             float saved_hud_ox    = vr_hud_offset_x;
             float saved_hud_oy    = vr_hud_offset_y;
+            float saved_eye_ox    = vr_eye_clip_off_x;
+            float saved_eye_oy    = vr_eye_clip_off_y;
 
             glBindFramebuffer(GL_FRAMEBUFFER, score_fbo);
             glViewport(0, 0, score_fbo_w, score_fbo_h);
@@ -4973,6 +5097,9 @@ void AvpShowViewsVR(void)
             vr_hud_clip_scale = 1.0f;
             vr_hud_offset_x   = 0.0f;
             vr_hud_offset_y   = 0.0f;
+            /* Its own FBO and its own quad layer, so no eye is in play here. */
+            vr_eye_clip_off_x = 0.0f;
+            vr_eye_clip_off_y = 0.0f;
 
             DoMultiplayerEndGameScreen();
             FlushRenderBuffer();
@@ -4994,6 +5121,8 @@ void AvpShowViewsVR(void)
             vr_hud_clip_scale = saved_hud_scale;
             vr_hud_offset_x   = saved_hud_ox;
             vr_hud_offset_y   = saved_hud_oy;
+            vr_eye_clip_off_x = saved_eye_ox;
+            vr_eye_clip_off_y = saved_eye_oy;
             glEnable(GL_DEPTH_TEST);
             /* Leave clean state for the compositor blit / next frame. */
             RestoreGameShaderState();

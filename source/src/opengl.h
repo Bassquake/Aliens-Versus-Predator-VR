@@ -22,6 +22,10 @@ void D3D_ScreenInversionOverlay();
 void D3D_DrawColourBar(int yTop, int yBottom, int rScale, int gScale, int bScale);
 void InitGameShader(void);
 void RestoreGameShaderState(void);
+/* Off-axis (asymmetric) frustum shift in NDC, added to gl_Position.xy * w by the
+ * game vertex shader. Zero everywhere except the VR eye pass, which sets it per eye
+ * so the headset frustum is rendered exactly as the runtime reports it. */
+void OGL_SetClipOffset(float x, float y);
 void OGL_RegenerateMipmaps(void);
 
 /* Texture filtering settings, driven by the AV Options menu. All three are 0 by
@@ -148,6 +152,11 @@ extern float vr_world_scale;      /* what the eye pass actually multiplies by */
 extern float vr_hud_clip_scale;
 extern float vr_hud_offset_x;
 extern float vr_hud_offset_y;
+/* The current eye's off-axis (canted-frustum) correction in NDC, added to the HUD's clip
+   coords on top of vr_hud_offset_x/y. Kept separate from those on purpose - the three
+   world-direction-to-HUD-pixel inverses rely on it cancelling. See opengl.c. */
+extern float vr_eye_clip_off_x;
+extern float vr_eye_clip_off_y;
 
 /* Set GL viewport to 640x480 when in VR 2D mode so readback is 1:1. */
 void VR_Set2DViewport(void);

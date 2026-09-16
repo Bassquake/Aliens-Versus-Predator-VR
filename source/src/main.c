@@ -720,6 +720,7 @@ static PFN_xrGetInstanceProcAddr pfn_xrGetInstanceProcAddr = NULL;
 static PFN_xrEnumerateViewConfigurationViews pfn_xrEnumerateViewConfigurationViews = NULL;
 static PFN_xrEnumerateSwapchainImages pfn_xrEnumerateSwapchainImages = NULL;
 static PFN_xrCreateReferenceSpace pfn_xrCreateReferenceSpace = NULL;
+static PFN_xrEnumerateReferenceSpaces pfn_xrEnumerateReferenceSpaces = NULL;
 static PFN_xrDestroySpace pfn_xrDestroySpace = NULL;
 static PFN_xrDestroySession pfn_xrDestroySession = NULL;
 static PFN_xrDestroyInstance pfn_xrDestroyInstance = NULL;
@@ -770,6 +771,14 @@ static bool xr_has_refresh_rate_ext = false;
 /* XR_BD_controller_interaction: defines Pico's interaction profiles. Enumerated
  * on Android only; stays false everywhere else, where nothing reads it. */
 static bool xr_has_bd_controller_ext = false;
+/* XR_EXT_local_floor: a LOCAL space whose origin is dropped to the floor. It is the
+ * missing rung between STAGE (floor origin, but needs a configured play boundary) and
+ * LOCAL (no boundary needed, but the origin is your HEAD). Promoted to core in OpenXR
+ * 1.1; we request a 1.0 instance (see the Quest 1 note at xrCreateInstance), so it has
+ * to come in as an extension. Enabled only when the runtime offers it, like every other
+ * optional extension here - requesting one that is absent fails xrCreateInstance
+ * outright. */
+static bool xr_has_local_floor_ext = false;
 
 /* ========================================================================
  * Global XR State
@@ -906,6 +915,31 @@ static void vr_enumerate_refresh_rates(void)
     }
 }
 static XrSpace xr_local_space = XR_NULL_HANDLE;
+
+/* Which reference space we actually got, and the correction the rest of the engine
+ * needs because of it.
+ *
+ * STAGE puts the origin on the FLOOR, which is what every "absolute stage height"
+ * calculation in avpview.c assumes: the located eye Y *is* the player's physical eye
+ * height, ~1.6 m. LOCAL puts the origin AT THE HEAD at session start, so the same
+ * located Y is ~0. Nothing downstream could tell the two apart, and the difference is
+ * not cosmetic: vr_y_scale is game_eye_to_floor / eye_height, so a LOCAL session
+ * divides by ~0 and the world comes out many times too small - close enough to the eye
+ * that it cannot be fused (see the clamp in avpview.c, which is the other half of this).
+ *
+ * xr_space_floor_offset_y is added to the located Y to put it back on a floor-relative
+ * footing: 0 for STAGE, a nominal standing eye height for LOCAL. It is an approximation
+ * there by definition - LOCAL does not know where the floor is - but it keeps the scale
+ * in the right band, which is all that matters for stereo. */
+#define XR_NOMINAL_EYE_HEIGHT_M 1.65f
+float xr_space_floor_offset_y = 0.0f;
+int   xr_space_is_stage       = 0;
+const char *xr_space_name     = "none";
+
+/* Set per frame from XrViewState: the runtime is allowed to return views whose pose is
+ * not (yet) tracked, and it does so over a streaming link while the connection settles.
+ * Consumers must not take a head reference from one of those. */
+int xr_view_pose_valid = 0;
 
 /* Input action state */
 static XrActionSet xr_input_action_set = XR_NULL_HANDLE;
@@ -1865,6 +1899,7 @@ static bool load_xr_functions(void)
     XR_LOAD(xrEnumerateViewConfigurationViews);
     XR_LOAD(xrEnumerateSwapchainImages);
     XR_LOAD(xrCreateReferenceSpace);
+    XR_LOAD(xrEnumerateReferenceSpaces);
     XR_LOAD(xrDestroySpace);
     XR_LOAD(xrDestroySession);
     XR_LOAD(xrDestroyInstance);
@@ -2059,7 +2094,7 @@ static bool init_xr_instance(void)
      * rather than a missing menu row. The two KHR extensions stay unconditional —
      * without them there is no Android XR instance and no GLES rendering at all,
      * so xrCreateInstance failing is the correct outcome. */
-    const char *extensions[4];
+    const char *extensions[5];
     Uint32 extension_count = 0;
     xr_has_refresh_rate_ext = false;
     {
@@ -2078,6 +2113,8 @@ static bool init_xr_instance(void)
                         xr_has_refresh_rate_ext = true;
                     else if (!strcmp(props[i].extensionName, XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME))
                         xr_has_bd_controller_ext = true;
+                    else if (!strcmp(props[i].extensionName, XR_EXT_LOCAL_FLOOR_EXTENSION_NAME))
+                        xr_has_local_floor_ext = true;
                 }
                 SDL_free(props);
             }
@@ -2093,14 +2130,17 @@ static bool init_xr_instance(void)
      * bindings together, not just the profile line. */
     if (xr_has_bd_controller_ext)
         extensions[extension_count++] = XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME;
-    SDL_Log("XR: extensions available — FB_display_refresh_rate=%d BD_controller_interaction=%d",
-            (int)xr_has_refresh_rate_ext, (int)xr_has_bd_controller_ext);
+    if (xr_has_local_floor_ext)
+        extensions[extension_count++] = XR_EXT_LOCAL_FLOOR_EXTENSION_NAME;
+    SDL_Log("XR: extensions available — FB_display_refresh_rate=%d BD_controller_interaction=%d EXT_local_floor=%d",
+            (int)xr_has_refresh_rate_ext, (int)xr_has_bd_controller_ext,
+            (int)xr_has_local_floor_ext);
 #else /* AVP_PCVR */
     /* Requesting an extension the runtime doesn't have FAILS xrCreateInstance,
      * so build the list from what the runtime actually offers. Only
      * XR_KHR_opengl_enable is mandatory; XR_FB_display_refresh_rate is a Quest
      * nicety that SteamVR doesn't expose. */
-    const char *extensions[2];
+    const char *extensions[3];
     Uint32 extension_count = 0;
     xr_has_refresh_rate_ext = false;
     {
@@ -2119,6 +2159,8 @@ static bool init_xr_instance(void)
                     have_opengl_ext = true;
                 else if (!strcmp(props[i].extensionName, XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME))
                     xr_has_refresh_rate_ext = true;
+                else if (!strcmp(props[i].extensionName, XR_EXT_LOCAL_FLOOR_EXTENSION_NAME))
+                    xr_has_local_floor_ext = true;
             }
             SDL_free(props);
         }
@@ -2129,6 +2171,10 @@ static bool init_xr_instance(void)
         extensions[extension_count++] = XR_KHR_OPENGL_ENABLE_EXTENSION_NAME;
         if (xr_has_refresh_rate_ext)
             extensions[extension_count++] = XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME;
+        if (xr_has_local_floor_ext)
+            extensions[extension_count++] = XR_EXT_LOCAL_FLOOR_EXTENSION_NAME;
+        SDL_Log("XR: extensions available - FB_display_refresh_rate=%d EXT_local_floor=%d",
+                (int)xr_has_refresh_rate_ext, (int)xr_has_local_floor_ext);
     }
 #endif
 
@@ -2355,16 +2401,78 @@ static bool init_xr_session(void)
     XrReferenceSpaceCreateInfo space_info = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
     space_info.poseInReferenceSpace.orientation.w = 1.0f;
 
-    /* STAGE gives a floor-level origin with room-scale tracking.
-     * It requires a valid guardian boundary; fall back to LOCAL if unavailable. */
+    /* Log what the runtime actually offers before asking for anything. Which space we
+     * end up in decides what a located Y means for the whole session (see the
+     * xr_space_floor_offset_y comment above), and runtimes differ: SteamVR always
+     * offers STAGE, while the Oculus runtime can refuse it. Reading it out of a log
+     * beats inferring it from how wrong the world looks. */
+    if (pfn_xrEnumerateReferenceSpaces) {
+        Uint32 space_count = 0;
+        if (!XR_FAILED(pfn_xrEnumerateReferenceSpaces(xr_session, 0, &space_count, NULL))
+                && space_count > 0) {
+            XrReferenceSpaceType *types = SDL_calloc(space_count, sizeof(*types));
+            if (types &&
+                !XR_FAILED(pfn_xrEnumerateReferenceSpaces(xr_session, space_count,
+                                                          &space_count, types))) {
+                char list[160];
+                int n = 0;
+                for (Uint32 i = 0; i < space_count && n < (int)sizeof(list) - 16; i++) {
+                    const char *name =
+                        types[i] == XR_REFERENCE_SPACE_TYPE_VIEW        ? "VIEW"  :
+                        types[i] == XR_REFERENCE_SPACE_TYPE_LOCAL       ? "LOCAL" :
+                        types[i] == XR_REFERENCE_SPACE_TYPE_STAGE       ? "STAGE" :
+                        types[i] == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR ? "LOCAL_FLOOR" : NULL;
+                    n += name
+                       ? SDL_snprintf(list + n, sizeof(list) - n, "%s%s", i ? ", " : "", name)
+                       : SDL_snprintf(list + n, sizeof(list) - n, "%s%d", i ? ", " : "",
+                                      (int)types[i]);
+                }
+                SDL_Log("XR: reference spaces supported: %s", list);
+            }
+            SDL_free(types);
+        }
+    }
+
+    /* Ask in descending order of how much the space tells us about the FLOOR, because
+     * that is the only thing the engine actually needs from it:
+     *
+     *   STAGE        floor origin + room-scale, but needs a configured play boundary.
+     *   LOCAL_FLOOR  floor origin, no boundary required (XR_EXT_local_floor).
+     *   LOCAL        head origin. No floor at all - the fallbacks in avpview.c have to
+     *                invent one, so this is a last resort, not a peer of the other two.
+     *
+     * Both of the first two put the origin on the floor, so both count as "stage" for
+     * xr_space_floor_offset_y; only the third needs the nominal-height correction. */
     space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     result = pfn_xrCreateReferenceSpace(xr_session, &space_info, &xr_local_space);
-    if (XR_FAILED(result)) {
-        SDL_Log("XR: STAGE space unavailable (%d), falling back to LOCAL", (int)result);
-        space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
-        result = pfn_xrCreateReferenceSpace(xr_session, &space_info, &xr_local_space);
+    if (!XR_FAILED(result)) {
+        xr_space_is_stage = 1;
+        xr_space_name     = "STAGE";
     }
-    SDL_Log("XR: xrCreateReferenceSpace result=%d space=%p", (int)result, (void*)xr_local_space);
+    else {
+        SDL_Log("XR: STAGE space unavailable (%d)", (int)result);
+        if (xr_has_local_floor_ext) {
+            space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+            result = pfn_xrCreateReferenceSpace(xr_session, &space_info, &xr_local_space);
+            if (!XR_FAILED(result)) {
+                xr_space_is_stage = 1;       /* origin is on the floor, which is all this means */
+                xr_space_name     = "LOCAL_FLOOR";
+            }
+            else {
+                SDL_Log("XR: LOCAL_FLOOR space unavailable (%d)", (int)result);
+            }
+        }
+        if (xr_space_is_stage == 0) {
+            SDL_Log("XR: falling back to LOCAL - no floor reference, "
+                    "assuming a %.2fm eye height", XR_NOMINAL_EYE_HEIGHT_M);
+            space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+            result = pfn_xrCreateReferenceSpace(xr_session, &space_info, &xr_local_space);
+            xr_space_name = "LOCAL";
+        }
+    }
+    xr_space_floor_offset_y = xr_space_is_stage ? 0.0f : XR_NOMINAL_EYE_HEIGHT_M;
+    SDL_Log("XR: xrCreateReferenceSpace result=%d space=%p type=%s floor_offset_y=%.2fm",
+            (int)result, (void*)xr_local_space, xr_space_name, xr_space_floor_offset_y);
     XR_CHECK(result, "Failed to create reference space");
 
     /* --- Input actions: left thumbstick locomotion --- */
@@ -3100,6 +3208,65 @@ void VR_Set2DViewport(void)
 
 XrTime VR_GetDisplayTime(void) { return xr_predicted_display_time; }
 XrSpace VR_GetLocalSpace(void) { return xr_local_space; }
+
+/* Per-eye projection for the headset's REAL frustum, which is canted: the Oculus runtime
+ * reports L/R = -52/+45 deg for the left eye and the mirror for the right.
+ *
+ * The engine cannot express an off-axis principal point in its vertex maths - every site
+ * in d3d_render.cpp / opengl.c projects as X*ProjX/Z about the image centre - so this used
+ * to render a SYMMETRIC approximation and submit that as the layer fov. Two versions of
+ * that were tried on Air Link (2026-09-16) and both left the view unfusable: the mean of
+ * the half-angles, then the inscribed minimum. What that rules out is the runtime clamping
+ * our fov - it is using its own regardless of what we submit, so ANY symmetric render is
+ * displaced. Because the cant mirrors between the eyes the displacement is opposite in
+ * each, which is imposed DIVERGENCE (~8 deg per eye): nothing beyond arm's reach can be
+ * fused, while SteamVR - whose reported frustum evidently is not canted this way - looked
+ * correct throughout.
+ *
+ * So render what the runtime asked for. Split into the two things the engine needs:
+ *
+ *   ProjX/ProjY  focal length in pixels, w/(tanL+tanR) - unchanged from the mean form,
+ *                which already computed exactly this. The focal length was never wrong.
+ *   clip offset  the principal point, as a constant NDC shift applied in the vertex
+ *                shader (see OGL_SetClipOffset). This is the part that was missing.
+ *
+ * Sign conventions, both taken from the projection sites rather than assumed: screen x
+ * grows right and view X grows right, so px = pp_x + X*ProjX/Z and the NDC shift is
+ * +(pp_x - w/2)/(w/2). View Y grows DOWN (d3d_render.cpp adds Y*ProjY/Z to CentreY, and
+ * the measured view basis has row2 = down), while NDC y grows up, so the y shift carries
+ * the opposite sign. pp_x is measured from the LEFT edge and pp_y from the TOP, which is
+ * why they pair with angleLeft and angleUp.
+ *
+ * The layer fov submitted at xrEndFrame is now xr_views[i].fov verbatim - the image really
+ * is that frustum, so there is nothing left to approximate or keep in sync. */
+void VR_EyeProjection(const XrFovf *fov, int w, int h,
+                      int *projX, int *projY, float *clip_off_x, float *clip_off_y)
+{
+    float tl = SDL_tanf(SDL_fabsf(fov->angleLeft));
+    float tr = SDL_tanf(SDL_fabsf(fov->angleRight));
+    float tu = SDL_tanf(SDL_fabsf(fov->angleUp));
+    float td = SDL_tanf(SDL_fabsf(fov->angleDown));
+
+    /* A degenerate fov would divide by ~0; fall back to the old centred quarter-width
+     * guess, which is wrong but finite and cannot produce NaNs in the vertex stream. */
+    if (tl + tr < 0.02f || tu + td < 0.02f) {
+        if (projX) *projX = w / 4;
+        if (projY) *projY = h / 4;
+        if (clip_off_x) *clip_off_x = 0.0f;
+        if (clip_off_y) *clip_off_y = 0.0f;
+        return;
+    }
+
+    float fx = (float)w / (tl + tr);      /* focal length, pixels */
+    float fy = (float)h / (tu + td);
+    float pp_x = tl * fx;                 /* principal point, pixels from the LEFT edge */
+    float pp_y = tu * fy;                 /* ... and from the TOP edge */
+
+    if (projX) *projX = (int)fx;
+    if (projY) *projY = (int)fy;
+    if (clip_off_x) *clip_off_x =  (pp_x - (float)w * 0.5f) / ((float)w * 0.5f);
+    if (clip_off_y) *clip_off_y = -(pp_y - (float)h * 0.5f) / ((float)h * 0.5f);
+}
 XrResult VR_LocateViews(XrViewLocateInfo *info, XrViewState *state,
                         Uint32 count, Uint32 *count_out, XrView *views)
 {
@@ -3135,6 +3302,16 @@ void VR_WaitAndBeginFrame(void)
         Uint32 view_count_out = 0;
         XrResult result = pfn_xrLocateViews(xr_session, &locate_info, &view_state,
                                             view_count, &view_count_out, xr_views);
+
+        /* Publish whether the POSITION half of these poses is real. The 2D menu path
+         * below already gates its head-yaw capture on ORIENTATION_VALID; the eye pass
+         * takes a one-shot *position* reference (ref_head_*), which is far less
+         * forgiving - latch that from an untracked frame and the world scale derived
+         * from it is wrong for the rest of the session. */
+        xr_view_pose_valid = (!XR_FAILED(result) && view_count_out > 0 &&
+                              (view_state.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) &&
+                              (view_state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
+                             ? 1 : 0;
 
         /* Update HMD horizontal heading for locomotion (pmove.c reads xr_hmd_move_sin/cos).
          * Derivation: OpenXR -Z is forward; game +Z is forward; game X = OpenXR X. */
@@ -3430,20 +3607,11 @@ static void render_frame(void)
              * Just set up projection views for xrEndFrame. */
             for (Uint32 i = 0; i < view_count; i++) {
                 VRSwapchain *sc = &vr_swapchains[i];
-                float tan_hx = (SDL_tanf(SDL_fabsf(xr_views[i].fov.angleLeft))
-                              + SDL_tanf(SDL_fabsf(xr_views[i].fov.angleRight))) * 0.5f;
-                float tan_hy = (SDL_tanf(SDL_fabsf(xr_views[i].fov.angleUp))
-                              + SDL_tanf(SDL_fabsf(xr_views[i].fov.angleDown))) * 0.5f;
-                XrFovf sym_fov = xr_views[i].fov;
-                if (tan_hx > 0.01f && tan_hy > 0.01f) {
-                    sym_fov.angleLeft  = -SDL_atanf(tan_hx);
-                    sym_fov.angleRight =  SDL_atanf(tan_hx);
-                    sym_fov.angleUp    =  SDL_atanf(tan_hy);
-                    sym_fov.angleDown  = -SDL_atanf(tan_hy);
-                }
                 proj_views[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
                 proj_views[i].pose = xr_views[i].pose;
-                proj_views[i].fov  = sym_fov;
+                /* Verbatim: avpview.c renders this eye's true canted frustum via
+                 * VR_EyeProjection, so the image IS this fov. */
+                proj_views[i].fov  = xr_views[i].fov;
                 proj_views[i].subImage.swapchain        = sc->swapchain;
                 proj_views[i].subImage.imageRect.offset.x = 0;
                 proj_views[i].subImage.imageRect.offset.y = 0;

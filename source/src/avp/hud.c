@@ -346,7 +346,68 @@ void MaintainHUD(void)
 #endif
 		HandleParticleSystem();
 	}
+#ifdef AVP_XR
+	/* The cable is WORLD-SPACE geometry (D3D_DrawCable strings it from the hand to the
+	 * hook in world coordinates) but it is drawn from MaintainHUD, which runs with the
+	 * HUD's own projection state. TWO separate corrections are needed, and they fix two
+	 * different symptoms:
+	 *
+	 * 1. The off-axis frustum shift, cleared by the eye pass for the screen-space HUD.
+	 *    Without it the cable is projected about the image centre while the world around
+	 *    it is projected about the eye's real optical axis - ~12% of the half-width out,
+	 *    in OPPOSITE directions per eye, which reads as double vision.
+	 *
+	 * 2. The SCREEN DESCRIPTOR BLOCK. By this point the eye pass has swapped in the HUD's
+	 *    virtual SDB (640x680, CentreX/Y = 320/340) while VDB_ProjX/Y are still sized for
+	 *    the eye FBO - those are not restored until after MaintainHUD returns. The output
+	 *    projection is X*ProjX/(Z*SDB_CentreX), so with ProjX at ~821 against a CentreX of
+	 *    320 the cable overshoots by (eye_fbo_w/2)/320 - nearly 3x. Dead ahead that is
+	 *    invisible, but it multiplies the cable's angle off the view axis, so the rope
+	 *    SWINGS across the view as the head turns. Restoring the 3D SDB for this draw
+	 *    makes the projection identical to the one the world was drawn with.
+	 *
+	 * RenderPredatorTargetingSegment hits the same SDB mismatch and cancels it by scaling
+	 * its centre offset by SDB_Width/eye_fbo_w (see the note there). That works because it
+	 * places a single reticle centre; the cable is 46 world-space points, so putting the
+	 * real projection back is both simpler and exact. */
+	SCREENDESCRIPTORBLOCK vr_saved_hud_sdb;
+	int vr_cable_sdb_swapped = 0;
+	if (VR_IsIn3DMode())
+	{
+		/* Declared locally, as the other user of these in this file does - hud.c has no
+		   avpview.h include, and clang rejects the implicit declaration outright. */
+		extern int VR_GetEyeFBOWidth(void);
+		extern int VR_GetEyeFBOHeight(void);
+		int ew = VR_GetEyeFBOWidth();
+		int eh = VR_GetEyeFBOHeight();
+		if (ew > 0 && eh > 0)
+		{
+			vr_saved_hud_sdb = ScreenDescriptorBlock;
+			ScreenDescriptorBlock.SDB_Width     = ew;
+			ScreenDescriptorBlock.SDB_Height    = eh;
+			ScreenDescriptorBlock.SDB_CentreX   = ew / 2;
+			ScreenDescriptorBlock.SDB_CentreY   = eh / 2;
+			ScreenDescriptorBlock.SDB_ClipLeft  = 0;
+			ScreenDescriptorBlock.SDB_ClipRight = ew;
+			ScreenDescriptorBlock.SDB_ClipUp    = 0;
+			ScreenDescriptorBlock.SDB_ClipDown  = eh;
+			vr_cable_sdb_swapped = 1;
+		}
+		OGL_SetClipOffset(vr_eye_clip_off_x, vr_eye_clip_off_y);
+	}
+#endif
 	RenderGrapplingHook();
+#ifdef AVP_XR
+	if (VR_IsIn3DMode())
+	{
+		/* Clip offset first: it flushes the batch, and the cable's vertices must be drawn
+		 * while the shift is still on. The SDB only affects vertices as they are EMITTED
+		 * (opengl.c computes NDC there), so restoring it afterwards is safe either way. */
+		OGL_SetClipOffset(0.0f, 0.0f);
+		if (vr_cable_sdb_swapped)
+			ScreenDescriptorBlock = vr_saved_hud_sdb;
+	}
+#endif
 	
 	SecondFlushD3DZBuffer();
 
@@ -1860,6 +1921,27 @@ static void DrawPredatorSights(void)
 		{
 			int segmentScale=PredSight_LockOnTime;
 
+		#ifdef AVP_XR
+			/* The targeting segments are WORLD-SPACE 3D geometry (RenderPredatorTargetingSegment
+			 * places them along the target's view-space direction at a shallow depth), but they
+			 * are drawn from MaintainHUD - i.e. after the eye pass has cleared the off-axis
+			 * frustum shift for the screen-space HUD. So they were projected about the image
+			 * CENTRE while the enemy they sit on was drawn about the eye's real OPTICAL AXIS,
+			 * leaving them ~12% of the half-width out, in OPPOSITE directions per eye: the
+			 * reticle picked up its own disparity and read as double vision on the Disc,
+			 * Shoulder Cannon and Grappling Hook alike (every IsSmartTarget weapon). Reported
+			 * on Quest, Air Link and SteamVR together, which is the giveaway that it is the
+			 * canted frustum rather than anything runtime-specific.
+			 *
+			 * Put the world's shift back for these draws only. OGL_SetClipOffset flushes the
+			 * triangle batch on change, so the HUD geometry already queued is drawn unshifted
+			 * and the segments are drawn shifted - no need to trust draw ordering. Restored
+			 * below rather than inside RenderPredatorTargetingSegment, which has six early
+			 * returns out of the polygon clippers. */
+			if (VR_IsIn3DMode())
+				OGL_SetClipOffset(vr_eye_clip_off_x, vr_eye_clip_off_y);
+		#endif
+
 			if (segmentScale<=ONE_FIXED)
 			{
 				RenderPredatorTargetingSegment((PredSight_Angle+1365*2)&4095, segmentScale, PredSight_LockOnTime);
@@ -1877,6 +1959,12 @@ static void DrawPredatorSights(void)
 			if (segmentScale>ONE_FIXED) segmentScale = ONE_FIXED;
 
 	  		RenderPredatorTargetingSegment(PredSight_Angle, segmentScale, PredSight_LockOnTime);
+
+		#ifdef AVP_XR
+			/* Back to a centred frustum: the rest of the HUD is screen-space. */
+			if (VR_IsIn3DMode())
+				OGL_SetClipOffset(0.0f, 0.0f);
+		#endif
 
 			/* Advance the lock-on animation once per frame. MaintainHUD runs per eye in
 			 * VR, so gate the state advance to eye 0 or the lock-on plays at 2x speed. */

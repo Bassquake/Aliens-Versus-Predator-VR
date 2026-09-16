@@ -147,6 +147,27 @@ if (WIN32 OR AVP_LINUX OR AVP_MAC)
     if (WIN32)
         set(AVP_LIB_OS "windows")
         message(STATUS "AVP: Windows target architecture -> ${ARCH_DIR}")
+
+        # Name the exe AND the generated .sln per arch and variant: avp_x64 / avp_x86 /
+        # avp_arm64 for the flat build, avpvr_<arch> for PCVR. One string drives both, so
+        # the solution can never end up named differently from the binary it builds.
+        #
+        # This needs a SECOND project() call, and the ordering is forced: the Visual Studio
+        # generator names the solution after the top-level project, but ARCH_DIR is derived
+        # from MSVC_C_ARCHITECTURE_ID / CMAKE_SIZEOF_VOID_P, which do not exist until a
+        # project() call has configured the compiler. So the first project() above sets the
+        # toolchain up and this one renames it once the arch is known. The compiler checks
+        # are cached by then, so the second call is cheap. Do NOT try to fold this back into
+        # one call by detecting the arch earlier from CMAKE_GENERATOR_PLATFORM alone - that
+        # is empty for a generator invoked without -A, and a second detection path here
+        # could drift from the one above.
+        if (AVP_ENABLE_PCVR)
+            set(AVP_EXE_NAME "avpvr_${ARCH_DIR}")
+        else()
+            set(AVP_EXE_NAME "avp_${ARCH_DIR}")
+        endif()
+        project(${AVP_EXE_NAME})
+        message(STATUS "AVP: Windows solution/exe name -> ${AVP_EXE_NAME}")
     elseif (AVP_MAC)
         set(AVP_LIB_OS "mac")
         message(STATUS "AVP: macOS target architecture -> ${ARCH_DIR}")
@@ -371,7 +392,7 @@ if (AVP_ENABLE_PCVR)
 
     if (WIN32)
         add_definitions(-DAVP_PCVR_WIN32)
-        message(STATUS "AVP: PCVR (OpenXR) build enabled -> avp_${ARCH_DIR}vr.exe")
+        message(STATUS "AVP: PCVR (OpenXR) build enabled -> avpvr_${ARCH_DIR}.exe")
     else()
         # The Linux binding is GLX, so this build needs Xlib on top of the GL that
         # every target already links. REQUIRED: without it the only symptom would be
@@ -1128,12 +1149,13 @@ elseif (WIN32)
     # follow the folder automatically. Kept separate from the flat build so the
     # two never fight over config.cfg / user_profiles (the game writes next to
     # its assets — see "Where the game writes" in CLAUDE.md).
+    # AVP_EXE_NAME was set with the arch near the top of this file, where it also names
+    # the .sln (see the second project() call there) - it must not be recomputed here or
+    # the solution and the binary can drift apart. Only the output FOLDER is decided here.
     if (AVP_ENABLE_PCVR)
-        set(AVP_EXE_NAME "avp_${AVP_ARCH}vr")
-        set(AVP_OUT_DIR  "${AVP_ARCH}vr")
+        set(AVP_OUT_DIR "${AVP_ARCH}vr")
     else()
-        set(AVP_EXE_NAME "avp_${AVP_ARCH}")
-        set(AVP_OUT_DIR  "${AVP_ARCH}")
+        set(AVP_OUT_DIR "${AVP_ARCH}")
     endif()
 
     # Place the exe and all accompanying files inside a avp/ subfolder,
@@ -1168,7 +1190,20 @@ elseif (WIN32)
         COMMENT "Copying SDL3 runtime DLL next to avp.exe"
         VERBATIM)
 
-    # 1a. PCVR: stage the OpenXR loader next to the exe. main.c LoadLibraryA's
+    # 1a. Copy the OpenAL runtime DLL. This lived as a hand-added copy step inside the
+    # generated avp.vcxproj (commit 8f2430b) for x64vr and x86, which a CMake regenerate
+    # silently wipes — the build then succeeds and the exe dies at startup on a missing
+    # OpenAL32.dll. Same rule as OUTPUT_NAME and the FFmpeg DLLs: if a build needs it,
+    # it belongs here, not in a generated project file. Doing it here also covers the
+    # arches the hand edit never reached (x64 flat, arm64).
+    add_custom_command(TARGET avp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/extern/OpenAL32/lib/windows/${AVP_ARCH}/OpenAL32.dll"
+                "$<TARGET_FILE_DIR:avp>"
+        COMMENT "Copying OpenAL runtime DLL next to ${AVP_EXE_NAME}.exe"
+        VERBATIM)
+
+    # 1b. PCVR: stage the OpenXR loader next to the exe. main.c LoadLibraryA's
     # it at startup; without it the exe silently runs flat.
     if (AVP_ENABLE_PCVR)
         add_custom_command(TARGET avp POST_BUILD
@@ -1179,7 +1214,7 @@ elseif (WIN32)
             VERBATIM)
     endif()
 
-    # 1b. Copy the FFmpeg runtime DLLs. Glob them per-arch rather than naming them:
+    # 1c. Copy the FFmpeg runtime DLLs. Glob them per-arch rather than naming them:
     # the versioned suffixes differ between the bundled builds (x64/x86 ship
     # avcodec-62 / avutil-60 / swscale-9 / swresample-6 / avformat-62, arm64 ships
     # avcodec-63 / avutil-61 / swscale-10 / swresample-7 / avformat-63), so a
@@ -1198,7 +1233,7 @@ elseif (WIN32)
                         "matching av*/sw* DLLs are placed next to it.")
     endif()
 
-    # 1c. Drop DLLs a previous build left behind. copy_if_different never removes, so
+    # 1d. Drop DLLs a previous build left behind. copy_if_different never removes, so
     # after an FFmpeg major bump the folder holds both avcodec-62.dll and avcodec-63.dll;
     # the exe loads the right one, but the wrong one still ships. Registered after the
     # copies so it prunes against what was just staged.
@@ -1240,8 +1275,7 @@ elseif (AVP_LINUX)
     # never fight over config.cfg / user_profiles, which the game writes next to
     # its assets (see "Where the game writes" in CLAUDE.md).
     if (AVP_ENABLE_PCVR)
-        # Linux PCVR binary is avpvr_<arch>, not avp_<arch>vr (Windows still uses
-        # the latter); the folder stays <arch>vr either way.
+        # avpvr_<arch>, matching the Windows PCVR exe; the folder stays <arch>vr.
         set(AVP_EXE_NAME "avpvr_${ARCH_DIR}")
         set(AVP_OUT_DIR  "${ARCH_DIR}vr")
     else()

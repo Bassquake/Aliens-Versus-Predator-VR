@@ -320,8 +320,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 		}
 	}
 
+	/* AVP_MENU_VR, not AVP_XR: the latter is true for the non-VR phone flavor too,
+	   which should read the same as the flat desktop build. */
 	if (stringID == TEXTSTRING_MAINMENU_SUBTITLE)
-#ifdef AVP_XR
+#ifdef AVP_MENU_VR
 		return "Classic 2000 VR";
 #else
 		return "Classic 2000";

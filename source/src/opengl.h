@@ -178,6 +178,12 @@ extern VECTORCH vr_left_hand_world;
 extern MATRIXCH  vr_left_hand_mat;
 extern int       vr_left_hand_valid;
 
+/* The first-person rig's view scale (VR_WEAPON_VIEW_SCALE times the eyeline ratio),
+   published by the eye pass each frame. Any code that poses PlayersWeapon and then
+   solves the rig MUST apply this the same way the renderer does, or its solve comes
+   out at a different size than the rig on screen. 0 until the first eye pass. */
+extern float     vr_weapon_view_scale;
+
 /* --- VR weapon / hand alignment tuning ----------------------------------
  * Nudge the weapon (and its held-hand geometry) relative to the physical
  * right controller. The three offsets are applied in the controller's LOCAL

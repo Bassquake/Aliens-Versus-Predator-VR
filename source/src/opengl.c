@@ -463,6 +463,10 @@ float vr_hud_offset_y   = 0.0f;
 float vr_eye_clip_off_x = 0.0f;
 float vr_eye_clip_off_y = 0.0f;
 
+/* Published by the VR eye pass; see opengl.h. Lives here with the other VR render
+ * globals so weapons.c can reach it without pulling in avpview.c. */
+float vr_weapon_view_scale = 0.0f;
+
 #if defined(_MSC_VER)
 #define ALIGN16 __declspec(align(16))
 #else

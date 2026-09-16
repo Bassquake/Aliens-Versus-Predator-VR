@@ -450,6 +450,23 @@ static int WantJoystick = 1;
    the calling thread. So the only reliable answer is to not make the call. */
 static int WantXR = 1;
 
+/* VR diagnostics (-vrdiag / --vrdiag / -D / AVP_VR_DIAG). Off by default.
+ *
+ * These are the lines that actually resolved the VR rendering bugs, so they are kept
+ * rather than deleted - but a few fire on every weapon state change, which is noise in
+ * an ordinary log. Runtime switch rather than compile-time deliberately: what they
+ * measure are properties of the RUNTIME and the headset (which reference space, the
+ * per-eye frustum, the eyeline scale), so they have to be collectable from whatever
+ * build someone is already running, without asking them to rebuild.
+ *
+ * What it enables:
+ *   XR: reference spaces supported   which spaces the runtime offers
+ *   VR scale:                        eyeline scale, IPD, units-per-metre
+ *   VR eye0 / VR eye1:               per-eye pose, fov, off-axis shift, ProjX/Y
+ *   VR rig:                          first-person rig scale and its inputs
+ * Non-static: avpview.c reads it directly, as it does the other xr_ globals. */
+int vr_diag_enabled = 0;
+
 static GLuint FullscreenTexture;
 static GLsizei FullscreenTextureWidth;
 static GLsizei FullscreenTextureHeight;
@@ -2406,7 +2423,7 @@ static bool init_xr_session(void)
      * xr_space_floor_offset_y comment above), and runtimes differ: SteamVR always
      * offers STAGE, while the Oculus runtime can refuse it. Reading it out of a log
      * beats inferring it from how wrong the world looks. */
-    if (pfn_xrEnumerateReferenceSpaces) {
+    if (pfn_xrEnumerateReferenceSpaces && vr_diag_enabled) {
         Uint32 space_count = 0;
         if (!XR_FAILED(pfn_xrEnumerateReferenceSpaces(xr_session, 0, &space_count, NULL))
                 && space_count > 0) {
@@ -7155,6 +7172,7 @@ static const struct option getopt_long_options[] = {
         { "datapath",	1,	NULL,	'p' },
         { "noxr",	0,	NULL,	'X' },
         { "flat",	0,	NULL,	'X' },
+        { "vrdiag",	0,	NULL,	'D' },
 /*
 { "loadrifs",	1,	NULL,	'l' },
 { "server",	0,	someval,	1 },
@@ -7181,6 +7199,7 @@ static const char *usage_string =
         "      [-p | --datapath] [x]   Look at [x] for game files\n"
         "      [-g | --withgl] [x]     Accepted and ignored (legacy dlopen-libGL option)\n"
         "      [--noxr | --flat]       VR builds: skip OpenXR, run on the desktop\n"
+        "      [-D | --vrdiag]         VR builds: log the VR render diagnostics\n"
 ;
 
 int main(int argc, char *argv[])
@@ -7201,7 +7220,7 @@ int main(int argc, char *argv[])
     int c;
     
     opterr = 0;
-    while ((c = getopt_long(argc, argv, "hvfwscdjg:p:X", getopt_long_options, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "hvfwscdjg:p:XD", getopt_long_options, NULL)) != -1) {
         switch(c) {
             case 'h':
                 printf("%s", usage_string);
@@ -7231,6 +7250,9 @@ int main(int argc, char *argv[])
                 break;
             case 'X':
                 WantXR = 0;
+                break;
+            case 'D':
+                vr_diag_enabled = 1;
                 break;
             case 'g':
                 opengl_library = optarg;
@@ -7279,6 +7301,9 @@ int main(int argc, char *argv[])
         } else if (!strcmp(a, "-noxr") || !strcmp(a, "--noxr") ||
                    !strcmp(a, "-flat")  || !strcmp(a, "--flat")) {
             WantXR = 0;
+        } else if (!strcmp(a, "-vrdiag") || !strcmp(a, "--vrdiag") ||
+                   !strcmp(a, "-D")) {
+            vr_diag_enabled = 1;
         }
     }
 #endif
@@ -7287,6 +7312,11 @@ int main(int argc, char *argv[])
        cannot pass arguments. Any value counts, including an empty one. */
     if (SDL_getenv("AVP_NO_XR") != NULL)
         WantXR = 0;
+    if (SDL_getenv("AVP_VR_DIAG") != NULL)
+        vr_diag_enabled = 1;
+    if (vr_diag_enabled)
+        SDL_Log("VR diagnostics ENABLED (-vrdiag): expect XR reference-space, "
+                "VR scale, VR eye and VR rig lines");
     SDL_Log("BOOT: InitSDL done");
     //SDL_Log("DEBUG: argv[0] is %s", (argv[0] ? argv[0] : "NULL"));
     //SDL_Log("DEBUG: gamedatapath is %s", (gamedatapath ? gamedatapath : "NULL"));

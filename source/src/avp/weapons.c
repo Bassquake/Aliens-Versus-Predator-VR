@@ -299,6 +299,30 @@ static void VR_PositionPlayerWeaponAtController(int weaponID)
 {
 	if (!VR_IsIn3DMode() || !vr_right_hand_valid) return;
 	VR_ComputeWeaponAnchor(weaponID, &PlayersWeapon.ObWorld, &PlayersWeapon.ObMat);
+
+	/* Apply the rig's view scale exactly as the eye pass does, because the caller
+	   solves the rig (ProveHModel) straight after this and that solve must match the
+	   rig actually on screen. VR_ComputeWeaponAnchor returns the RAW controller pose;
+	   the renderer then scales ObMat by wscale and pulls ObWorld toward the hand by the
+	   same factor so the assembly scales about the grip. Leaving that out here solved a
+	   rig ~1/wscale of the drawn size - the same failure the medicomp/cannon swap hit
+	   (see the note beside VR_WEAPON_VIEW_SCALE in avpview.c: bones at 1/wscale while
+	   ObMat carried the right factor), and it is why the flame origin drifted from the
+	   visible nozzle that this function exists to line up.
+
+	   vr_weapon_view_scale is last frame's value: this runs in game logic, ahead of the
+	   eye pass that republishes it. It changes only with the eyeline/world scale, not
+	   per frame, so that is immaterial. Zero until the first eye pass - skip then. */
+	if (vr_weapon_view_scale > 0.0f) {
+		float ws = vr_weapon_view_scale;
+		MATRIXCH *m = &PlayersWeapon.ObMat;
+		PlayersWeapon.ObWorld.vx = vr_right_hand_world.vx + (int)((PlayersWeapon.ObWorld.vx - vr_right_hand_world.vx) * ws);
+		PlayersWeapon.ObWorld.vy = vr_right_hand_world.vy + (int)((PlayersWeapon.ObWorld.vy - vr_right_hand_world.vy) * ws);
+		PlayersWeapon.ObWorld.vz = vr_right_hand_world.vz + (int)((PlayersWeapon.ObWorld.vz - vr_right_hand_world.vz) * ws);
+		m->mat11 = (int)(m->mat11 * ws); m->mat12 = (int)(m->mat12 * ws); m->mat13 = (int)(m->mat13 * ws);
+		m->mat21 = (int)(m->mat21 * ws); m->mat22 = (int)(m->mat22 * ws); m->mat23 = (int)(m->mat23 * ws);
+		m->mat31 = (int)(m->mat31 * ws); m->mat32 = (int)(m->mat32 * ws); m->mat33 = (int)(m->mat33 * ws);
+	}
 }
 #endif
 

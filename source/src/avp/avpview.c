@@ -55,6 +55,10 @@ extern const char *xr_space_name;
 void VR_EyeProjection(const XrFovf *fov, int w, int h,
                       int *projX, int *projY, float *clip_off_x, float *clip_off_y);
 extern int         xr_view_pose_valid;
+/* -vrdiag / --vrdiag / AVP_VR_DIAG; see the note beside it in main.c. Gates the
+ * "VR scale", "VR eye" and "VR rig" lines below - kept because they are what resolved
+ * the VR render bugs, off by default because some fire per weapon-state change. */
+extern int         vr_diag_enabled;
 #define VR_STAGE_Y(raw_y) ((raw_y) + xr_space_floor_offset_y)
 extern bool        xr_enabled;
 extern int         xr_session_running;
@@ -2649,7 +2653,7 @@ void AvpShowViewsVR(void)
      * ref_head_y, and the printed IPD says what the runtime actually reported. */
     {
         static int logged_vr_scale = 0;
-        if (!logged_vr_scale && ref_captured && view_count >= 2) {
+        if (vr_diag_enabled && !logged_vr_scale && ref_captured && view_count >= 2) {
             logged_vr_scale = 1;
             /* 3D distance, not the X delta: the eyes separate along the head's own
              * right axis, which only lines up with reference-space X when the head
@@ -4171,6 +4175,45 @@ void AvpShowViewsVR(void)
                 int wscale_baked = 0;
                 if (vr_weapon_ref_scale > 0.0f)
                     wscale *= vr_y_scale / vr_weapon_ref_scale;
+
+                /* Publish it for the fire paths in weapons.c, which pose PlayersWeapon
+                 * and solve the rig themselves (see VR_PositionPlayerWeaponAtController).
+                 * They have to scale the same way this block does or their solve is a
+                 * different size than the rig being drawn. */
+                vr_weapon_view_scale = wscale;
+
+                /* DIAGNOSTIC: the first-person rig's scale, and every input that can
+                 * move it. wscale is the ONE factor that sizes arms+hand+weapon (it is
+                 * baked into ObMat, which propagates down every bone), so if the rig
+                 * changes size this line says which input did it:
+                 *   wscale unchanged   -> the size change is not this factor at all;
+                 *                         look at which branch set ObMat (state/free).
+                 *   yscale moved       -> vr_y_scale, i.e. game_eye_to_floor moved,
+                 *                         i.e. the CAMERA moved relative to the feet
+                 *                         (a view kick/dip while firing would do this).
+                 *   ref moved          -> vr_weapon_ref_scale got re-captured.
+                 * Logged on a >1% move or a weapon-state change, capped so a long
+                 * session cannot flood the log. */
+                {
+                    static float diag_last_wscale = 0.0f;
+                    static int   diag_last_state  = -1;
+                    static int   diag_lines       = 0;
+                    int st_now = wpn->CurrentState;
+                    if (vr_diag_enabled && diag_lines < 60 &&
+                        (st_now != diag_last_state ||
+                         diag_last_wscale <= 0.0f ||
+                         SDL_fabsf(wscale - diag_last_wscale) > 0.01f * diag_last_wscale)) {
+                        diag_lines++;
+                        diag_last_wscale = wscale;
+                        diag_last_state  = st_now;
+                        SDL_Log("VR rig: eye=%d wpn=%d state=%d free=%d wscale=%.4f "
+                                "yscale=%.1f cached=%.1f eye_to_floor=%d ref_head_y=%.3f "
+                                "weapon_ref=%.1f",
+                                eye, wpn->WeaponIDNumber, st_now, weapon_is_free, wscale,
+                                vr_y_scale, cached_vr_y_scale, game_eye_to_floor,
+                                ref_head_y, vr_weapon_ref_scale);
+                    }
+                }
 
                 if (is_alien) {
                     /* The claw rig is a first-person HModel: its visible claws are

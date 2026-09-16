@@ -121,9 +121,18 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avp_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64/Debug
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenAL32/lib/windows/x64/OpenAL32.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64/Debug
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -209,7 +218,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avp_x64.exe	Copying FFmpeg runtime DLLs next to avp_x64.exe	Pruning stale FFmpeg runtime DLLs next to avp_x64.exe	Updating assets next to avp_x64.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avp_x64.exe	Copying OpenAL runtime DLL next to avp_x64.exe	Copying FFmpeg runtime DLLs next to avp_x64.exe	Pruning stale FFmpeg runtime DLLs next to avp_x64.exe	Updating assets next to avp_x64.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64/Release
 if %errorlevel% neq 0 goto :cmEnd
@@ -306,9 +315,18 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avp_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64/MinSizeRel
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenAL32/lib/windows/x64/OpenAL32.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64/MinSizeRel
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -393,9 +411,18 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avp_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64/RelWithDebInfo
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenAL32/lib/windows/x64/OpenAL32.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64/RelWithDebInfo
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone

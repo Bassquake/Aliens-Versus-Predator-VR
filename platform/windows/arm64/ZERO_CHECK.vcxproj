@@ -114,7 +114,7 @@
       <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</BuildInParallel>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Checking Build System</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/avp.sln
+"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/avp_arm64.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -128,7 +128,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</BuildInParallel>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Checking Build System</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/avp.sln
+"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/avp_arm64.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -142,7 +142,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|ARM64'">true</BuildInParallel>
       <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|ARM64'">Checking Build System</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|ARM64'">setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/avp.sln
+"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/avp_arm64.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -156,7 +156,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|ARM64'">true</BuildInParallel>
       <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|ARM64'">Checking Build System</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|ARM64'">setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/avp.sln
+"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/avp_arm64.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone

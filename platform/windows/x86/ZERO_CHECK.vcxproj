@@ -113,7 +113,7 @@
       <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</BuildInParallel>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Checking Build System</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86/avp.sln
+"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86/avp_x86.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -127,7 +127,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</BuildInParallel>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Checking Build System</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86/avp.sln
+"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86/avp_x86.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -141,7 +141,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">true</BuildInParallel>
       <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Checking Build System</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86/avp.sln
+"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86/avp_x86.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -155,7 +155,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">true</BuildInParallel>
       <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Checking Build System</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86/avp.sln
+"C:\Program Files\CMake\bin\cmake.exe" -SK:/Coding/Aliens-Versus-Predator-VR/source -BK:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file K:/Coding/Aliens-Versus-Predator-VR/platform/windows/x86/avp_x86.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone

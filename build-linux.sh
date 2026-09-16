@@ -10,7 +10,7 @@
 # Output lands in build/linux/<arch>/ as a self-contained folder: the avp_<arch>
 # binary, the bundled .so's it needs (staged under their SONAMEs) and the assets.
 #
-# --vr builds the OpenXR PCVR target instead: avp_<arch>vr in build/linux/<arch>vr/,
+# --vr builds the OpenXR PCVR target instead: avpvr_<arch> in build/linux/<arch>vr/,
 # with libopenxr_loader.so staged alongside. It is a SEPARATE folder and a separate
 # build tree from the flat build, so the two coexist and never share config.cfg or
 # user_profiles. Only x64 has a bundled loader; see extern/OpenXR/lib/linux/.
@@ -96,7 +96,10 @@ for arch in "${ARCHES[@]}"; do
         echo "==> building $target"
         cmake --build "$REPO/.build-linux/$target" -j"$(nproc)"
     ); then
-        echo "==> done: build/linux/$target/avp_$target"
+        # Flat builds are avp_<arch>; the PCVR one is avpvr_<arch> (see AVP_EXE_NAME
+        # in source/CMakeLists.txt), though both still live in build/linux/$target.
+        if [ -n "$suffix" ]; then binname="avpvr_$arch"; else binname="avp_$arch"; fi
+        echo "==> done: build/linux/$target/$binname"
         ok+=("$target")
         [ "$keep_trees" -eq 1 ] || drop_build_tree "$target"
     else

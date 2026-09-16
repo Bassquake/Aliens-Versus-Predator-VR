@@ -378,7 +378,7 @@ if (AVP_ENABLE_PCVR)
         # a link error on glXGetCurrentDisplay several minutes into the build.
         find_package(X11 REQUIRED)
         add_definitions(-DAVP_PCVR_XLIB)
-        message(STATUS "AVP: PCVR (OpenXR) build enabled -> avp_${ARCH_DIR}vr")
+        message(STATUS "AVP: PCVR (OpenXR) build enabled -> avpvr_${ARCH_DIR}")
     endif()
 endif()
     MESSAGE(WARNING "SDL 3.0 support is STABLE.")
@@ -1240,7 +1240,9 @@ elseif (AVP_LINUX)
     # never fight over config.cfg / user_profiles, which the game writes next to
     # its assets (see "Where the game writes" in CLAUDE.md).
     if (AVP_ENABLE_PCVR)
-        set(AVP_EXE_NAME "avp_${ARCH_DIR}vr")
+        # Linux PCVR binary is avpvr_<arch>, not avp_<arch>vr (Windows still uses
+        # the latter); the folder stays <arch>vr either way.
+        set(AVP_EXE_NAME "avpvr_${ARCH_DIR}")
         set(AVP_OUT_DIR  "${ARCH_DIR}vr")
     else()
         set(AVP_EXE_NAME "avp_${ARCH_DIR}")

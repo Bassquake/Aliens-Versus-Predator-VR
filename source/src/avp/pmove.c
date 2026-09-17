@@ -1462,6 +1462,38 @@ static void MaintainPlayerShape(STRATEGYBLOCK* sbPtr)
 {
 	PLAYER_STATUS *playerStatusPtr= (PLAYER_STATUS *) (sbPtr->SBdataptr);
 
+#ifdef AVP_XR
+	/* VR: an Alien on a wall or ceiling is ALWAYS crouched.
+	 *
+	 * Asked for on the strength of how it plays - a climbing Alien reads as tucked
+	 * against the surface rather than standing off it - and it also makes the tail
+	 * consistent, since crouching was the difference between a tail strike breaking a
+	 * ceiling pylon and doing nothing.
+	 *
+	 * Forced here rather than by synthesising a crouch input, so nothing depends on the
+	 * key debounce state, and the stand-up path below is held off for as long as the
+	 * climb lasts. That also fixes the reported inability to un-crouch on a ceiling: the
+	 * stance is no longer something the player is left holding, it belongs to the climb
+	 * and is released with it. RequestsToStandUp is cleared on the way in so a request
+	 * made before the grab cannot fire the moment the climb ends; leaving the wall then
+	 * returns to the ordinary state machine, which stands the player up as usual.
+	 *
+	 * VR only, deliberately: this changes how the Alien plays, and the flat game is
+	 * known-good. AlienWallClimbing is this file's own climb flag, set when the player
+	 * grabs a surface and cleared when they let go or fall off. */
+	if (VR_IsIn3DMode() && AlienWallClimbing)
+	{
+		if (playerStatusPtr->ShapeState == PMph_Standing
+		    && playerStatusPtr->Encumberance.CanCrouch)
+		{
+			MakePlayerCrouch(sbPtr);
+		}
+		sbPtr->DynPtr->RequestsToStandUp = 0;
+		CrouchKeyDebounced = 1;   /* so the first tap after release is not swallowed */
+		return;
+	}
+#endif
+
 	/* maintain play morphing state */
 	switch (playerStatusPtr->ShapeState)
 	{

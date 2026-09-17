@@ -138,6 +138,9 @@ static VECTORCH *ViewpointPositionPtr;
 int CameraCanSeeThisPosition_WithIgnore(DISPLAYBLOCK *ignoredObjectPtr,VECTORCH *positionPtr)
 {
 	VECTORCH viewVector;  /* direction of view-line */
+#ifdef AVP_XR
+	int vr_head_los;      /* trace from the VR head centre, with the distance test */
+#endif
 
 	GLOBALASSERT(ignoredObjectPtr);
 
@@ -152,7 +155,29 @@ int CameraCanSeeThisPosition_WithIgnore(DISPLAYBLOCK *ignoredObjectPtr,VECTORCH 
 	   off as though occluded by a railing the player could plainly see past. The
 	   giveaway was that joystick movement affected it and physical movement did not. */
 	#ifdef AVP_XR
-	viewVector = vr_is_rendering ? vr_head_world : Global_VDB_Ptr->VDB_World;
+	/* vr_is_rendering alone was too narrow, and it made every MELEE attack fail.
+	 *
+	 * The attacks run in GAME LOGIC, not during rendering: MeleeWeapon_*_Front_Core and
+	 * AlienTail_TargetSelect (weapons.c) all end with a CameraCanSeeThisPosition_WithIgnore
+	 * check. With vr_is_rendering false, this function took the flat origin AND skipped
+	 * the LOS_Lambda correction below, falling through to the old
+	 * LOS_ObjectHitPtr == Player body test - which the comment below explains cannot work
+	 * once World Scale lifts the eye clear of the body's (unscaled) collision extents.
+	 * Past about 1.1 the ray passes over the player, so the target reported itself
+	 * occluded and the attack was rejected at any range where the ray had room to miss.
+	 * Symptom: as an Alien you could not break a ceiling pylon from a normal distance,
+	 * only from right underneath it, while flat play was fine (reported 2026-09-16, World
+	 * Scale 1.30).
+	 *
+	 * vr_head_world is written by the eye pass every frame, so it is equally valid in
+	 * game logic - only the eye-to-eye consistency argument below is specific to
+	 * rendering. So use the head centre and the corrected test whenever the eye pass is
+	 * producing poses at all. */
+	{
+		extern int VR_IsIn3DMode(void);
+		vr_head_los = (vr_is_rendering || VR_IsIn3DMode());
+	}
+	viewVector = vr_head_los ? vr_head_world : Global_VDB_Ptr->VDB_World;
 	#else
 	viewVector = Global_VDB_Ptr->VDB_World;
 	#endif
@@ -196,7 +221,7 @@ int CameraCanSeeThisPosition_WithIgnore(DISPLAYBLOCK *ignoredObjectPtr,VECTORCH 
 		   units to the first thing hit (and a huge sentinel when nothing was), so a first
 		   hit at or beyond the eye means the line is clear. Equivalent to the body test
 		   whenever the eye is inside the body, and still correct when it is not. */
-		if (vr_is_rendering && LOS_Lambda >= headDistance) return 1;
+		if (vr_head_los && LOS_Lambda >= headDistance) return 1;
 
 		return 0;
 	}

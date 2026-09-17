@@ -288,6 +288,33 @@ static int IdleFidgetAllowed(void) { return !VR_IsIn3DMode(); }
 static int IdleFidgetAllowed(void) { return 1; }
 #endif
 
+/* Camera line-of-sight for MELEE, skipped in VR.
+ *
+ * The melee cores and AlienTail_TargetSelect each end with
+ * CameraCanSeeThisPosition_WithIgnore. That test asks whether the TARGET can see the
+ * CAMERA, and it was written for a flat camera sitting inside the player's body. In VR
+ * the eye is neither: World Scale lifts it clear of the body's (unscaled) collision
+ * extents, and at a seated height it can sit ~400 units higher than the flat camera -
+ * high enough that scenery near the target starts occluding it. The measured symptom was
+ * an Alien unable to break a ceiling pylon from a normal distance, only from directly
+ * underneath, while flat play was fine (2026-09-16, World Scale 1.30).
+ *
+ * Melee is contact range - 4000 units is about 1.8 m - so an occlusion test buys very
+ * little: the range check and the angular cone already constrain it, and anything close
+ * enough to be inside both is close enough to hit. So in VR the check is simply not
+ * applied. FLAT BEHAVIOUR IS DELIBERATELY UNCHANGED: it works there, and the camera
+ * really is inside the body, so the test means what it was written to mean.
+ *
+ * Note this is only for the MELEE callers. Trophy_TargetFilter also calls the same
+ * function and is left alone - it is Predator trophy targeting, not a contact attack. */
+static int Melee_CameraCanSee(DISPLAYBLOCK *objectPtr, VECTORCH *positionPtr)
+{
+#ifdef AVP_XR
+	if (VR_IsIn3DMode()) return 1;
+#endif
+	return CameraCanSeeThisPosition_WithIgnore(objectPtr, positionPtr);
+}
+
 #ifdef AVP_XR
 /* Position PlayersWeapon at the VR controller transform (identical offsets +
    barrel-fix the renderer uses) so muzzle-derived fire - flechettes,
@@ -4970,7 +4997,7 @@ int MeleeWeapon_180Degree_Front_Core(DAMAGE_PROFILE *damage,int multiple,int ran
 						since people evidently can't make up their minds. */
 
 						//if (IsThisObjectVisibleFromThisPosition_WithIgnore(Player,objectPtr,&targetposW,range))
-						if (CameraCanSeeThisPosition_WithIgnore(objectPtr,&targetposW))
+						if (Melee_CameraCanSee(objectPtr,&targetposW))
 						{
 
 							int magnitudeOfForce = (5000*damage->Cutting) / dynPtr->Mass;
@@ -5058,7 +5085,7 @@ int MeleeWeapon_180Degree_Front_Core(DAMAGE_PROFILE *damage,int multiple,int ran
 						}
 						#else
 						//if (IsThisObjectVisibleFromThisPosition_WithIgnore(Player,objectPtr,&targetposW,range))
-						if (CameraCanSeeThisPosition_WithIgnore(objectPtr,&targetposW)) {
+						if (Melee_CameraCanSee(objectPtr,&targetposW)) {
 							objectToHit = sbPtr;
 							range = dist;
 						}
@@ -9052,7 +9079,7 @@ DISPLAYBLOCK *AlienTail_TargetSelect(void)
 				  	  	if (dynPtr)
 						{
 							//if (IsThisObjectVisibleFromThisPosition_WithIgnore(Player,objectPtr,&dynPtr->Position,ALIEN_TAIL_RANGE)) {
-							if (CameraCanSeeThisPosition_WithIgnore(objectPtr,&dynPtr->Position)) {
+							if (Melee_CameraCanSee(objectPtr,&dynPtr->Position)) {
 					  			/* Consider target validity here? */
 					  			
 								if (dist<neardist) {

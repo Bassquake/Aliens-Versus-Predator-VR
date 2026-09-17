@@ -22,6 +22,8 @@
 #include "bh_marin.h"
 #include "lighting.h"
 #include "bh_weap.h"
+/* NETGHOSTDATABLOCK, for the multiplayer case in VR_IsCharacterSB below. */
+#include "pldghost.h"
 #include "weapons.h"
 #include "psnd.h"
 #include "load_shp.h"
@@ -2153,6 +2155,43 @@ static int VR_IsCharacterSB(STRATEGYBLOCK *sbPtr)
         case I_BehaviourAlienFragment:
         case I_BehaviourNetCorpse:
             return 1;
+
+        /* MULTIPLAYER. Every remote player and remote NPC is an I_BehaviourNetGhost -
+           a wrapper whose real behaviour lives in NETGHOSTDATABLOCK::type - so none of
+           the cases above ever matched one and remote characters were left unscaled:
+           at World Scale above 1 they looked too small, while the level and your own
+           reach were correct (reported 2026-09-17).
+           I_BehaviourNetCorpse WAS listed, so a remote player that died grew to the
+           right size at the moment of death, which is the giveaway.
+           Unwrapped the same way Tail_TargetFilter (weapons.c) does it. */
+        case I_BehaviourNetGhost:
+        {
+            NETGHOSTDATABLOCK *ghostPtr = (NETGHOSTDATABLOCK *)sbPtr->SBdataptr;
+            if (!ghostPtr) return 0;
+            switch (ghostPtr->type) {
+                /* The three player species, as seen from the other end of the wire. */
+                case I_BehaviourAlienPlayer:
+                case I_BehaviourMarinePlayer:
+                case I_BehaviourPredatorPlayer:
+                /* NPCs ghosted to clients in co-op, and the death/debris types, which
+                   arrive ghosted too. */
+                case I_BehaviourAlien:
+                case I_BehaviourQueenAlien:
+                case I_BehaviourFaceHugger:
+                case I_BehaviourPredator:
+                case I_BehaviourXenoborg:
+                case I_BehaviourMarine:
+                case I_BehaviourSeal:
+                case I_BehaviourPredatorAlien:
+                case I_BehaviourHierarchicalFragment:
+                case I_BehaviourAlienFragment:
+                case I_BehaviourNetCorpse:
+                    return 1;
+                default:
+                    return 0;
+            }
+        }
+
         default:
             return 0;
     }

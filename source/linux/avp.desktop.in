@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=@NAME@
+GenericName=First-person shooter
+Comment=Aliens vs Predator Classic 2000
+# Absolute paths, filled in by install-desktop.sh at the folder the game actually sits
+# in. The build output is relocatable, so these cannot be baked in at build time.
+Exec=@EXEC@
+Icon=@ICON@
+Path=@GAMEDIR@
+Terminal=false
+Categories=Game;ActionGame;
+Keywords=AvP;Aliens;Predator;FPS;
+# MUST match the SDL_SetAppMetadata identifier in main.c for THIS build (the flat and VR
+# builds deliberately use different ids so their entries can coexist) and this file's
+# installed name. Wayland has no window-icon protocol: the compositor matches the
+# window's xdg app_id against an installed entry and takes the icon from there. If they
+# drift apart the window silently gets a generic icon.
+StartupWMClass=@APPID@

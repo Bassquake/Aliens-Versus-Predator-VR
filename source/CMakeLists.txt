@@ -1309,6 +1309,37 @@ elseif (AVP_LINUX)
 
     # Assets are not committed, so only wire the copy up when they are actually there
     # — an unconditional copy_directory would fail the build on a fresh clone.
+    # The window icon. Windows gets its icon from the .ico resource compiled into the exe
+    # (IDI_ICON1, platform/windows/Resource.rc), so only the other platforms need a file:
+    # main.c loads this next to the binary at startup and sets it with SDL_SetWindowIcon.
+    # Staged like the bundled .so's so the output folder stays self-contained, and its
+    # absence is not fatal - the game just starts without an icon.
+    add_custom_command(TARGET avp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/src/avp_icon.bmp"
+                "$<TARGET_FILE_DIR:avp>"
+        COMMENT "Copying window icon next to ${AVP_EXE_NAME}"
+        VERBATIM)
+
+    # Desktop-entry kit: the 256x256 PNG (lifted verbatim from avp_multi.ico), the entry
+    # template and the installer that fills its absolute paths in. Staged rather than
+    # generated because the output folder is RELOCATABLE - Exec and Icon are only knowable
+    # once the user has put the folder where they want it, so install-desktop.sh resolves
+    # them at run time from its own location.
+    #
+    # This is also the only way the icon can appear under WAYLAND, which has no
+    # window-icon protocol: the compositor matches the window's app_id (SDL_SetAppMetadata
+    # in main.c) against an installed entry. X11 does not need it - SDL_SetWindowIcon
+    # already covers the window there - so the entry just adds a menu item.
+    add_custom_command(TARGET avp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/src/avp_icon.png"
+                "${CMAKE_SOURCE_DIR}/linux/avp.desktop.in"
+                "${CMAKE_SOURCE_DIR}/linux/install-desktop.sh"
+                "$<TARGET_FILE_DIR:avp>"
+        COMMENT "Copying desktop-entry kit next to ${AVP_EXE_NAME}"
+        VERBATIM)
+
     if (EXISTS "${CMAKE_SOURCE_DIR}/../assets")
         add_custom_command(TARGET avp POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory

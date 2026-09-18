@@ -5393,6 +5393,27 @@ int InitSDL()
     }
 #endif
 
+    /* Application identity, set BEFORE SDL_Init because the video backend reads it there.
+     *
+     * The identifier is what makes the icon work on WAYLAND, which has no window-icon
+     * protocol: the compositor matches a window's xdg app_id against an installed
+     * .desktop file and takes the icon from that. SDL uses this string as the app_id, so
+     * it MUST match the desktop entry's filename, which install-desktop.sh derives from
+     * the binary name. The FLAT and VR builds use DIFFERENT ids on purpose - they ship in
+     * separate folders and their entries would otherwise overwrite each other. Change an
+     * id here and you must change the matching case in that script, or the window
+     * silently falls back to a generic icon with nothing to diagnose.
+     *
+     * Harmless elsewhere: X11 takes its icon from SDL_SetWindowIcon further down, and
+     * Windows from the .ico resource compiled into the exe. */
+#ifdef AVP_PCVR
+    SDL_SetAppMetadata("Aliens Versus Predator: VR", AvPVersionString,
+                       "com.bassquake.avpvr");
+#else
+    SDL_SetAppMetadata("Aliens Versus Predator", AvPVersionString,
+                       "com.bassquake.avp");
+#endif
+
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "SDL Init failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);
@@ -5910,6 +5931,43 @@ static int SetOGLVideoMode(int Width, int Height)
                          "SDL_CreateWindow failed: %s", SDL_GetError());
             return -1;  // or bubble the error up instead of exit()
         }
+
+        /* Window icon, for the platforms that have one.
+         *
+         * Windows takes its icon from the .ico resource compiled into the exe
+         * (IDI_ICON1 in platform/windows/Resource.rc), which covers both the exe in
+         * Explorer and the window itself - so this is for everyone else. The BMP is
+         * avp_multi.ico's 64x64 frame, converted at 32bpp with the alpha channel
+         * preserved, and staged next to the binary by the build.
+         *
+         * X11 picks it up (_NET_WM_ICON). WAYLAND DOES NOT AND CANNOT: the protocol has
+         * no window-icon concept at all - a Wayland compositor takes the icon from the
+         * .desktop file matching the app id - so this is silently inert there and a
+         * desktop entry is the only route. Not an error, just nothing to do.
+         *
+         * Failure is never fatal: no icon is a cosmetic loss, and a missing file must not
+         * stop the game starting.
+         *
+         * Compiled out on Windows (the .ico resource already covers it, and the file is
+         * not staged there, so this would log a miss on every launch) and on Android,
+         * which has no window icon and no such file beside the binary. */
+#if !defined(_WIN32) && !defined(__ANDROID__)
+        {
+            char iconPath[512];
+            const char *base = SDL_GetBasePath();
+            if (base) {
+                SDL_Surface *icon;
+                SDL_snprintf(iconPath, sizeof(iconPath), "%savp_icon.bmp", base);
+                icon = SDL_LoadBMP(iconPath);
+                if (icon) {
+                    SDL_SetWindowIcon(window, icon);
+                    SDL_DestroySurface(icon);
+                } else {
+                    SDL_Log("Window icon not set (%s): %s", iconPath, SDL_GetError());
+                }
+            }
+        }
+#endif
         context = SDL_GL_CreateContext(window);
         if (context == NULL) {
             fprintf(stderr, "(OpenGL) SDL SDL_GL_CreateContext failed: %s\n", SDL_GetError());

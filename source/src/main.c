@@ -464,8 +464,14 @@ static int WantXR = 1;
  *   VR scale:                        eyeline scale, IPD, units-per-metre
  *   VR eye0 / VR eye1:               per-eye pose, fov, off-axis shift, ProjX/Y
  *   VR rig:                          first-person rig scale and its inputs
- * Non-static: avpview.c reads it directly, as it does the other xr_ globals. */
-int vr_diag_enabled = 0;
+ * Non-static: avpview.c reads it directly, as it does the other xr_ globals.
+ *
+ * Seeded from AVP_VR_DIAG (opengl.h) so a build can turn the diagnostics on with no
+ * launch argument at all - the only practical route on Quest, where an app started from
+ * the headset library gets neither an argument nor an environment variable. The runtime
+ * switches below still work and can only turn it ON, never off, so a diagnostic build
+ * stays diagnostic. */
+int vr_diag_enabled = AVP_VR_DIAG;   /* the switch is AVP_VR_DIAG in opengl.h */
 
 static GLuint FullscreenTexture;
 static GLsizei FullscreenTextureWidth;
@@ -502,17 +508,30 @@ static const char * gamedatapath = NULL;
 int VRMoveDeadzone = 2;
 int VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 
+
+
 /* The live world scale, and the melee-reach helper that reads it (see vr_scale.h).
+
    Both live out here, ahead of the AVP_XR split: the range macros in bh_pred.h and
+
    friends are unconditional, so the behaviour files call VR_Reach on every target.
+
    It returns the range untouched with no headset, so the flat game is unchanged. */
+
 float vr_world_scale = VR_WorldScaleFromIndex(VR_WORLD_SCALE_DEFAULT_INDEX);
 
+
+
 int VR_Reach(int range)
+
 {
+
     extern int VR_IsIn3DMode(void);
+
     if (!VR_IsIn3DMode() || vr_world_scale <= 1.001f) return range;
+
     return (int)(range * vr_world_scale);
+
 }
 
 /* The defaults, written ONCE and used to initialise both the live table and the
@@ -952,6 +971,26 @@ static XrSpace xr_local_space = XR_NULL_HANDLE;
 float xr_space_floor_offset_y = 0.0f;
 int   xr_space_is_stage       = 0;
 const char *xr_space_name     = "none";
+
+/* A LOCAL_FLOOR space kept purely to CHECK the STAGE we chose, then destroyed.
+ *
+ * xrCreateReferenceSpace(STAGE) can succeed while the runtime does not actually have a
+ * valid stage - the Oculus runtime logs "Stage IsValid=false" and hands one back anyway,
+ * which is what a headset in stationary mode does. The fallback chain cannot catch that:
+ * STAGE did not fail, so nothing falls through, and an origin at the wrong height is
+ * indistinguishable from a real one by inspection. The measured cost is a silently wrong
+ * world scale, because ref_head_y is read against that origin (see the Quest 3 report,
+ * 2026-09-17, cured by switching the headset to room-scale).
+ *
+ * Both STAGE and LOCAL_FLOOR claim to put their origin on the FLOOR, so they should agree
+ * to within a few centimetres. Locating one against the other therefore measures how far
+ * the stage floor is out, and that difference goes straight into xr_space_floor_offset_y -
+ * the correction that already exists for exactly this, rather than swapping the space
+ * handle mid-session, which is used in a dozen places by then.
+ *
+ * Deferred to the first frame because xrLocateSpace needs a predictedDisplayTime, and at
+ * space-creation there has not been one yet. */
+static XrSpace xr_floor_probe_space = XR_NULL_HANDLE;
 
 /* Set per frame from XrViewState: the runtime is allowed to return views whose pose is
  * not (yet) tracked, and it does so over a streaming link while the connection settles.
@@ -1427,6 +1466,12 @@ static void destroy_xr_resources(void)
 
     if (xr_views) { SDL_free(xr_views); xr_views = NULL; }
 
+    /* Normally already gone - the floor cross-check destroys it on the first frame -
+       but a session torn down before that frame would otherwise leak it. */
+    if (xr_floor_probe_space && pfn_xrDestroySpace) {
+        pfn_xrDestroySpace(xr_floor_probe_space);
+        xr_floor_probe_space = XR_NULL_HANDLE;
+    }
     if (xr_local_space && pfn_xrDestroySpace) {
         pfn_xrDestroySpace(xr_local_space);
         xr_local_space = XR_NULL_HANDLE;
@@ -2465,6 +2510,18 @@ static bool init_xr_session(void)
     if (!XR_FAILED(result)) {
         xr_space_is_stage = 1;
         xr_space_name     = "STAGE";
+
+        /* Keep a LOCAL_FLOOR alongside it to cross-check the floor height on the first
+         * frame - see xr_floor_probe_space. Only worth it when we took STAGE: the other
+         * two branches already know what they got. */
+        if (xr_has_local_floor_ext) {
+            XrReferenceSpaceCreateInfo probe_info = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
+            probe_info.poseInReferenceSpace.orientation.w = 1.0f;
+            probe_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+            if (XR_FAILED(pfn_xrCreateReferenceSpace(xr_session, &probe_info,
+                                                     &xr_floor_probe_space)))
+                xr_floor_probe_space = XR_NULL_HANDLE;
+        }
     }
     else {
         SDL_Log("XR: STAGE space unavailable (%d)", (int)result);
@@ -3306,6 +3363,42 @@ void VR_WaitAndBeginFrame(void)
     xr_predicted_display_time = xr_frame_state.predictedDisplayTime;
     XrFrameBeginInfo begin_info = { XR_TYPE_FRAME_BEGIN_INFO };
     pfn_xrBeginFrame(xr_session, &begin_info);
+
+    /* ONE-SHOT: is the STAGE floor actually the floor? See xr_floor_probe_space.
+     * Runs here because it is the first point with a predictedDisplayTime. */
+    if (xr_floor_probe_space != XR_NULL_HANDLE && xr_predicted_display_time > 0) {
+        XrSpaceLocation loc = { XR_TYPE_SPACE_LOCATION };
+        XrResult lr = pfn_xrLocateSpace(xr_local_space, xr_floor_probe_space,
+                                        xr_predicted_display_time, &loc);
+        if (!XR_FAILED(lr)
+            && (loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) {
+            /* loc is the STAGE origin expressed in LOCAL_FLOOR space, so .y is how far
+             * the stage floor sits ABOVE the real one. A point h above STAGE is then
+             * h + y above the floor, which is precisely what the offset means. */
+            float d = loc.pose.position.y;
+
+            /* Ignore normal disagreement - the two are independently estimated and a few
+             * centimetres apart is just noise. Refuse anything past a room's height as
+             * garbage rather than trusting it. */
+            if (d > 0.10f || d < -0.10f) {
+                if (d > 2.5f || d < -2.5f) {
+                    SDL_Log("XR: STAGE floor is %.2fm from LOCAL_FLOOR - implausible, "
+                            "ignoring", d);
+                } else {
+                    xr_space_floor_offset_y = d;
+                    SDL_Log("XR: STAGE floor is %.2fm above LOCAL_FLOOR - correcting. "
+                            "The runtime returned a STAGE it does not consider valid "
+                            "(headset likely in stationary mode); without this the world "
+                            "scale is silently wrong.", d);
+                }
+            } else if (vr_diag_enabled) {
+                SDL_Log("XR: STAGE floor agrees with LOCAL_FLOOR to %.3fm - no correction", d);
+            }
+        }
+        /* Checked once either way; the probe has no other purpose. */
+        if (pfn_xrDestroySpace) pfn_xrDestroySpace(xr_floor_probe_space);
+        xr_floor_probe_space = XR_NULL_HANDLE;
+    }
 
     /* Locate views here (in main.c, same pattern as the working 2D path in render_frame)
      * rather than via VR_LocateViews() wrapper from avpview.c, which returns

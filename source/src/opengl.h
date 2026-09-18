@@ -145,6 +145,34 @@ extern int VR_ActionLong(int action);
 extern int   VRWorldScaleIndex;   /* menu-editable, profile-stored */
 extern float vr_world_scale;      /* what the eye pass actually multiplies by */
 
+/* VR render diagnostics, compiled IN. Same dev-tool pattern as the two tuners: set to 1,
+ * rebuild, and the diagnostics are on with no launch argument and no config file.
+ *
+ * That matters on QUEST specifically. The runtime switches - -vrdiag / --vrdiag / -D and
+ * AVP_VR_DIAG - need a launch path that can pass an argument or an environment variable,
+ * and an Android app started from the headset's library gets neither. Editing config.cfg
+ * on the device to reach it is possible but awkward, so for on-device work this define is
+ * the practical route; the runtime switches remain for PCVR, where redirecting a log is
+ * easy anyway.
+ *
+ * ORs with the runtime flag rather than replacing it, so a build with this on cannot be
+ * turned off by the absence of an argument.
+ *
+ * DELIBERATELY OUTSIDE the #ifdef AVP_XR below, so this is the ONE line in the tree that
+ * defines it and every target sees it. It used to live inside the guard with a matching
+ * #ifndef fallback in main.c for non-VR builds - and that fallback, sitting right beside
+ * "int vr_diag_enabled = AVP_VR_DIAG;", read exactly like the switch. Editing it did
+ * nothing, because opengl.h is included first and had already defined the macro.
+ *
+ * What it enables (all one-shot or capped, so there is no steady-state cost):
+ *   XR: reference spaces supported   which spaces the runtime offers
+ *   VR scale:                        eyeline scale, IPD, units-per-metre
+ *   VR eye0 / VR eye1:               per-eye pose, fov, off-axis shift, ProjX/Y
+ *   VR rig:                          first-person rig scale and its inputs (capped at 60)
+ * On Quest these reach `adb logcat`. */
+#define AVP_VR_DIAG 0
+
+
 #ifdef AVP_XR
 /* Clip-space HUD controls — set during MaintainHUD() in VR, reset afterwards.
    vr_hud_clip_scale: < 1.0 shrinks toward centre (1.0 = no scale).

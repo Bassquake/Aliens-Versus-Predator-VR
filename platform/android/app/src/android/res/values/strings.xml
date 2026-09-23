@@ -1,0 +1,10 @@
+<resources>
+    <!-- Flavor override for the launcher label. src/main's app_name is the VR name, and
+         the `quest` flavor takes it unchanged; this file replaces it for the flat
+         `android` (phone/tablet) flavor, which has XR compiled out (-DAVP_DISABLE_XR=ON)
+         and so should not advertise itself as VR on the home screen.
+
+         A flavor source set wins over src/main for the same resource name, so nothing in
+         the manifest changes - it still points at @string/app_name. -->
+    <string name="app_name">Aliens Versus Predator</string>
+</resources>

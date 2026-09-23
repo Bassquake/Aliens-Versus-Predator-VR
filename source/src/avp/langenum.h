@@ -1593,6 +1593,14 @@ enum TEXTSTRING_ID
 	TEXTSTRING_CHEATS_RESET,
 	TEXTSTRING_CHEATS_RESET_HELP,
 
+	/* "Swap Joysticks" - Controller Configuration (VR, all three species) and
+	   Joystick Configuration (flat pad). One setting shared by both, so it reads the
+	   same wherever it appears. */
+	TEXTSTRING_SWAPJOYSTICKS,
+	TEXTSTRING_SWAPJOYSTICKS_NO,
+	TEXTSTRING_SWAPJOYSTICKS_YES,
+	TEXTSTRING_SWAPJOYSTICKS_HELP,
+
 	MAX_NEW_TEXTSTRINGS
 };
 

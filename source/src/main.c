@@ -597,6 +597,9 @@ float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;
 int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
 int ManualReloadEnabled = 0; /* "Manual Reload": 0=off (default), 1=on. Gates the VR knock + desktop R key. */
+/* "Swap Joysticks": 0=No (default), 1=Yes. ONE setting for both input paths - the VR
+ * thumbsticks and the flat gamepad - so it is defined on every target, not just VR. */
+int SwapJoysticksEnabled = 0;
 
 int MSAASampleIndex = 1;
 
@@ -1001,6 +1004,24 @@ int xr_view_pose_valid = 0;
 static XrActionSet xr_input_action_set = XR_NULL_HANDLE;
 static XrAction xr_left_stick_action = XR_NULL_HANDLE;
 static XrAction xr_right_stick_action = XR_NULL_HANDLE;
+
+/* "Swap Joysticks" resolved to actions, so the swap happens ONCE where each stick is
+ * read and nothing downstream has to know about it. The bindings, the deadzones, the
+ * snap-turn arming and the weapon-cycle edges all keep working on whichever physical
+ * stick they are handed.
+ *
+ * Deliberately NOT done by swapping the suggested bindings at action-creation: those are
+ * set up once at session start, so the option would only take effect on a restart. */
+static XrAction VR_MoveStickAction(void)   /* movement - left stick by default */
+{
+    extern int SwapJoysticksEnabled;
+    return SwapJoysticksEnabled ? xr_right_stick_action : xr_left_stick_action;
+}
+static XrAction VR_TurnStickAction(void)   /* turn + weapon cycle - right by default */
+{
+    extern int SwapJoysticksEnabled;
+    return SwapJoysticksEnabled ? xr_left_stick_action : xr_right_stick_action;
+}
 static XrAction xr_x_button_action = XR_NULL_HANDLE;  /* left controller X — menu select */
 static XrAction xr_y_button_action = XR_NULL_HANDLE;  /* left controller Y — menu back */
 static XrAction xr_menu_button_action = XR_NULL_HANDLE; /* left controller menu — ESC */
@@ -1290,6 +1311,10 @@ int HUDInsetLevel = 0;
 /* "Manual Reload" (Controller Config): 0=off (default), 1=on. Gates the VR
  * controller-knock gesture and the desktop R key (checked in PlayerRequestManualReload). */
 int ManualReloadEnabled = 0;
+/* "Swap Joysticks" (Controller Config / Joystick Configuration): 0=No (default), 1=Yes.
+ * Applied where each stick is READ, so everything downstream is untouched - see
+ * VR_MoveStickAction below and the gamepad read in ReadJoysticks. */
+int SwapJoysticksEnabled = 0;
 /* Current smoothed vignette opacity 0..1, fades in/out as smooth-turn starts/stops.
  * Updated in the input read each frame; consumed by VR_DrawVignette() per eye. */
 float vr_vignette_strength = 0.0f;
@@ -3953,7 +3978,7 @@ int axes, balls, hats;
          * Input won't be active in that case but we still read what we can. */
 
         XrActionStateGetInfo get_info = { XR_TYPE_ACTION_STATE_GET_INFO };
-        get_info.action = xr_left_stick_action;
+        get_info.action = VR_MoveStickAction();
         XrActionStateVector2f state = { XR_TYPE_ACTION_STATE_VECTOR2F };
         if (XR_SUCCEEDED(pfn_xrGetActionStateVector2f(xr_session, &get_info, &state)) && state.isActive) {
             xr_left_stick_x = state.currentState.x;
@@ -4006,7 +4031,7 @@ int axes, balls, hats;
             static const int SNAP_ANGLES[4] = { 341, 512, 683, 1024 };
 
             XrActionStateGetInfo rget = { XR_TYPE_ACTION_STATE_GET_INFO };
-            rget.action = xr_right_stick_action;
+            rget.action = VR_TurnStickAction();
             XrActionStateVector2f rstate = { XR_TYPE_ACTION_STATE_VECTOR2F };
             float rx = 0.0f, ry = 0.0f;
             if (XR_SUCCEEDED(pfn_xrGetActionStateVector2f(xr_session, &rget, &rstate)) && rstate.isActive) {
@@ -4697,10 +4722,24 @@ int axes, balls, hats;
      * the stick leaves the dead area. */
     if (Pad_IsActive()) {
         const float DEAD = 0.20f;
-        float lx = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX)  / 32767.0f;
-        float ly = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY)  / 32767.0f;
-        float rx = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0f;
-        float ry = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0f;
+        /* "Swap Joysticks" (Joystick Configuration). Swapped HERE, at the read, so the
+           deadzones and everything downstream in usr_io.c are untouched - lx/ly stay
+           "the movement stick" and rx/ly "the look stick" whichever physical stick that
+           is. The same setting drives the VR thumbsticks; see VR_MoveStickAction.
+
+           MENU NAVIGATION IS DELIBERATELY NOT SWAPPED (the separate read further down):
+           the left stick and the d-pad both drive menus by convention, and moving that
+           to the right stick would make the option hard to undo for anyone who set it by
+           accident. */
+        extern int SwapJoysticksEnabled;
+        const SDL_GamepadAxis moveX = SwapJoysticksEnabled ? SDL_GAMEPAD_AXIS_RIGHTX : SDL_GAMEPAD_AXIS_LEFTX;
+        const SDL_GamepadAxis moveY = SwapJoysticksEnabled ? SDL_GAMEPAD_AXIS_RIGHTY : SDL_GAMEPAD_AXIS_LEFTY;
+        const SDL_GamepadAxis lookX = SwapJoysticksEnabled ? SDL_GAMEPAD_AXIS_LEFTX  : SDL_GAMEPAD_AXIS_RIGHTX;
+        const SDL_GamepadAxis lookY = SwapJoysticksEnabled ? SDL_GAMEPAD_AXIS_LEFTY  : SDL_GAMEPAD_AXIS_RIGHTY;
+        float lx = SDL_GetGamepadAxis(gamepad, moveX) / 32767.0f;
+        float ly = SDL_GetGamepadAxis(gamepad, moveY) / 32767.0f;
+        float rx = SDL_GetGamepadAxis(gamepad, lookX) / 32767.0f;
+        float ry = SDL_GetGamepadAxis(gamepad, lookY) / 32767.0f;
 
         #define PAD_DEADZONE(v) do {             float m = (v) < 0.0f ? -(v) : (v);             if (m <= DEAD) (v) = 0.0f;             else { m = (m - DEAD) / (1.0f - DEAD); (v) = ((v) < 0.0f) ? -m : m; }         } while (0)
         PAD_DEADZONE(lx); PAD_DEADZONE(ly);

@@ -227,7 +227,15 @@ typedef struct
 	unsigned char PadVertSensitivityPlus1;    //0=unset->10
 	unsigned char PadHorizSensitivityPlus1;   //0=unset->10
 	unsigned char PadInvertVerticalPlus1;     //0=unset->0 (off)
-	char PadReserved[4];                      //room for the next option
+	/* "Swap Joysticks" - Controller Configuration (VR) and Joystick Configuration
+	   (flat). ONE setting shared by both input paths, not a per-species or per-device
+	   one. Stored plain rather than +1 because its default is 0 (No), so a zero here -
+	   which is what every profile written before this existed has, whether from a short
+	   read or from the zeroed buffer - already decodes to the default. Taken out of
+	   PadReserved, so sizeof(AVP_USER_PROFILE) is unchanged and old .prf files still
+	   load: that is the whole reason the reserved bytes are there. */
+	unsigned char SwapJoysticksEnabled;       //0=No (default), 1=Yes (was PadReserved)
+	char PadReserved[3];                      //room for the next option
 
 } AVP_USER_PROFILE;
 

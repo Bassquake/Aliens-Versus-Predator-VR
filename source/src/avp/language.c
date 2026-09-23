@@ -312,10 +312,20 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_HUDADJUST_1: return "1 (Default)";
 			case TEXTSTRING_HUDADJUST_2: return "2";
 			case TEXTSTRING_HUDADJUST_3: return "3";
-			case TEXTSTRING_MANUALRELOAD: return "Manual Reload";
+			case TEXTSTRING_MANUALRELOAD: return "Manual Reload (Move controllers close together)";
 			case TEXTSTRING_MANUALRELOAD_HELP: return "Manually reload weapons by almost touching the controllers together.";
 			case TEXTSTRING_MANUALRELOAD_OFF: return "Off (Default)";
 			case TEXTSTRING_MANUALRELOAD_ON:  return "On";
+			/* Swaps the two thumbsticks/analogue sticks wholesale: whatever the left
+			   one does moves to the right and vice versa. One shared setting covering
+			   every species and the flat gamepad, so it lives on General VR
+			   Configuration and on the flat Joystick Configuration screen - not on the
+			   per-species Controller Configuration screens, where it would read as a
+			   per-species binding. */
+			case TEXTSTRING_SWAPJOYSTICKS:      return "Swap Joysticks";
+			case TEXTSTRING_SWAPJOYSTICKS_NO:   return "No (Default)";
+			case TEXTSTRING_SWAPJOYSTICKS_YES:  return "Yes";
+			case TEXTSTRING_SWAPJOYSTICKS_HELP: return "Swap the left and right sticks: movement moves to the right stick and turning to the left. Applies to VR controllers and to a gamepad.";
 			default: break;
 		}
 	}

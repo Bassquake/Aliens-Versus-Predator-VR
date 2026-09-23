@@ -85,7 +85,8 @@ android {
     //            is compiled out and the flat windowed render path is used.
     //            applicationId com.bassquake.android.avpvr.
     //
-    // The flavor name is part of every APK filename (avpvr-<ver>-<flavor>-<abi>-<type>.apk)
+    // The flavor name is part of every APK filename (quest -> avpvr-<ver>-quest-<abi>-<type>.apk,
+    // android -> avp-<ver>-android-<abi>-<type>.apk; the prefix follows the flavor)
     // and of the Gradle task names (assembleAndroidRelease / assembleQuestRelease), so it
     // must match the source-set folder under src/.
     //
@@ -196,7 +197,13 @@ android {
                 // ("quest-arm64-v8a-release"), so the two flavors cannot collide in
                 // build/android and prefixing variant.flavorName as well would just
                 // stutter it: avpvr-quest-0.5-quest-arm64-v8a-release.apk.
-                val targetFileName = "avpvr-$versionName-${output.name}.apk"
+                //
+                // The PREFIX tracks the flavor, matching how the desktop binaries are
+                // named: the VR build is avpvr, the flat one avp. The flat APK used to be
+                // avpvr-... too, which claimed VR for a build that has XR compiled out
+                // (-DAVP_DISABLE_XR=ON).
+                val namePrefix = if (variant.flavorName == "quest") "avpvr" else "avp"
+                val targetFileName = "$namePrefix-$versionName-${output.name}.apk"
 
                 // 1. Rename the file in the default build folder
                 output.outputFileName = targetFileName

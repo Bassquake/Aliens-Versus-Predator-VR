@@ -5956,7 +5956,19 @@ static int SetOGLVideoMode(int Width, int Height)
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
 #endif
+        /* Title split on AVP_PCVR, the same condition as the SDL_SetAppMetadata call
+         * above, so the window title and the application identity always agree. Only the
+         * PCVR exe is driving a headset; the flat Windows and Linux builds are ordinary
+         * desktop games and should not claim VR in their title bar.
+         *
+         * The Quest and non-VR phone builds take the flat string too, and it is never
+         * seen there: both run fullscreen with the launcher label coming from
+         * res/values/strings.xml, not from here. */
+#ifdef AVP_PCVR
         window = SDL_CreateWindow("Aliens Versus Predator: VR",
+#else
+        window = SDL_CreateWindow("Aliens Versus Predator",
+#endif
                                   WindowWidth,
                                   WindowHeight,
                                   flags);

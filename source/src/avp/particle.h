@@ -164,6 +164,10 @@ extern PARTICLE_DESC ParticleDescription[];
 
 extern void InitialiseParticleSystem(void);
 extern void MakeParticle(VECTORCH *positionPtr, VECTORCH *velocityPtr, enum PARTICLE_ID particleID);
+/* Live particle count and pool size, for emitters that throttle themselves against how
+   full the pool already is. See ParticleSystemLoad in particle.c. */
+extern int ParticleSystemLoad(void);
+extern int ParticleSystemCapacity(void);
 
 /* Draw-only diagnostic markers with an explicit colour and size (particle.c). Filled by
    the sound system each frame, drawn last in RenderParticlesOnly so they sit on top.

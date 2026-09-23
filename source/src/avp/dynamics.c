@@ -5766,7 +5766,12 @@ static signed int DistanceMovedBeforeParticleHitsPolygon(PARTICLE *particlePtr, 
 * PARTICLE DYNAMICS *
 ****************KJL*/
 
-int ParticleDynamics(PARTICLE *particlePtr, VECTORCH *obstacleNormalPtr, int *moduleIndexPtr)
+/* reuseGathered: skip the landscape-polygon gather and use whatever the caller already
+   put in CollisionPolysArray (see FindLandscapePolygonsInGroupBox). Everything else -
+   the polygon tests, the move, the bounce, the dynamic-object pass - is identical, which
+   is why this is one function with a flag rather than a second copy that could drift. */
+static int ParticleDynamicsCore(PARTICLE *particlePtr, VECTORCH *obstacleNormalPtr,
+                                int *moduleIndexPtr, int reuseGathered)
 {
 	VECTORCH prevPosition = particlePtr->Position;
 	DISPLAYBLOCK *hitModule = 0;
@@ -5786,7 +5791,11 @@ int ParticleDynamics(PARTICLE *particlePtr, VECTORCH *obstacleNormalPtr, int *mo
 	DirectionOfTravel = particlePtr->Velocity;
 	Normalise(&DirectionOfTravel);
 
-	if (!LocalDetailLevels.BloodCollidesWithEnvironment
+	if (reuseGathered)
+	{
+		/* Caller gathered for the whole group; CollisionPolysArray is already valid. */
+	}
+	else if (!LocalDetailLevels.BloodCollidesWithEnvironment
 		&&(particlePtr->ParticleID==PARTICLE_ALIEN_BLOOD
 		 ||particlePtr->ParticleID==PARTICLE_HUMAN_BLOOD
 		 ||particlePtr->ParticleID==PARTICLE_PREDATOR_BLOOD))
@@ -6082,7 +6091,30 @@ int ParticleDynamics(PARTICLE *particlePtr, VECTORCH *obstacleNormalPtr, int *mo
 	else return 0;
 }
 
-static void FindLandscapePolygonsInParticlesPath(PARTICLE *particlePtr, VECTORCH *displacementPtr)
+int ParticleDynamics(PARTICLE *particlePtr, VECTORCH *obstacleNormalPtr, int *moduleIndexPtr)
+{
+	return ParticleDynamicsCore(particlePtr, obstacleNormalPtr, moduleIndexPtr, 0);
+}
+
+/* As above, but reusing the polygon set the caller already gathered with
+   FindLandscapePolygonsInGroupBox. For a group of probes in one place this replaces N
+   walks of ActiveBlockList with one. */
+int ParticleDynamicsPreGathered(PARTICLE *particlePtr, VECTORCH *obstacleNormalPtr, int *moduleIndexPtr)
+{
+	return ParticleDynamicsCore(particlePtr, obstacleNormalPtr, moduleIndexPtr, 1);
+}
+
+/* Gather the landscape polygons lying inside a WORLD-SPACE box, into the
+   CollisionPolysArray / NumberOfCollisionPolys globals.
+   
+   Split out of FindLandscapePolygonsInParticlesPath below so a CALLER WITH MANY PROBES
+   IN ONE PLACE can gather once instead of once per probe. The volumetric explosion is
+   exactly that: a 146-vertex sphere expanding from a single point, where every vertex
+   used to walk the whole of ActiveBlockList independently (see the explosion update in
+   particle.c). The per-object maths is unchanged - the box was always reduced to object
+   space by subtracting ObWorld, which is what happens here too. */
+static void FindLandscapePolygonsInWorldBox(int wMinX, int wMinY, int wMinZ,
+                                            int wMaxX, int wMaxY, int wMaxZ)
 {
 	extern int NumActiveBlocks;
     extern DISPLAYBLOCK *ActiveBlockList[];
@@ -6109,46 +6141,16 @@ static void FindLandscapePolygonsInParticlesPath(PARTICLE *particlePtr, VECTORCH
 						isStaticObject=1;
 				}
 
+			/* The box in this object's local space. */
+			DBBMinX = wMinX - objectPtr->ObWorld.vx;
+			DBBMaxX = wMaxX - objectPtr->ObWorld.vx;
+			DBBMinY = wMinY - objectPtr->ObWorld.vy;
+			DBBMaxY = wMaxY - objectPtr->ObWorld.vy;
+			DBBMinZ = wMinZ - objectPtr->ObWorld.vz;
+			DBBMaxZ = wMaxZ - objectPtr->ObWorld.vz;
+
 	   		if (objectPtr->ObMyModule) /* is object a module or static? */
 	    	{
-				{
-					DBBMaxX = particlePtr->Position.vx - objectPtr->ObWorld.vx + COLLISION_GRANULARITY; 
-					DBBMinX = particlePtr->Position.vx - objectPtr->ObWorld.vx - COLLISION_GRANULARITY;
-
-					DBBMaxY = particlePtr->Position.vy - objectPtr->ObWorld.vy + COLLISION_GRANULARITY; 
-					DBBMinY = particlePtr->Position.vy - objectPtr->ObWorld.vy - COLLISION_GRANULARITY;
-					
-					DBBMaxZ = particlePtr->Position.vz - objectPtr->ObWorld.vz + COLLISION_GRANULARITY;
-					DBBMinZ = particlePtr->Position.vz - objectPtr->ObWorld.vz - COLLISION_GRANULARITY; 
-
-					if (displacementPtr->vx > 0)
-					{
-						DBBMaxX += displacementPtr->vx;
-					}    
-					else
-					{
-					    DBBMinX += displacementPtr->vx;
-					}
-
-					if (displacementPtr->vy > 0)
-					{
-						DBBMaxY += displacementPtr->vy;
-					}    
-					else
-					{
-					    DBBMinY += displacementPtr->vy;
-					}
-
-					if (displacementPtr->vz > 0)
-					{
-						DBBMaxZ += displacementPtr->vz;
-					}    
-					else
-					{
-					    DBBMinZ += displacementPtr->vz;
-					}
-
-				}
 				LOCALASSERT(NumberOfCollisionPolys < MAXIMUM_NUMBER_OF_COLLISIONPOLYS);
 				
 				/* if the bounding box intersects with the object, investigate */
@@ -6159,44 +6161,6 @@ static void FindLandscapePolygonsInParticlesPath(PARTICLE *particlePtr, VECTORCH
 	        }
 			else if (isStaticObject)
 			{
-				{
-					DBBMaxX = particlePtr->Position.vx - objectPtr->ObWorld.vx + COLLISION_GRANULARITY; 
-					DBBMinX = particlePtr->Position.vx - objectPtr->ObWorld.vx - COLLISION_GRANULARITY;
-
-					DBBMaxY = particlePtr->Position.vy - objectPtr->ObWorld.vy + COLLISION_GRANULARITY; 
-					DBBMinY = particlePtr->Position.vy - objectPtr->ObWorld.vy - COLLISION_GRANULARITY;
-					
-					DBBMaxZ = particlePtr->Position.vz - objectPtr->ObWorld.vz + COLLISION_GRANULARITY;
-					DBBMinZ = particlePtr->Position.vz - objectPtr->ObWorld.vz - COLLISION_GRANULARITY; 
-
-					if (displacementPtr->vx > 0)
-					{
-						DBBMaxX += displacementPtr->vx;
-					}    
-					else
-					{
-					    DBBMinX += displacementPtr->vx;
-					}
-
-					if (displacementPtr->vy > 0)
-					{
-						DBBMaxY += displacementPtr->vy;
-					}    
-					else
-					{
-					    DBBMinY += displacementPtr->vy;
-					}
-
-					if (displacementPtr->vz > 0)
-					{
-						DBBMaxZ += displacementPtr->vz;
-					}    
-					else
-					{
-					    DBBMinZ += displacementPtr->vz;
-					}
-
-				}
 				LOCALASSERT(NumberOfCollisionPolys < MAXIMUM_NUMBER_OF_COLLISIONPOLYS);
 				
 				/* if the bounding box intersects with the object, investigate */
@@ -6208,7 +6172,56 @@ static void FindLandscapePolygonsInParticlesPath(PARTICLE *particlePtr, VECTORCH
 			}
 	    }
   	}
-}   
+}
+
+/* The world box one particle sweeps this frame: its position grown by the collision
+   granularity, then extended along the direction it is travelling. */
+static void ParticleSweptWorldBox(PARTICLE *particlePtr, VECTORCH *displacementPtr,
+                                  int *minX, int *minY, int *minZ,
+                                  int *maxX, int *maxY, int *maxZ)
+{
+	*minX = particlePtr->Position.vx - COLLISION_GRANULARITY;
+	*maxX = particlePtr->Position.vx + COLLISION_GRANULARITY;
+	*minY = particlePtr->Position.vy - COLLISION_GRANULARITY;
+	*maxY = particlePtr->Position.vy + COLLISION_GRANULARITY;
+	*minZ = particlePtr->Position.vz - COLLISION_GRANULARITY;
+	*maxZ = particlePtr->Position.vz + COLLISION_GRANULARITY;
+
+	if (displacementPtr->vx > 0) *maxX += displacementPtr->vx; else *minX += displacementPtr->vx;
+	if (displacementPtr->vy > 0) *maxY += displacementPtr->vy; else *minY += displacementPtr->vy;
+	if (displacementPtr->vz > 0) *maxZ += displacementPtr->vz; else *minZ += displacementPtr->vz;
+}
+
+static void FindLandscapePolygonsInParticlesPath(PARTICLE *particlePtr, VECTORCH *displacementPtr)
+{
+	int minX, minY, minZ, maxX, maxY, maxZ;
+
+	ParticleSweptWorldBox(particlePtr, displacementPtr,
+	                      &minX, &minY, &minZ, &maxX, &maxY, &maxZ);
+	FindLandscapePolygonsInWorldBox(minX, minY, minZ, maxX, maxY, maxZ);
+}
+
+/* Gather ONCE for a group of probes that share a region - see
+   FindLandscapePolygonsInWorldBox. The caller then runs ParticleDynamicsPreGathered for
+   each probe, which reuses this set instead of rebuilding it.
+   
+   minPos/maxPos bound the probe POSITIONS; reach is the furthest any of them can move
+   this frame. COLLISION_GRANULARITY is added here rather than by the caller, because it
+   is private to this file and describes this collision system, not the caller's.
+   
+   The result must be a SUPERSET of every probe's own swept box, so each probe still sees
+   at least the polygons it would have gathered alone. It may see MORE, which costs a
+   longer polygon test but cannot change the outcome: every probe does its own exact
+   ray/plane test (DistanceMovedBeforeParticleHitsPolygon) against whatever is in the
+   array. */
+void FindLandscapePolygonsInGroupBox(VECTORCH *minPos, VECTORCH *maxPos, int reach)
+{
+	int margin = reach + COLLISION_GRANULARITY;
+
+	FindLandscapePolygonsInWorldBox(minPos->vx - margin, minPos->vy - margin, minPos->vz - margin,
+	                                maxPos->vx + margin, maxPos->vy + margin, maxPos->vz + margin);
+}
+
 
 static signed int DistanceMovedBeforeParticleHitsPolygon(PARTICLE *particlePtr, struct ColPolyTag *polyPtr, int distanceToMove)
 {

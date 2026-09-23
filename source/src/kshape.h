@@ -94,6 +94,8 @@ extern int FindHeatSourcesInHModel(DISPLAYBLOCK *dispPtr);
 
 extern void TranslationSetup(void);
 extern void TranslatePointIntoViewspace(VECTORCH *pointPtr);
+/* View-space Z alone - see the note beside the definition. */
+extern int ViewspaceZOfPoint(const VECTORCH *pointPtr);
 
 extern void CheckRenderStatesForModule(MODULE *modulePtr);
 

@@ -55,6 +55,16 @@ static VOLUMETRIC_EXPLOSION ExplosionStorage[MAX_NO_OF_EXPLOSIONS];
 
 static int NumActiveTrails;
 static int NumActiveParticles;
+
+/* How full the particle pool is, for emitters that need to throttle themselves.
+ *
+ * The pool is the real constraint: cost scales with the number of live particles, and
+ * every particle goes through software transform and clipping. HandleObjectOnFire (sfx.c)
+ * taper against this, so no single emitter can swamp the frame however many objects it is
+ * driving. Measured: ~10 objects on fire produced 2983 particles and a 17ms particle pass,
+ * against 0.8ms idle. */
+int ParticleSystemLoad(void)       { return NumActiveParticles; }
+int ParticleSystemCapacity(void)   { return MAX_NO_OF_PARTICLES; }
 static int CurrentExplosionIndex;
 
 extern int NormalFrameTime;
@@ -1973,6 +1983,56 @@ static void SoundMarker_Render(void)
 
 #endif /* AVP_SOUND_DIAGNOSTICS */
 
+/* View-space Z of every live particle, transformed ONCE per eye at the top of
+ * RenderParticlesOnly and read by RenderAllParticlesFurtherAwayThan.
+ *
+ * That function is called once per TRANSLUCENT POLYGON in view (OutputTranslucentPolyList
+ * walks them furthest-first, handing each one's MaxZ down as the threshold), and it used
+ * to re-walk the whole pool calling TranslatePointIntoViewspace on every particle not yet
+ * drawn. So the transform count was polys x live particles. Measured on PCVR with a
+ * flamethrower and a SADAR going: 132 calls against ~2200 particles produced 195,418
+ * transforms in a single frame and 23.2ms of the 38ms frame - while the actual sprite
+ * drawing was 0.80ms. Idle, the same scene does 238 calls and 773 transforms, which is
+ * why this only shows up when something floods the pool.
+ *
+ * Caching kills both halves of that cost: the transform happens once, and the per-call
+ * scan reads 4 bytes a particle out of a flat array that fits in L1 instead of touching
+ * the 56-byte PARTICLE struct (2200 of them is 123KB, streamed 132 times per eye).
+ *
+ * PARTICLE_Z_DRAWN marks a slot already drawn this sweep, so the same array carries the
+ * "still pending" state the NotYetRendered flag used to be consulted for. It is INT_MIN,
+ * which is below the -0x7fffffff the final catch-all call passes, so a drawn particle can
+ * never be picked up again. NotYetRendered is still maintained for anything else reading
+ * it; this array is what the scan tests.
+ *
+ * Valid for slots [0, s_viewZCount). The pool only grows during a sweep - MakeParticle
+ * appends, and a particle killed here just gets LifeTime 0 and is deallocated later by
+ * HandleParticleSystem - so slots never shift underneath this, and anything past the end
+ * is transformed on demand and folded in. */
+#define PARTICLE_Z_DRAWN  (-0x7fffffff - 1)
+static int s_viewZ[MAX_NO_OF_PARTICLES];
+static int s_viewZCount;
+
+/* Whether this sweep runs the particle PHYSICS as well as the draws.
+ *
+ * RenderAllParticlesFurtherAwayThan does both, and in VR the whole sweep runs ONCE PER
+ * EYE - eye 0 through HandleParticleSystem, eye 1 through the direct RenderParticlesOnly
+ * call in avpview.c. So every particle was integrated twice a frame: positions advanced
+ * at double rate, ParticleDynamics run twice, and the decals/sparks/smoke its collisions
+ * spawn created twice. Particles visibly moved twice as fast in a headset as on flat.
+ *
+ * It also broke stereo. Each call DRAWS before it integrates, so eye 0 drew a particle at
+ * P and then moved it to P'; eye 1 then drew the same particle at P'. The two eyes were
+ * showing one particle a frame of motion apart, which is a horizontal disparity - i.e. the
+ * wrong DEPTH, worst on the fastest particles (sparks, tracers, flechettes).
+ *
+ * Physics is per-frame game state, not per-view work, so it belongs to whichever pass runs
+ * first. HandleParticleSystem raises this around its own call and drops it afterwards;
+ * anything calling RenderParticlesOnly directly - only ever the second eye - draws with it
+ * clear. Default 0 so a new caller cannot silently double-step the world; the flat build
+ * is unaffected either way, since HandleParticleSystem is its only path in. */
+static int s_particlePhysicsThisPass = 0;
+
 #ifdef AVP_XR
 void RenderParticlesOnly(void)
 #else
@@ -1981,10 +2041,16 @@ static void RenderParticlesOnly(void)
 {
 	int i = NumActiveParticles;
 	PARTICLE *particlePtr = ParticleStorage;
-	while (i--)
 	{
-		particlePtr->NotYetRendered = 1;
-		particlePtr++;
+		/* Sweep starts here: one transform per particle, for this eye's view matrix. */
+		int slot = 0;
+		while (i--)
+		{
+			particlePtr->NotYetRendered = 1;
+			s_viewZ[slot++] = ViewspaceZOfPoint(&particlePtr->Position);
+			particlePtr++;
+		}
+		s_viewZCount = slot;
 	}
 
 	PostLandscapeRendering();
@@ -3483,7 +3549,10 @@ void HandleParticleSystem(void)
 		particlePtr++;
 	}
 	
+	/* This is the frame's first sweep, so it is the one that steps the particles. */
+	s_particlePhysicsThisPass = 1;
 	RenderParticlesOnly();
+	s_particlePhysicsThisPass = 0;
 
 	i = NumActiveParticles;
 	particlePtr = ParticleStorage;
@@ -3530,29 +3599,124 @@ void HandleParticleSystem(void)
 		}
 	}
 	D3D_DecalSystem_End();
-
 }
+
+/* Draw the particles in this depth band GROUPED BY TRANSLUCENCY MODE, then let the loop
+ * below do the physics with its own draw calls suppressed.
+ *
+ * CheckTranslucencyModeIsCorrect (opengl.c) flushes the triangle batch on every change of
+ * mode, so drawing in pool order cost one draw call per mode change. With fire
+ * (TRANSLUCENCY_GLOWING) and its smoke (TRANSLUCENCY_INVCOLOUR) interleaved in the pool
+ * that was ~2200 draw calls in a frame and 15.4ms of particle time; grouping the SPAWNS
+ * by type got it to 387 calls and 6.05ms, and grouping the DRAW removes the dependence on
+ * spawn order and on pool churn entirely.
+ *
+ * Why hoisting the draws is safe: within one call this function already draws in pool
+ * order, which is not depth-sorted, so no ordering guarantee is lost among the particles
+ * themselves. And per particle the existing code draws BEFORE running that particle's own
+ * physics, while RenderParticle reads nothing but the particle it is given - so "all
+ * draws, then all physics" is output-identical to the interleaving it replaces.
+ *
+ * Particles spawned by the physics below land past the captured NumActiveParticles and so
+ * are not visited this frame, exactly as before. */
+static PARTICLE *s_drawList[MAX_NO_OF_PARTICLES];
+static unsigned char s_drawMode[MAX_NO_OF_PARTICLES];
+static int s_particleDrawSuppressed = 0;
+
+/* Used in the loop below in place of the direct render calls. */
+#define PARTICLE_DRAW(p)           do { if (!s_particleDrawSuppressed) RenderParticle(p); } while (0)
+#define PARTICLE_DRAW_FLECHETTE(p) do { if (!s_particleDrawSuppressed) RenderFlechetteParticle(p); } while (0)
 
 void RenderAllParticlesFurtherAwayThan(int zThreshold)
 {
 	/* now render particles */
-	int i = NumActiveParticles;
-	PARTICLE *particlePtr = ParticleStorage;
-	while(i--)
-	{
-		if (particlePtr->NotYetRendered)
-		{
-			VECTORCH position = particlePtr->Position;
-			TranslatePointIntoViewspace(&position);
+	int n = 0;              /* eligible this call; s_drawList[0..n-1] */
+	int e;
+	PARTICLE *particlePtr;
 
-			if (position.vz>zThreshold)
+	/* ---- draw pass, grouped by translucency mode ---- */
+	{
+		int k, mode;
+		int count = NumActiveParticles;
+
+		{
+			int slot;
+
+			if (s_viewZCount > count) s_viewZCount = count;
+
+			/* Cached: the common case, and the whole pool after the first call. */
+			for (slot = 0; slot < s_viewZCount; slot++)
+			{
+				if (s_viewZ[slot] > zThreshold)
+				{
+					PARTICLE *p = &ParticleStorage[slot];
+					s_viewZ[slot] = PARTICLE_Z_DRAWN;
+					s_drawList[n] = p;
+					s_drawMode[n] = (unsigned char)ParticleDescription[p->ParticleID].TranslucencyType;
+					n++;
+				}
+			}
+
+			/* Tail: particles MakeParticle appended since the sweep began - the physics
+			   below can spawn them. Transformed on demand, then cached like the rest. */
+			for (; slot < count; slot++)
+			{
+				PARTICLE *p = &ParticleStorage[slot];
+				VECTORCH position = p->Position;
+				TranslatePointIntoViewspace(&position);
+				s_viewZ[slot] = position.vz;
+				if (position.vz > zThreshold)
+				{
+					s_viewZ[slot] = PARTICLE_Z_DRAWN;
+					s_drawList[n] = p;
+					s_drawMode[n] = (unsigned char)ParticleDescription[p->ParticleID].TranslucencyType;
+					n++;
+				}
+			}
+			s_viewZCount = count;
+		}
+
+		/* TRANSLUCENCY_NOT_SET is the last enumerator, so this covers every mode. */
+		for (mode = 0; mode <= (int)TRANSLUCENCY_NOT_SET; mode++)
+		{
+			for (k = 0; k < n; k++)
+			{
+				if ((int)s_drawMode[k] != mode) continue;
+				if (s_drawList[k]->ParticleID == PARTICLE_FLECHETTE
+				 || s_drawList[k]->ParticleID == PARTICLE_FLECHETTE_NONDAMAGING)
+					RenderFlechetteParticle(s_drawList[k]);
+				else
+					RenderParticle(s_drawList[k]);
+			}
+		}
+	}
+
+	/* ---- physics pass: the original loop body, with its draws suppressed ----
+	 *
+	 * Walks the eligible list the draw pass just built rather than re-walking the pool:
+	 * that set is exactly the particles the old code would have run physics on, and each
+	 * particle is independent of the others, so visit order does not matter. It also
+	 * means neither pass touches a particle this call is not going to process - the pool
+	 * walk was the other half of the polys x particles cost.
+	 *
+	 * Skipped entirely on the second eye - see s_particlePhysicsThisPass. The draws above
+	 * have already happened, and s_particleDrawSuppressed is still 0 here, so there is
+	 * nothing to unwind. */
+	if (!s_particlePhysicsThisPass) return;
+
+	s_particleDrawSuppressed = 1;
+	{
+	for (e = 0; e < n; e++)
+	{
+		{
+			particlePtr = s_drawList[e];
 			{
 				particlePtr->NotYetRendered = 0;
 				switch(particlePtr->ParticleID)
 				{
 					case PARTICLE_ALIEN_BLOOD:
 					{
-						RenderParticle(particlePtr);
+						PARTICLE_DRAW(particlePtr);
 						{
 							VECTORCH obstacleNormal;
 							int moduleIndex;
@@ -3589,7 +3753,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					}
 					case PARTICLE_PREDATOR_BLOOD:
 					{
-						RenderParticle(particlePtr);
+						PARTICLE_DRAW(particlePtr);
 						{
 							VECTORCH obstacleNormal;
 							int moduleIndex;
@@ -3611,7 +3775,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					}
 					case PARTICLE_HUMAN_BLOOD:
 					{
-						RenderParticle(particlePtr);
+						PARTICLE_DRAW(particlePtr);
 						{
 							VECTORCH obstacleNormal;
 							int moduleIndex;
@@ -3632,7 +3796,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					}
 					case PARTICLE_ANDROID_BLOOD:
 					{
-						RenderParticle(particlePtr);
+						PARTICLE_DRAW(particlePtr);
 						{
 							VECTORCH obstacleNormal;
 							int moduleIndex;
@@ -3653,7 +3817,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					}
 					case PARTICLE_FLARESMOKE:
 					{
-					 	RenderParticle(particlePtr);
+					 	PARTICLE_DRAW(particlePtr);
 						{
 							VECTORCH impulse={0,0,0};
 							int t = MUL_FIXED(NormalFrameTime,NormalFrameTime*4);
@@ -3669,7 +3833,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					case PARTICLE_NONDAMAGINGFLAME:
 					case PARTICLE_PARGEN_FLAME:
 					{
-					   	RenderParticle(particlePtr);
+					   	PARTICLE_DRAW(particlePtr);
 						{
 							VECTORCH obstacleNormal;
 							int moduleIndex;
@@ -3689,7 +3853,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					}
 					case PARTICLE_FIRE:
 					{
-						RenderParticle(particlePtr);
+						PARTICLE_DRAW(particlePtr);
 
 						particlePtr->Position.vx += MUL_FIXED(particlePtr->Velocity.vx,NormalFrameTime);
 						particlePtr->Position.vy += MUL_FIXED(particlePtr->Velocity.vy,NormalFrameTime);
@@ -3700,7 +3864,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					}
 					case PARTICLE_NONCOLLIDINGFLAME:
 					{				
-					   	RenderParticle(particlePtr);
+					   	PARTICLE_DRAW(particlePtr);
 						
 						particlePtr->Position.vx += MUL_FIXED(particlePtr->Velocity.vx,NormalFrameTime);
 						particlePtr->Position.vy += MUL_FIXED(particlePtr->Velocity.vy,NormalFrameTime);
@@ -3711,7 +3875,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					case PARTICLE_FLECHETTE:
 					case PARTICLE_FLECHETTE_NONDAMAGING:
 					{
-						RenderFlechetteParticle(particlePtr);
+						PARTICLE_DRAW_FLECHETTE(particlePtr);
 						break;
 					}
 					case PARTICLE_STEAM:
@@ -3735,7 +3899,7 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 					case PARTICLE_PREDPISTOL_FLECHETTE_NONDAMAGING:
 					case PARTICLE_TRACER:
 					{
-						RenderParticle(particlePtr);
+						PARTICLE_DRAW(particlePtr);
 						break;
 					}
 					default:
@@ -3747,9 +3911,12 @@ void RenderAllParticlesFurtherAwayThan(int zThreshold)
 				}
 			}
 		}
-		particlePtr++;
 	}
+	}
+	s_particleDrawSuppressed = 0;
 }
+#undef PARTICLE_DRAW
+#undef PARTICLE_DRAW_FLECHETTE
 void DoFlareCorona(DISPLAYBLOCK *objectPtr)
 {
 	VECTORCH position=objectPtr->ObWorld;
@@ -5027,11 +5194,96 @@ static void HandleVolumetricExplosion(VOLUMETRIC_EXPLOSION *expPtr)
 
 	if (expPtr->ExplosionPhase)
 	{
+		int useCollisions = (LocalDetailLevels.ExplosionsDeformToEnvironment && expPtr->UseCollisions);
+
 		{
 			int v = (DIV_FIXED(SPHERE_VERTICES,expPtr->NumberVerticesMoving+1)+ONE_FIXED);
 			velocityModifier = MUL_FIXED(GetSin(expPtr->LifeTime/64)/16,v);
 		}
-		
+
+		/* Gather the collision polygons ONCE for the whole sphere.
+		 *
+		 * This is the hot path when things explode. Every one of the SPHERE_VERTICES
+		 * (146 at SPHERE_ORDER 6) used to call ParticleDynamics, and each of those walked
+		 * the ENTIRE ActiveBlockList gathering polygons before testing them - so the cost
+		 * was 146 x (every active block) x (its polygons), per explosion, per frame, with
+		 * up to MAX_NO_OF_EXPLOSIONS live at once. All fixed-point CPU work, which is why
+		 * the frame rate halved identically on a Quest and on a fast desktop GPU.
+		 *
+		 * The vertices are one sphere expanding from a single point, so they nearly all
+		 * see the same geometry. Gathering once against a box covering the whole sphere
+		 * and reusing it for every vertex removes 145 of those 146 walks.
+		 *
+		 * Correctness: the box is a SUPERSET of each vertex's own swept box, so no vertex
+		 * can miss a polygon it would have found alone. Each still does its own exact
+		 * ray/plane test against the set, so the deformation is unchanged. The only cost
+		 * is that a vertex may test polygons that were never near it. */
+		if (useCollisions)
+		{
+			VECTORCH boxMin, boxMax;
+			int haveBox = 0;
+
+			/* Build the box from each vertex's ACTUAL swept segment - both the start and
+			 * the end point - rather than from a bound reasoned about velocityModifier.
+			 *
+			 * That reasoning is not safe here: SphereVertex is filled in at runtime so
+			 * its magnitude cannot be assumed, and the per-vertex ripple below scales
+			 * velocityModifier by up to 1.25 (GetSin/4 added to 1.0). Getting the bound
+			 * too small would make the box smaller than a vertex's own swept box, that
+			 * vertex would miss polygons it should have gathered, and the fireball would
+			 * clip through walls. Including the real endpoints is exact by construction
+			 * and costs only this arithmetic, which is trivial next to the per-vertex
+			 * ActiveBlockList walks being removed.
+			 *
+			 * The velocity maths MUST match the main loop below - if that changes, this
+			 * changes with it. */
+			for(i=0; i<SPHERE_VERTICES; i++)
+			{
+				VECTORCH vel, end;
+				int v;
+
+				/* Same reject as the main loop, so the box covers exactly the vertices
+				   that will actually be tested. */
+				if ((expPtr->Velocity[i].vx==0)
+				   &&(expPtr->Velocity[i].vy==0)
+				   &&(expPtr->Velocity[i].vz==0))
+				 continue;
+
+				v = GetSin((CloakingPhase*4+expPtr->RipplePhase[i])&4095)/4;
+				v = velocityModifier+MUL_FIXED(v,velocityModifier);
+
+				vel.vx = MUL_FIXED(expPtr->Velocity[i].vx,v);
+				vel.vy = MUL_FIXED(expPtr->Velocity[i].vy,v);
+				vel.vz = MUL_FIXED(expPtr->Velocity[i].vz,v);
+
+				end.vx = expPtr->Position[i].vx + MUL_FIXED(vel.vx,NormalFrameTime);
+				end.vy = expPtr->Position[i].vy + MUL_FIXED(vel.vy,NormalFrameTime);
+				end.vz = expPtr->Position[i].vz + MUL_FIXED(vel.vz,NormalFrameTime);
+
+				if (!haveBox)
+				{
+					boxMin = boxMax = expPtr->Position[i];
+					haveBox = 1;
+				}
+
+				#define VR_BOX_ADD(pt) do {                                    					if ((pt).vx < boxMin.vx) boxMin.vx = (pt).vx;              					if ((pt).vx > boxMax.vx) boxMax.vx = (pt).vx;              					if ((pt).vy < boxMin.vy) boxMin.vy = (pt).vy;              					if ((pt).vy > boxMax.vy) boxMax.vy = (pt).vy;              					if ((pt).vz < boxMin.vz) boxMin.vz = (pt).vz;              					if ((pt).vz > boxMax.vz) boxMax.vz = (pt).vz;              				} while (0)
+				VR_BOX_ADD(expPtr->Position[i]);
+				VR_BOX_ADD(end);
+				#undef VR_BOX_ADD
+			}
+
+			if (haveBox)
+			{
+				/* reach 0: the sweep endpoints are already in the box. The gather still
+				   adds COLLISION_GRANULARITY, matching what it does for one particle. */
+				FindLandscapePolygonsInGroupBox(&boxMin, &boxMax, 0);
+			}
+			else
+			{
+				useCollisions = 0;   /* nothing moving; nothing to gather or test */
+			}
+		}
+
 		for(i=0; i<SPHERE_VERTICES; i++)
 		{
 			int v;
@@ -5055,9 +5307,10 @@ static void HandleVolumetricExplosion(VOLUMETRIC_EXPLOSION *expPtr)
 
 			particle.Position = expPtr->Position[i];
 		
-			if(LocalDetailLevels.ExplosionsDeformToEnvironment && expPtr->UseCollisions)
+			if(useCollisions)
 			{
-				if(ParticleDynamics(&particle,&obstacleNormal,&moduleIndex))
+				/* PreGathered: reuses the set built once above. */
+				if(ParticleDynamicsPreGathered(&particle,&obstacleNormal,&moduleIndex))
 				{
 					int magOfPerpImp = DotProduct(&obstacleNormal,&(expPtr->Velocity[i]));
 					expPtr->Velocity[i].vx -= MUL_FIXED(obstacleNormal.vx, magOfPerpImp);

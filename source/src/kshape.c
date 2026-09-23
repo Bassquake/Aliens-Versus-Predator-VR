@@ -4555,6 +4555,27 @@ static void TranslatePoint(const float *source, float *dest, const float *matrix
 }
 #endif
 
+/* Just the Z row of TranslatePointIntoViewspace.
+ *
+ * The particle sweep in particle.c needs ONLY the view-space Z, and it does one of these
+ * per live particle per eye. The full transform computes all three rows through the
+ * file-scope Source/Dest float arrays and converts each back with f2i - which is lrintf,
+ * a real call on MSVC rather than an instruction - so two thirds of it was thrown away at
+ * the call site, along with the store/reload through the globals.
+ *
+ * Written to match TranslatePoint's third row term for term, so the Z it returns is bit
+ * identical to the one the full transform produces. */
+int ViewspaceZOfPoint(const VECTORCH *pointPtr)
+{
+	float z = ViewMatrix[ 8] * (float)pointPtr->vx
+	        + ViewMatrix[ 9] * (float)pointPtr->vy
+	        + ViewMatrix[10] * (float)pointPtr->vz
+	        + ViewMatrix[11];
+	int r;
+	f2i(r, z);
+	return r;
+}
+
 void TranslatePointIntoViewspace(VECTORCH *pointPtr)
 {
 	Source[0] = pointPtr->vx;

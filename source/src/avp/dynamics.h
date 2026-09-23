@@ -53,6 +53,11 @@ extern void GetPolygonNormal(struct ColPolyTag *polyPtr);
 extern EULER HeadOrientation;
 
 extern int ParticleDynamics(PARTICLE *particlePtr, VECTORCH *obstacleNormalPtr, int *moduleIndexPtr);
+/* Gather once for a group of probes that share a region, then run the PreGathered form
+   per probe - it skips the per-probe walk of ActiveBlockList and reuses that set. The
+   box must be a superset of every probe's own swept box. See dynamics.c. */
+extern void FindLandscapePolygonsInGroupBox(VECTORCH *minPos, VECTORCH *maxPos, int reach);
+extern int ParticleDynamicsPreGathered(PARTICLE *particlePtr, VECTORCH *obstacleNormalPtr, int *moduleIndexPtr);
 void AddEffectsOfForceGenerators(VECTORCH *positionPtr, VECTORCH *impulsePtr, int mass);
 
 #endif /* end of preprocessor condition for file wrapping */

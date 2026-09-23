@@ -5413,6 +5413,9 @@ char *GetVideoModeDescription3()
     return buf;
 }
 
+/* Defined near main(), below; InitSDL retries it once SDL (and on Android, JNI) is up. */
+static void AvP_OpenLogFile(void);
+
 int InitSDL()
 {
     SDL_Log("SDL version: %d.%d.%d", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION);
@@ -5457,6 +5460,12 @@ int InitSDL()
         fprintf(stderr, "SDL Init failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);
     }
+    /* Second attempt at the log file. On Android the external-storage path needs the
+       JNI environment, so the call at the top of main() can legitimately come back null;
+       by here it is up. No-op if that first call already succeeded, which is the case on
+       every desktop target. */
+    AvP_OpenLogFile();
+
     SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SDL initialising...");
     
@@ -7404,6 +7413,95 @@ static const char *usage_string =
         "      [-D | --vrdiag]         VR builds: log the VR render diagnostics\n"
 ;
 
+/* ---- Log file --------------------------------------------------------------------
+ *
+ * Tee every SDL_Log line into avp_log.txt in the game's own data folder, as well as
+ * wherever SDL would normally put it (stdout on desktop, logcat on Android).
+ *
+ * This exists because REDIRECTING STDOUT IS NOT ALWAYS POSSIBLE, and that has repeatedly
+ * blocked diagnosis:
+ *   - Steam / Steam Link runs the exe directly, and ">" is a shell feature Steam's
+ *     launch options do not interpret.
+ *   - An Android app started from the Quest library gets no shell at all.
+ *   - A double-clicked exe has nowhere for stdout to go.
+ * A file the game writes itself works under every one of those.
+ *
+ * It lands where the game already keeps config.cfg and user_profiles (see "Where the
+ * game writes") and is writable in every layout this repo ships - but that is NOT one
+ * path on every target, so AvP_LogDirectory below owns the choice; read the note there
+ * before changing it. Truncated per run, so it always describes the current session.
+ *
+ * Failure is silent and harmless: if the file cannot be opened the hook just forwards to
+ * the default output, exactly as before. */
+static SDL_LogOutputFunction avp_prev_log_fn = NULL;
+static void               *avp_prev_log_udata = NULL;
+static FILE               *avp_log_fp = NULL;
+
+static void SDLCALL AvP_LogToFile(void *userdata, int category,
+                                  SDL_LogPriority priority, const char *message)
+{
+    /* Chain first, so the console/logcat behaviour is untouched. */
+    if (avp_prev_log_fn)
+        avp_prev_log_fn(avp_prev_log_udata, category, priority, message);
+
+    if (avp_log_fp) {
+        fputs(message, avp_log_fp);
+        fputc('\n', avp_log_fp);
+        /* Unbuffered for the same reason stdout is below: a crash must not discard the
+           lines that say where it died. */
+        fflush(avp_log_fp);
+    }
+}
+
+/* Where the log goes, which is NOT the same question on Android.
+ *
+ * SDL_GetBasePath() is the executable's own directory on desktop - beside the assets,
+ * config.cfg and user_profiles, exactly where "Where the game writes" says everything
+ * lives. On ANDROID it is not that at all: it is null or the app's INTERNAL storage
+ * (/data/data/<applicationId>/files/), which is unreadable over ADB without root. So the
+ * log silently went nowhere on Quest while working perfectly on Windows - the same trap
+ * that used to hide the user profiles, and for the same reason.
+ *
+ * The external files directory is the one the assets are sideloaded into
+ * (/sdcard/Android/data/<applicationId>/files/), so the log lands beside them and comes
+ * back with a plain `adb pull`. It needs no permission - it is the app's own directory -
+ * but it DOES need the JNI environment, so it can return null if asked too early; the
+ * caller retries after SDL_Init for that reason. */
+static const char *AvP_LogDirectory(void)
+{
+#ifdef __ANDROID__
+    const char *dir = SDL_GetAndroidExternalStoragePath();
+    if (!dir) dir = SDL_GetAndroidInternalStoragePath();   /* better than nothing */
+    return dir;
+#else
+    return SDL_GetBasePath();
+#endif
+}
+
+static void AvP_OpenLogFile(void)
+{
+    const char *base;
+    size_t len;
+    char path[512];
+
+    if (avp_log_fp) return;          /* idempotent: called again after SDL_Init */
+
+    base = AvP_LogDirectory();
+    if (!base) return;
+
+    /* SDL_GetBasePath hands back a trailing separator, the Android paths do not. */
+    len = SDL_strlen(base);
+    SDL_snprintf(path, sizeof(path), "%s%savp_log.txt", base,
+                 (len && (base[len-1] == '/' || base[len-1] == '\\')) ? "" : "/");
+
+    avp_log_fp = fopen(path, "w");
+    if (!avp_log_fp) return;
+
+    SDL_GetLogOutputFunction(&avp_prev_log_fn, &avp_prev_log_udata);
+    SDL_SetLogOutputFunction(AvP_LogToFile, NULL);
+    SDL_Log("Log file: %s", path);
+}
+
 int main(int argc, char *argv[])
 {
     /* Unbuffer the diagnostic streams. Redirecting to a file — the documented way
@@ -7413,6 +7511,9 @@ int main(int argc, char *argv[])
        here" rather than "the buffer was lost". */
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+
+    /* Before the first SDL_Log below, so nothing is missed from the file. */
+    AvP_OpenLogFile();
 
     //NEEDED?
     //SDL_GLContext g_MainGLContext = NULL;

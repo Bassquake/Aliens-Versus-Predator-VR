@@ -90,10 +90,23 @@ BEGIN
             VALUE "FileDescription", "Aliens Versus Predator"
 #endif
             VALUE "FileVersion", "1.0.0.0"
-            VALUE "InternalName", "avp.exe"
             VALUE "LegalCopyright", "Copyright (C) 2026"
-            VALUE "OriginalFilename", "avp.exe"
-            VALUE "ProductName", "Aliens versus Predator"
+            /* Split on AVP_PCVR like FileDescription above, and for the same reason: one
+               script builds both Windows exes and they should name themselves apart.
+
+               InternalName and OriginalFilename are deliberately ABSENT. Both are meant to
+               be the exe's own filename, and there is no single right answer here - the
+               binary is avp_x64 / avp_x86 / avp_arm64 / avpvr_<arch> depending on the
+               target, so any fixed string is wrong for five of the six. They were both
+               "avp.exe", which matched nothing this build produces. Omitting them is
+               valid: neither is required in a version resource, and Explorer simply does
+               not show the row. Do not "restore" them without also making them track
+               OUTPUT_NAME. */
+#ifdef AVP_PCVR
+            VALUE "ProductName", "Aliens Versus Predator: VR"
+#else
+            VALUE "ProductName", "Aliens Versus Predator"
+#endif
             VALUE "ProductVersion", "1.0.0.0"
         END
     END

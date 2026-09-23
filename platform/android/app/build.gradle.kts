@@ -83,7 +83,7 @@ android {
     //   android — standard phone/tablet build. Overrides the manifest via src/android (no
     //            VR immersive declarations) and passes -DAVP_DISABLE_XR=ON so OpenXR init
     //            is compiled out and the flat windowed render path is used.
-    //            applicationId com.bassquake.android.avpvr.
+    //            applicationId com.bassquake.android.avp.
     //
     // The flavor name is part of every APK filename (quest -> avpvr-<ver>-quest-<abi>-<type>.apk,
     // android -> avp-<ver>-android-<abi>-<type>.apk; the prefix follows the flavor)
@@ -114,7 +114,17 @@ android {
         }
         create("android") {
             dimension = "device"
-            applicationId = "com.bassquake.android.avpvr"
+            // com.bassquake.android.avp, NOT ...avpvr: this flavor has XR compiled out
+            // (-DAVP_DISABLE_XR=ON), and the applicationId is also the external-files
+            // path, so the assets folder it creates should not claim VR either:
+            //   /sdcard/Android/data/com.bassquake.android.avp/files/
+            //
+            // Changing an applicationId makes Android treat this as a DIFFERENT APP: an
+            // existing ...avpvr install is not upgraded, it sits alongside, and its
+            // assets stay in the old folder. Users of the flat build must uninstall the
+            // old one and re-push assets to the new path. The same was true when the two
+            // flavors were first split apart (see the v0.6 commit).
+            applicationId = "com.bassquake.android.avp"
             externalNativeBuild {
                 cmake {
                     arguments += "-DAVP_DISABLE_XR=ON"
@@ -144,7 +154,7 @@ android {
     }
     // Assets are NOT bundled — users sideload game files via ADB:
     //   adb push assets/ /sdcard/Android/data/com.bassquake.quest.avpvr/files/   (quest)
-    //   adb push assets/ /sdcard/Android/data/com.bassquake.android.avpvr/files/ (android)
+    //   adb push assets/ /sdcard/Android/data/com.bassquake.android.avp/files/ (android)
     externalNativeBuild {
         cmake {
             // SOURCE PATH

@@ -66,7 +66,10 @@ extern int VideoScreen_ConsumeNearest(int *wx, int *wy, int *wz);
 #endif
 
 extern char *ScreenBuffer;
-extern int GotAnyKey;
+/* ONE BYTE, not an int. `unsigned char GotAnyKey;` is defined in win95/io.c and every
+   other file declares it that way - this one said `int`, so every read here pulled in
+   three bytes of whatever the linker put next to it and every write stamped on them. */
+extern unsigned char GotAnyKey;
 extern void DirectReadKeyboard(void);
 extern IMAGEHEADER ImageHeaderArray[];
 #if MaxImageGroups>1
@@ -812,6 +815,29 @@ void PlayBinkedFMV(char *filenamePtr)
 	sms = nfms = (unsigned int)SDL_GetTicks();
 	GotAnyKey = 0;
 
+	/* A SKIP NEEDS A PRESS THAT STARTED AFTER THE FILM DID.
+	 *
+	 * `GotAnyKey` is LEVEL-triggered on every polled input path, not edge-triggered: the
+	 * VR menu sets it from A/X every frame they are held (`KeyboardInput[KEY_CR]` ->
+	 * `GotAnyKey = 1` in ReadJoysticks, main.c), and so do the desktop gamepad and
+	 * joystick pollers. The button that selects "Start Game" is therefore still down when
+	 * the level's intro film begins, ReadJoysticks re-raises the flag on the very first
+	 * decoded frame, and the film breaks out before anything is shown - it looks like the
+	 * films have stopped working rather than like they are being skipped.
+	 *
+	 * Zeroing the flag above is not enough precisely because the input is re-polled inside
+	 * the loop. So the skip stays disarmed until the film has SEEN the input released once.
+	 *
+	 * Why this only ever showed up in VR: the desktop keyboard path sets `GotAnyKey` from
+	 * an SDL key EVENT, and a held key yields one event rather than a value that stays
+	 * true, so the zero above survives. Flat with a gamepad has the same fault as VR, since
+	 * those pollers are level-triggered too.
+	 *
+	 * Same shape as the death-screen restart bug (see "In VR the death screen restarts on
+	 * A only" in CLAUDE.md): the A you pressed a moment ago is still held when the next
+	 * thing starts listening. */
+	int skip_armed = 0;
+
 	for (;;) {
 		int ret = av_read_frame(fmt_ctx, packet);
 		if (ret == AVERROR_EOF || ret < 0) break;
@@ -865,7 +891,8 @@ void PlayBinkedFMV(char *filenamePtr)
 				FlipBuffers();
 				CheckForWindowsMessages();   /* poll SDL events so a keypress sets GotAnyKey and skips the video */
 				ReadJoysticks();
-				if (GotAnyKey) break;
+				if (!GotAnyKey) skip_armed = 1;   /* released - a press from now on counts */
+				else if (skip_armed) break;
 			}
 		} else {
 			av_packet_unref(packet);

@@ -537,7 +537,63 @@ void MaintainHUD(void)
 				CheckWireFrameMode(0);
 				//DrawPredatorEnergyBar();						
 	  			//DisplayHealthAndArmour();
+#ifdef AVP_XR
+				/* The wrist amulet's charge bar is WORLD-SPACE 3D drawn during the HUD
+				 * phase, so it needs the same two corrections the grappling cable does
+				 * (see the note at RenderGrapplingHook above) - it had neither, which is
+				 * why it sat off the amulet in VR.
+				 *
+				 * 1. The per-eye CLIP OFFSET. The HUD phase runs with the shift cleared
+				 *    because the HUD is screen-space, but this quad is real geometry: drawn
+				 *    about the image centre while the arm it belongs to was drawn about the
+				 *    eye's optical axis, it lands ~12% of the half-width out, in OPPOSITE
+				 *    directions per eye.
+				 * 2. The SDB. By now the eye pass has swapped in the HUD's virtual
+				 *    640x680 block while VDB_ProjX/Y are still sized for the eye FBO, and
+				 *    the output projection is X*ProjX/(Z*SDB_CentreX) - so an off-axis
+				 *    point overshoots by nearly 3x and swings as the head turns.
+				 *
+				 * RenderPredatorTargetingSegment cancels the SDB mismatch by scaling its
+				 * centre offset instead; that works for one reticle centre, but this is a
+				 * quad on a tracked limb, so restoring the real projection is exact. */
+				SCREENDESCRIPTORBLOCK vr_saved_wrist_sdb;
+				int vr_wrist_sdb_swapped = 0;
+				if (VR_IsIn3DMode())
+				{
+					/* Declared locally, as the file's other users of these do - hud.c has
+					   no avpview.h include and clang rejects the implicit declaration. */
+					extern int VR_GetEyeFBOWidth(void);
+					extern int VR_GetEyeFBOHeight(void);
+					int ew = VR_GetEyeFBOWidth();
+					int eh = VR_GetEyeFBOHeight();
+					if (ew > 0 && eh > 0)
+					{
+						vr_saved_wrist_sdb = ScreenDescriptorBlock;
+						ScreenDescriptorBlock.SDB_Width     = ew;
+						ScreenDescriptorBlock.SDB_Height    = eh;
+						ScreenDescriptorBlock.SDB_CentreX   = ew / 2;
+						ScreenDescriptorBlock.SDB_CentreY   = eh / 2;
+						ScreenDescriptorBlock.SDB_ClipLeft  = 0;
+						ScreenDescriptorBlock.SDB_ClipRight = ew;
+						ScreenDescriptorBlock.SDB_ClipUp    = 0;
+						ScreenDescriptorBlock.SDB_ClipDown  = eh;
+						vr_wrist_sdb_swapped = 1;
+					}
+					OGL_SetClipOffset(vr_eye_clip_off_x, vr_eye_clip_off_y);
+				}
+#endif
 			   	DrawWristDisplay();
+#ifdef AVP_XR
+				if (VR_IsIn3DMode())
+				{
+					/* Clip offset first: it flushes the batch, so the bar's vertices are
+					 * drawn while the shift is still on. The SDB only affects vertices as
+					 * they are EMITTED, so restoring it after is safe either way. */
+					OGL_SetClipOffset(0.0f, 0.0f);
+					if (vr_wrist_sdb_swapped)
+						ScreenDescriptorBlock = vr_saved_wrist_sdb;
+				}
+#endif
   				
   				HandlePredOVision();
 				if (DrawScanlineOverlay) DrawScanlinesOverlay(ScanlineLevel);

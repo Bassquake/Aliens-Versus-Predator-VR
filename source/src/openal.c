@@ -618,6 +618,20 @@ static const float vol_to_gain_table[] = {
 0.873977f, 0.891251f, 0.908866f, 0.926830f, 0.945148f, 0.962720f, 0.980618f, 1.000000f
 };
 
+/* The master slider's 0..VOLUME_MAX position as a 0..1 linear gain.
+ *
+ * Exposed so the FMV audio path can apply the SAME curve with
+ * SDL_SetAudioStreamGain: FMV audio is pushed straight into an SDL_AudioStream and never
+ * passes an OpenAL source, so alListenerf below cannot reach it. Two mappings would make
+ * one slider behave differently on the two paths, hence one table, one accessor. */
+float PlatVolumeToGain(int volume)
+{
+	if (volume < 0) volume = 0;
+	if (volume > (int)(sizeof(vol_to_gain_table)/sizeof(vol_to_gain_table[0])) - 1)
+		volume = (int)(sizeof(vol_to_gain_table)/sizeof(vol_to_gain_table[0])) - 1;
+	return vol_to_gain_table[volume];
+}
+
 int PlatChangeGlobalVolume(int volume)
 {
 	if (!SoundActivated) {
@@ -1057,6 +1071,16 @@ void OpenAL_FmvStreamSetWorldPos(int h, int wx, int wy, int wz, int innerRange, 
 	if (dist <= innerRange)       gain = 1.0f;
 	else if (dist >= outerRange)  gain = 0.0f;
 	else                          gain = (float)(outerRange - dist) / (float)(outerRange - innerRange);
+
+	/* Distance is only half of it: this source is an FMV, so the Movie Volume slider has
+	   to scale it too. The MASTER is deliberately not applied here - it is the listener
+	   gain, which this source is already under, and multiplying it in would attenuate
+	   twice. The SDL_AudioStream path in fmv.c is the mirror case: no listener gain, so
+	   it applies both. */
+	{
+		extern float FMV_MovieVolumeGain(void);   /* fmv.c */
+		gain *= FMV_MovieVolumeGain();
+	}
 
 	ALfloat pos[3];
 	pos[0] = (ALfloat)rel.vx;

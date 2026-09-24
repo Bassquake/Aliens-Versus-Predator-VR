@@ -70,13 +70,6 @@ extern char *ScreenBuffer;
    other file declares it that way - this one said `int`, so every read here pulled in
    three bytes of whatever the linker put next to it and every write stamped on them. */
 extern unsigned char GotAnyKey;
-extern void DirectReadKeyboard(void);
-extern IMAGEHEADER ImageHeaderArray[];
-#if MaxImageGroups>1
-extern int NumImagesArray[];
-#else
-extern int NumImages;
-#endif
 
 void PlayFMV(char *filenamePtr);
 
@@ -86,6 +79,67 @@ void FindLightingValuesFromTriggeredFMV(unsigned char *bufferPtr, FMVTEXTURE *ft
 int SmackerSoundVolume=ONE_FIXED/512;
 int MoviesAreActive;
 int IntroOutroMoviesAreActive=1;
+
+/* ── Master volume over FMV audio ──────────────────────────────────────────
+ *
+ * FMV audio does not go through OpenAL on the desktop paths: FFmpeg decodes it and it is
+ * pushed straight into an SDL_AudioStream. So `alListenerf(AL_GAIN, ...)` - which is what
+ * the master slider drives, via SoundSys_ChangeVolume -> PlatChangeGlobalVolume - never
+ * touched it. That is exactly why the master moved in-game audio and the menu BEEPS (both
+ * OpenAL sources) while leaving the MENU MUSIC and the intro/outro films at full volume.
+ *
+ * PlatVolumeToGain (openal.c) is the same table OpenAL uses, so one slider position means
+ * the same loudness on both paths.
+ *
+ * NOT applied to the Android in-world video-screen stream in fmv_open_file: that
+ * SDL_AudioStream is only a format converter feeding an OpenAL source (fmv_al_stream),
+ * which is already under the listener gain - setting it here too would attenuate twice. */
+extern int EffectsSoundVolume;
+extern float PlatVolumeToGain(int volume);   /* openal.c */
+
+/* Movie Volume x master. SmackerSoundVolume is the slider labelled "Movie Volume" in the
+ * AV menu - the enum behind it is TEXTSTRING_AVOPTIONS_MUSICVOLUME, which is a misnomer;
+ * the variable is the Smacker/Bink movie sound level and that is what the label says.
+ *
+ * Its range is 0..ONE_FIXED/512 (0..128), which is ONE PAST the gain table's top index,
+ * so it is rescaled rather than clamped - clamping would silently merge the last two
+ * slider positions.
+ *
+ * Both factors go through the same dB-shaped table, so the two controls compose the way
+ * volume controls are expected to: halfway on each is a quarter of full, and either at
+ * zero is silence. */
+/* The Movie Volume factor alone, 0..1.
+ *
+ * Shared because FMV audio reaches the speakers by TWO routes and each has to apply it
+ * itself: the SDL_AudioStream path below, and the OpenAL path used for in-world video
+ * screens on Android (OpenAL_FmvStreamSetWorldPos, openal.c), whose source gain is
+ * otherwise distance-only. Master volume needs no such sharing - it is the OpenAL
+ * listener gain, so that route already has it and only the SDL one must apply it.
+ *
+ * One definition on purpose: the 0..128 -> 0..127 rescale is easy to get subtly wrong,
+ * and two copies would drift. */
+float FMV_MovieVolumeGain(void)
+{
+	return PlatVolumeToGain((SmackerSoundVolume * 127) / (ONE_FIXED / 512));
+}
+
+static void fmv_apply_audio_gain(SDL_AudioStream *as)
+{
+	if (!as) return;
+
+	/* Master x movie. This path bypasses OpenAL entirely, so it applies both. */
+	SDL_SetAudioStreamGain(as, PlatVolumeToGain(EffectsSoundVolume)
+	                         * FMV_MovieVolumeGain());
+}
+
+extern void DirectReadKeyboard(void);
+extern IMAGEHEADER ImageHeaderArray[];
+#if MaxImageGroups>1
+extern int NumImagesArray[];
+#else
+extern int NumImages;
+#endif
+
 
 int FmvColourRed;
 int FmvColourGreen;
@@ -404,6 +458,7 @@ static void fmv_open_file(FMVTEXTURE *ftPtr, const char *path)
 						    SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
 						if (astream) {
 							SDL_ResumeAudioStreamDevice(astream);
+							fmv_apply_audio_gain(astream);
 							ftPtr->fmv_sdl_audio = astream;
 							FMV_LOG("fmv_open_file: audio codec=%s avfmt=%d sdlfmt=%d ch=%d rate=%d",
 							        acodec->name, actx->sample_fmt, (int)sdl_fmt,
@@ -652,6 +707,7 @@ static void fmv_open_audio_only(FMVTEXTURE *ftPtr, const char *path)
 		return;
 	}
 	SDL_ResumeAudioStreamDevice(astream);
+	fmv_apply_audio_gain(astream);
 	ftPtr->fmv_sdl_audio = astream;
 	ftPtr->fmv_active    = 1;
 	FMV_LOG("menu_music: ready — codec=%s ch=%d freq=%d",
@@ -664,6 +720,11 @@ static void fmv_pump_menu_audio(void)
 	if (!ftPtr->fmv_active || !ftPtr->fmv_sdl_audio) return;
 
 	SDL_AudioStream *sdlaudio = (SDL_AudioStream *)ftPtr->fmv_sdl_audio;
+
+	/* Track the slider while the menu is up. Ahead of the over-buffer return below,
+	   which would otherwise defer the change until the queue drained. */
+	fmv_apply_audio_gain(sdlaudio);
+
 	/* Don't over-buffer: keep at most ~65 KB queued (~0.75 s at 44100 stereo S16) */
 	if (SDL_GetAudioStreamAvailable(sdlaudio) > 65536) return;
 
@@ -804,7 +865,7 @@ void PlayBinkedFMV(char *filenamePtr)
 				spec.channels = actx->ch_layout.nb_channels;
 				spec.freq     = actx->sample_rate;
 				audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-				if (audio) SDL_ResumeAudioStreamDevice(audio);
+				if (audio) { SDL_ResumeAudioStreamDevice(audio); fmv_apply_audio_gain(audio); }
 			}
 		}
 	}
@@ -1003,7 +1064,7 @@ static void fmv_open_background(FMVTEXTURE *ftPtr, const char *path)
 					SDL_AudioSpec spec;
 					spec.format = sfmt; spec.channels = actx->ch_layout.nb_channels; spec.freq = actx->sample_rate;
 					SDL_AudioStream *as = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-					if (as) { SDL_ResumeAudioStreamDevice(as); ftPtr->fmv_sdl_audio = as; }
+					if (as) { SDL_ResumeAudioStreamDevice(as); fmv_apply_audio_gain(as); ftPtr->fmv_sdl_audio = as; }
 				}
 			}
 		}

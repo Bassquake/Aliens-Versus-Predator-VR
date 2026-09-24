@@ -263,6 +263,15 @@ int vr_scoreboard_visible = 0;
 /* Set to 1 before a new game starts; AvpShowViewsVR resets the room-scale anchor
  * and computes xr_snap_yaw so the player starts facing the correct game direction. */
 int vr_recalibrate = 1;
+/* The first-person rig's base view scale. At file scope because BOTH rigs need it: the
+   right hand bakes it into ObMat in the eye pass, and the left hand divides its trim by it
+   (see VR_RenderWeaponSplitHands). It used to be defined inside the eye function, which is
+   why the left-hand code could not reference it. */
+#define VR_WEAPON_VIEW_SCALE 0.90f
+
+/* -vrdiag bookkeeping, reset on each recentre - see the VR scale / VR hands lines. */
+static int vr_logged_scale = 0;
+static int vr_diag_hand_frames = 0;
 /* Game-logic camera position before per-eye IPD offset — used for LOS checks in VR. */
 VECTORCH vr_base_world = {0, 0, 0};
 VECTORCH vr_head_world = {0, 0, 0};
@@ -525,7 +534,7 @@ static VR_HAND_TRIM vr_left_hand_trim[MAX_NO_OF_WEAPON_TEMPLATES] = {
        can be tuned the moment one is enabled. Enabling a weapon needs the name of its
        left-limb subtree root in marwep.rif, which differs per weapon (the dual
        pistols use "L Pistol arm"); several Marine rigs have no left limb at all. */
-    [WEAPON_PULSERIFLE]          = {-240, 0, -10, 45, -4, 94},
+    [WEAPON_PULSERIFLE]          = {-190, 0, -10, 45, -4, 94},
     [WEAPON_AUTOSHOTGUN]         = {0, 0, 0, 0, 0, 0},
     [WEAPON_SMARTGUN]            = {0, 0, 0, 6, -27, -77},
     [WEAPON_FLAMETHROWER]        = {-190, 0, -120, 84, 13, 108},
@@ -1139,12 +1148,13 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
      *
      * Swapping the globals is ugly, but the alternative is a second copy of the
      * anchor maths that could go stale against this one. Restored immediately. */
+    float scale = VR_WEAPON_VIEW_SCALE;   /* rig view scale; also used by the trim below */
     {
         MATRIXCH savedMat   = vr_right_hand_mat;
         VECTORCH savedWorld = vr_right_hand_world;
         VECTORCH ignoredWorld;
         MATRIXCH RA = ObMat_A;
-        float scale = VR_NormaliseRotation(&RA);   /* the rig's view scale */
+        scale = VR_NormaliseRotation(&RA);   /* the rig's view scale */
 
         /* Take only the BARREL ALIGNMENT from the anchor, not the weapon's tuned
            angles: those belong to the right hand, and the left hand has its own in
@@ -1212,7 +1222,31 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
                 VECTORCH wofs;
                 wofs.vx = t->right; wofs.vy = t->forward; wofs.vz = t->up;
                 RotateVector(&wofs, &vr_left_hand_mat);
-                target.vx += wofs.vx; target.vy += wofs.vy; target.vz += wofs.vz;
+                /* SCALE THE TRIM WITH THE RIG, or the hand walks as vr_y_scale moves.
+                 *
+                 * Everything else keeps a constant PHYSICAL offset from the controller:
+                 * the rig's game-unit size is scale/vr_y_scale, which is invariant, and
+                 * the right hand gets the same treatment explicitly where the eye pass
+                 * pulls ObWorld toward the grip by wscale ("every part keeps a constant
+                 * physical offset from the hand at any wscale"). This trim was the one
+                 * term left in raw game units, so its physical size went as 1/vr_y_scale.
+                 *
+                 * Measured on Quest (2026-09-24), recentring seated then standing:
+                 * ref_head_y 1.161m -> 1.686m, vr_y_scale 1959 -> 1349, rig scale
+                 * 1.2789 -> 0.8806. The hands themselves were correct throughout (the
+                 * left-right separation held at 0.049m in both postures) - only this
+                 * offset grew, by ~45%, which is the left hand "moving back" when you
+                 * recentre standing up.
+                 *
+                 * Divided by VR_WEAPON_VIEW_SCALE deliberately: the factor is then
+                 * vr_y_scale/vr_weapon_ref_scale, which is exactly 1.0 at the posture the
+                 * session was calibrated in, so the tuned values in vr_left_hand_trim
+                 * keep their current meaning and need no re-tune. The right hand's
+                 * offsets carry the bare wscale because they were tuned with it applied. */
+                float trim_scale = scale / VR_WEAPON_VIEW_SCALE;
+                target.vx += (int)(wofs.vx * trim_scale);
+                target.vy += (int)(wofs.vy * trim_scale);
+                target.vz += (int)(wofs.vz * trim_scale);
             }
         }
 
@@ -2531,6 +2565,11 @@ void AvpShowViewsVR(void)
     if (vr_recalibrate) {
         ref_captured  = false;
         vr_recalibrate = 0;
+        /* Re-arm the diagnostics. A recentre is precisely the event that moves
+           ref_head_* and vr_y_scale, so printing them ONCE per session hid the one
+           transition worth seeing. Also arms the hand line below. */
+        vr_logged_scale = 0;
+        vr_diag_hand_frames = 8;
     }
     /* Only ever take the reference from a pose the runtime says is really tracked.
      * This latches ONCE for the session, and everything downstream - world scale,
@@ -2652,9 +2691,8 @@ void AvpShowViewsVR(void)
      * ~2200 the game is built around. A scale far off that is the signature of a bad
      * ref_head_y, and the printed IPD says what the runtime actually reported. */
     {
-        static int logged_vr_scale = 0;
-        if (vr_diag_enabled && !logged_vr_scale && ref_captured && view_count >= 2) {
-            logged_vr_scale = 1;
+        if (vr_diag_enabled && !vr_logged_scale && ref_captured && view_count >= 2) {
+            vr_logged_scale = 1;
             /* 3D distance, not the X delta: the eyes separate along the head's own
              * right axis, which only lines up with reference-space X when the head
              * happens to face down -Z. */
@@ -2843,6 +2881,42 @@ void AvpShowViewsVR(void)
         GRIP_TO_GAME(xr_grip_pose_left, vr_left_hand_valid, vr_left_hand_world, vr_left_hand_mat);
 
     #undef GRIP_TO_GAME
+
+    /* Hand placement across a recentre (-vrdiag).
+     *
+     * Reported symptom: after holding Meta to recentre, the LEFT arm/hand sits further
+     * forward or back than it should, and the amount depends on World Scale. The scale
+     * chain is already covered by the "VR rig:" line; what was missing is where the
+     * hands ended up.
+     *
+     * Printed in BOTH units on purpose, and that is the discriminator:
+     *   - the metre figure is the raw controller-to-head offset the runtime reports;
+     *   - the unit figure is that same offset after vr_y_scale.
+     * If METRES jump across the recentre, the reference origin moved (ref_head_*), and
+     * the fault is in the capture. If metres hold steady but UNITS jump, the origin is
+     * fine and vr_y_scale changed underneath - i.e. a scale problem, which is what
+     * "it depends on World Scale" suggests. Both hands are printed so it is clear
+     * whether this is left-specific at all, or simply more visible on that arm. */
+    if (vr_diag_enabled && vr_diag_hand_frames > 0) {
+        vr_diag_hand_frames--;
+        if (vr_y_scale > 0.0f) {
+            VECTORCH l, r;
+            l.vx = vr_left_hand_world.vx  - base_world.vx;
+            l.vy = vr_left_hand_world.vy  - Player->ObWorld.vy;
+            l.vz = vr_left_hand_world.vz  - base_world.vz;
+            r.vx = vr_right_hand_world.vx - base_world.vx;
+            r.vy = vr_right_hand_world.vy - Player->ObWorld.vy;
+            r.vz = vr_right_hand_world.vz - base_world.vz;
+            SDL_Log("VR hands: yscale=%.1f wref=%.1f world_scale=%.2f | "
+                    "L valid=%d units=(%d %d %d) m=(%.3f %.3f %.3f) | "
+                    "R valid=%d units=(%d %d %d) m=(%.3f %.3f %.3f)",
+                    vr_y_scale, vr_weapon_ref_scale, vr_world_scale,
+                    vr_left_hand_valid, l.vx, l.vy, l.vz,
+                    l.vx / vr_y_scale, l.vy / vr_y_scale, l.vz / vr_y_scale,
+                    vr_right_hand_valid, r.vx, r.vy, r.vz,
+                    r.vx / vr_y_scale, r.vy / vr_y_scale, r.vz / vr_y_scale);
+        }
+    }
 
     /* Manual reload gesture: bring the two controllers close together (~10 cm).
        Simple proximity trigger - no closing-speed requirement, so it fires as
@@ -4164,7 +4238,6 @@ void AvpShowViewsVR(void)
                    why every other weapon change looked right.
                    See the note beside the bake below for what the two factors are. */
                 /* Cosmetic shrink of the first-person weapon. 1.0 = normal. */
-                #define VR_WEAPON_VIEW_SCALE 0.90f
                 /* The Alien gets its own, smaller figure. Its claws AND tail are one
                  * rig - Alien_Visible_Weapon (weapons.c) swaps which the shared
                  * PlayersWeaponHModelController shows, so a single factor covers both -

@@ -169,6 +169,7 @@ extern float vr_world_scale;      /* what the eye pass actually multiplies by */
  *   VR scale:                        eyeline scale, IPD, units-per-metre
  *   VR eye0 / VR eye1:               per-eye pose, fov, off-axis shift, ProjX/Y
  *   VR rig:                          first-person rig scale and its inputs (capped at 60)
+ *   VR budget:                       work vs frame vs xrWaitFrame, once a second
  * On Quest these reach `adb logcat`. */
 #define AVP_VR_DIAG 0
 

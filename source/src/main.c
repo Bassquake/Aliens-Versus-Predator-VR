@@ -3376,6 +3376,57 @@ static XrFrameState xr_frame_state = { XR_TYPE_FRAME_STATE };
 
 static void apply_refresh_rate_if_changed(void);  /* defined after render_frame */
 
+/* ---- frame budget diagnostic (-vrdiag) -------------------------------------------
+ *
+ * A VR FRAME TIME DOES NOT TELL YOU HOW MUCH WORK WAS DONE, and that is the whole point
+ * of this. `xrWaitFrame` blocks for frame pacing, so once the runtime gives up on the
+ * headset's rate and halves it, 9ms of work and 16ms of work both come back as the same
+ * 16.6ms frame. Heavy frames sitting on an exact multiple of the display period (16.5-16.7
+ * at 120Hz) is the giveaway. Subtracting the block is the only way to see how close to the
+ * budget the engine actually is.
+ *
+ * That distinction is what identified the real ceiling after the particle sweep was fixed
+ * (see "Particle cost is translucent polys x live particles" under Rendering pipeline):
+ * PCVR idle work measured 7.55-8.67ms against a 120Hz budget of 8.33ms, so there was no
+ * headroom before a single particle was spawned, while Quest held 90Hz with 5.31-10.88ms
+ * against 11.1ms. Neither of those is visible in a frame time.
+ *
+ * The counters are read UNCONDITIONALLY - three SDL_GetPerformanceCounter calls a frame,
+ * ~25ns each, against a budget of 8-14 MILLION ns - so the numbers are already accurate if
+ * diagnostics are on. Only the once-a-second SDL_Log is gated, and note that the log tee
+ * fflushes, so the reporting frame is very slightly longer while -vrdiag is enabled. */
+static unsigned long long vr_budget_wait_ticks = 0;   /* blocked in xrWaitFrame, this frame */
+
+void VR_BudgetFrameMark(void)
+{
+    static unsigned long long freq, last_mark, last_report, acc_frame, acc_wait;
+    static int frames;
+    unsigned long long now = SDL_GetPerformanceCounter();
+
+    if (last_mark) {
+        acc_frame += now - last_mark;
+        acc_wait  += vr_budget_wait_ticks;
+        frames++;
+    }
+    last_mark = now;
+    vr_budget_wait_ticks = 0;
+
+    if (!freq) freq = SDL_GetPerformanceFrequency();
+    if (!last_report) last_report = now;
+    if ((now - last_report) < freq) return;
+
+    /* Only meaningful with a live session: without one there is no xrWaitFrame to
+       subtract and "work" would just restate the frame time. */
+    if (vr_diag_enabled && xr_session_running && frames) {
+        double ms = 1000.0 / (double)freq / (double)frames;
+        SDL_Log("VR budget: work %.2fms  (frame %.2fms - xrWaitFrame %.2fms)  over %d frames",
+                acc_frame * ms - acc_wait * ms, acc_frame * ms, acc_wait * ms, frames);
+    }
+    acc_frame = acc_wait = 0;
+    frames = 0;
+    last_report = now;
+}
+
 void VR_WaitAndBeginFrame(void)
 {
     if (!xr_session_running) return;
@@ -3384,7 +3435,11 @@ void VR_WaitAndBeginFrame(void)
     apply_refresh_rate_if_changed();
 
     XrFrameWaitInfo wait_info = { XR_TYPE_FRAME_WAIT_INFO };
-    pfn_xrWaitFrame(xr_session, &wait_info, &xr_frame_state);
+    {   /* The pacing block, measured for the -vrdiag budget line above. */
+        unsigned long long avp_w0 = SDL_GetPerformanceCounter();
+        pfn_xrWaitFrame(xr_session, &wait_info, &xr_frame_state);
+        vr_budget_wait_ticks += SDL_GetPerformanceCounter() - avp_w0;
+    }
     xr_predicted_display_time = xr_frame_state.predictedDisplayTime;
     XrFrameBeginInfo begin_info = { XR_TYPE_FRAME_BEGIN_INFO };
     pfn_xrBeginFrame(xr_session, &begin_info);
@@ -7201,6 +7256,11 @@ static void PresentSoftwareSurface(void)
 
 void InGameFlipBuffers(void)
 {
+#ifdef AVP_XR
+    /* In-game frame boundary on every VR target - see VR_BudgetFrameMark. */
+    VR_BudgetFrameMark();
+#endif
+
 #if !defined(NDEBUG)
     check_for_errors();
     GLenum err;

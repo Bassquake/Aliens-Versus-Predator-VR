@@ -1,28 +1,44 @@
-# Aliens Versus Predator: VR and flat (non-VR)
+# Aliens Versus Predator: VR and Flat (non-VR)
 
 This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below.
 
 > [!TIP]
-> Check the new 0.7 update on releases page. PCVR support added! More details on the Releases page.
+> Check the new 1.0 update on releases page. Also an 7 min YouTube video about it can be found [here](https://youtu.be/Qk7m4Clpcos).
+
+## What's new in 1.0?
+- Alien wall walking FINALLY working. Walk to wall and press B to climb. You do need a strong stomach though, you have been warned!! There are vignette options in Controls > General VR Configuration.
+- Arms are separated now except Alien as it's a single model and not separate like the others, there's nothing I can do about it without replacing the game asset and I want to keep original files intact.
+- You have the option to hide Marines left arm if its distracting because the scale is quite wonky due to the way they were modelled for flat screens. Setting is in Controls > General VR Configuration > Show Marine Left Arm.
+- There is now a World Scale option for VR version so you're not so small anymore! It is set to 1.30 in Controls > General VR Configuration > Adjust World Scale. I don't recommend adjusting this to extreme as may break some things!
+- Gamepad controllers are now supported such as Xbox Series X on the flat versions. Also tested with Google Stadia.
+- Some buttons have changed for VR controllers so check the button mapping image further down this readme.
+- You can now customise buttons for VR controllers and gamepads. Go to Controls and choose which character you want to adjust.
+- Audio direction should be fixed now.
+- Pico support added.
+- Fix volume controls in menu.
+- Various fixes.
+
+> [!CAUTION]
+> If you find the controlelr buttons aren't right such as double action on the same button as I had to change the default layout slightly. It's best to reset to default and then customise if you need to.
 
 Here is list of compatible devices:
 
-| VR                                         |  Flat                                           |
+| **VR**                                     | **Flat**                                        |
 |--------------------------------------------|-------------------------------------------------|
-| - Quest 1                                  | - Windows x64 (Flat)                            |
-| - Quest 2                                  | - Windows x86 (Flat)                            |
-| - Quest 3                                  | - Windows arm64 (Flat)                          |
-| - Quest 3S                                 | - Linux x64 (Flat)                              |
-| - Quest Pro                                | - Linux x86 (Flat)                              |
-| - SteamVR Windows                          | - Linux arm64 (Flat)                            |
-| - SteamVR Linux                            | - Android 8 and above arm64 (Flat)              |
-| - Pico (Coming soon)                       | - Android 8 and above arm (Flat)                |
+| - Quest 1                                  | - Windows x64                                   |
+| - Quest 2                                  | - Windows x86                                   |
+| - Quest 3                                  | - Windows arm64                                 |
+| - Quest 3S                                 | - Linux x64                                     |
+| - Quest Pro                                | - Linux x86                                     |
+| - SteamVR Windows                          | - Linux arm64                                   |
+| - SteamVR Linux                            | - Android 8 and above arm64                     |
+| - Pico                                     | - Android 8 and above arm                       |
 
 > [!NOTE]
 > I decided to include flat versions so can multiplay on a local LAN against others including Quest/PCVR users!! Mac coming soon.
 
 > [!CAUTION]
-> This build is in playable state as Marine and Predator. I'm still looking at how to do the wall climbing on Aliens level. I'm not primarily a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
+> This build is in playable state. I'm not primarily a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
 
 ![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-quest-menu.jpg)
 
@@ -55,7 +71,7 @@ Copying the game assets. Its the same for all devices:
 
 ![Screenshot of assets files](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/assets-files.png)
 
-4. Files and folders all need to be lower case but not necessary for PCVR or Flat Windows/Linux, you can skip to step 6. So to make renaming easier and in one go, download the [lowercase.ps1](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/assets/lowercase.ps1) powershell script or find it in the assets folder of this project. Place the script into the folder where the assets are.
+4. Files and folders all need to be lower case but not necessary for PCVR or Flat Windows/Linux, you can skip to step 6. To make renaming easier and in one go, download the [lowercase.ps1](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/assets/lowercase.ps1) powershell script or find it in the assets folder of this project. Place the script into the folder where the assets are.
 5. Run the script in Powershell (type **lowercase.ps1**) and all files will now be lowercase. On windows, if you get a security error, use this command: **powershell -ExecutionPolicy Bypass -File .\lowercase.ps1**. On Linux, run it as: **pwsh ./lowercase.ps1**. (Install **pwsh** first if it's not there - **sudo apt install powershell** or via Snap, depending on distro.)
 6. Now plug your headset in via usb.
 7. Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in [Developer](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) mode already):
@@ -68,7 +84,7 @@ Copying the game assets. Its the same for all devices:
 
 7. On the headset, run the **Aliens Versus Predator: VR** in Unknown Sources first, this will crash out as the assets haven't been added yet, this is normal and this sets the folders and their permissions in place. 
 8. Now still in SideQuest, go to "Manage files on the headset".
-9. Navigate to "sdcard/Android/data/com.bassquake.quest.avpvr/files". If installing on phone or tv, use the folder "sdcard/Android/data/com.bassquake.android.avpvr/files". (On build 0.5 and older the path is sdcard/Android/data/com.bassquake.avpvr/files).
+9. Navigate to "sdcard/Android/data/com.bassquake.quest.avpvr/files". If installing on phone or tv, use the folder "sdcard/Android/data/com.bassquake.android.avp/files". (On builds 0.6 to 1.0 the phone/tv path is sdcard/Android/data/com.bassquake.android.avpvr/files, and on 0.5 and older it was sdcard/Android/data/com.bassquake.avpvr/files).
 10. Copy all the game assets into that files folder. The layout should be like so on your device:
 
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/sidequest_files.png)
@@ -82,9 +98,12 @@ To run Aliens Versus Predator on Windows/Linux, download the zip from Releases p
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/assets-files-windows.png)
 
 ### Flat
-Where you've saved the game assets folder, copy the **avp_x64.exe** or **avp_x86.exe** or **avp_arm64.exe** into it and simply double click the exe to run. Same for Linux. For Android devices, install the apk either via SideQuest or from a usb plugged into a Android TV for example, then copy assets into the data folder like how it's done for Quest.
+Where you've saved the game assets folder, copy the **avp_x64.exe** or **avp_x86.exe** or **avp_arm64.exe** into it and simply double click the exe to run. Same for Linux. 
+
+For Android devices, install the apk **avp-x.x-android-arm64-v8a-release.apk** either via SideQuest or from a usb plugged into a Android TV for example, then copy assets into the data folder like how it's done for Quest. Folder is called **sdcard/Android/data/com.bassquake.android.avp/files** (Note its "avp" for flat builds, not "avpvr"). Connect a bluetooth keyboard and mouse to play!
+
 ### PCVR
-Where you've saved the game assets folder, copy the **avp_x64vr.exe** into it and then add to Steam Library as a non-Steam game:
+Where you've saved the game assets folder, copy the **avp_x64vr.exe** into it and then add to Steam Library as a non-Steam game, set it as "Include in VR Library" in the Steam Shortcut options:
 
 ![Screenshot of adding non-Steam game](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/steam-add-app.png)
 
@@ -96,7 +115,7 @@ Then name the shortcut seen here:
 
 ![Screenshot of Shortcut naming](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/steam-custom-name.png)
 
-To customise the images in Steam Library so it looks nicer like mine or use your own, download the extra zip file **steamvr-custom-images.zip** in Releases page for 0.7, unzip the images from steamvr-custom-images.zip somewhere. Then click the gear icon and select Properties:
+To customise the images in Steam Library so it looks nicer like mine or use your own, download the extra zip file **steamvr-custom-images.zip** in Releases page for 1.0, unzip the images from steamvr-custom-images.zip somewhere. Then click the gear icon and select Properties:
 
 ![Screenshot of Steam options](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/steam-add-options.png)
 
@@ -127,23 +146,25 @@ PS: Be aware I may rename the folder **cd_tracks** to **music** at some point.
 > [!NOTE]
 > If you have Manual Reload on in the Controls setting of the game, to trigger it, you almost touch controllers close together.
 
-I will probably add ability to customise all these.
-
 ### For flat
 
-Flat versions uses standard keyboard and mouse or joystick. They can be customised in the game. 
+Flat versions uses standard keyboard and mouse or joystick (Gamepads). They can be customised in the game under **Controls**. 
 
 > [!NOTE]
 > You may have to add WASD yourself as the game originally uses arrow keys.
 
+Gamepad controllers use the following by default:
+![Gamepad controller layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers-gamepad.jpg)
+
 ## Extra features
-- Can choose different frame rate in Video/Video Options, runs fine in 120fps mode!
-- Can turn on/off the cross-hair in Video/Video Options.
-- Frame rate counter can be toggled in Video/Video Options.
-- Antialiasing options added for MSAA in Video/Video Options.
-- Texture Filtering options added in Video/Video Options.
-- Apparently works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack! Edit 1: Seems there’s an issue with the HUD and crosshair for Marine with the Redux Mod. Edit 2: Fixed in 0.7.
-- Cheat modes can be toggled now for those faint of heart!
+- World Scale added so you're taller in VR.
+- Can choose different refresh rate for VR in Audio/Video Options, runs fine in 120fps mode!
+- Can turn on/off the cross-hair in Audio/Video Options.
+- Frame rate counter can be toggled in Audio/Video Options.
+- Antialiasing options added for MSAA in Audio/Video Options.
+- Texture Filtering options added in Audio/Video Options.
+- Works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack! Edit 1: Seems there’s an issue with the HUD and crosshair for Marine with the Redux Mod. Edit 2: Fixed in 0.7. Note: Some 3D objects have missing shapes. This is not the games fault, it seems the HD Redux is incomplete!
+- Cheat modes can be toggled for those faint of heart!
 
 ## To do
 - ~~Fix Battery Saver crash.~~ Fixed.
@@ -159,8 +180,7 @@ Flat versions uses standard keyboard and mouse or joystick. They can be customis
 - ~~Add Quest 1 compatibility.~~ Added.
 - ~~Add recalibrate option to right long press Meta button.~~ Added.
 - ~~Add PCVR.~~ Added.
-- To add correct wall walking for Aliens on Quest. Works fine on Windows. 
-- Add option for left handed users.
-- Add ability to customise controller key mapping.
-- Customise some objects such as marines weapons as it has 2 hands attached to the main weapon which is a bit weird.
+- ~~To add correct wall walking for Aliens on Quest.~~ Fixed.
+- ~~Add ability to customise controller key mapping.~~ Added.
+- Add option for left handed users? Not sure if possible as cant flip 3d objects.
 - Add shadow/fog effects?

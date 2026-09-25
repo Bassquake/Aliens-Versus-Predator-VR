@@ -18,9 +18,6 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 - Fix volume controls in menu.
 - Various fixes.
 
-> [!CAUTION]
-> If you find the controller buttons aren't right such as double action on the same button as I had to change the default layout slightly. It's best to reset to default and then customise if you need to.
-
 Here is list of compatible devices:
 
 | **VR**                                     | **Flat**                                        |
@@ -35,7 +32,7 @@ Here is list of compatible devices:
 | - Pico                                     | - Android 8 and above arm                       |
 
 > [!NOTE]
-> I decided to include flat versions so can multiplay on a local LAN against others including Quest/PCVR users!! Mac coming soon.
+> You can multiplay on a local LAN against others including Quest/PCVR users!! Mac coming soon.
 
 > [!CAUTION]
 > This build is in playable state. I'm not primarily a programmer, this was done with a lot of help from various AI like Claude, Copilot and Gemini.
@@ -147,6 +144,9 @@ PS: Be aware I may rename the folder **cd_tracks** to **music** at some point.
 
 > [!NOTE]
 > If you have Manual Reload on in the Controls setting of the game, to trigger it, you almost touch controllers close together.
+
+> [!CAUTION]
+> If you've updated and find the controller buttons aren't right such as double action on the same button, I had to change the default layout slightly, it's best to reset to default and then customise if you need to.
 
 ### For flat
 

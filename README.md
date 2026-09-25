@@ -3,13 +3,13 @@
 This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below.
 
 > [!TIP]
-> Check the new 1.0 update on releases page. Also an 7 min YouTube video about it can be found [here](https://youtu.be/Qk7m4Clpcos).
+> Check the new 1.0 update on releases page. A 7 min YouTube video about it can be found [here](https://youtu.be/Qk7m4Clpcos).
 
 ## What's new in 1.0?
 - Alien wall walking FINALLY working. Walk to wall and press B to climb. You do need a strong stomach though, you have been warned!! There are vignette options in Controls > General VR Configuration.
 - Arms are separated now except Alien as it's a single model and not separate like the others, there's nothing I can do about it without replacing the game asset and I want to keep original files intact.
 - You have the option to hide Marines left arm if its distracting because the scale is quite wonky due to the way they were modelled for flat screens. Setting is in Controls > General VR Configuration > Show Marine Left Arm.
-- There is now a World Scale option for VR version so you're not so small anymore! It is set to 1.30 in Controls > General VR Configuration > Adjust World Scale. I don't recommend adjusting this to extreme as may break some things!
+- There is now a World Scale option for VR version so you're not so small any more! It is set to 1.30 in Controls > General VR Configuration > Adjust World Scale. I don't recommend adjusting this to extreme as may break some things!
 - Gamepad controllers are now supported such as Xbox Series X on the flat versions. Also tested with Google Stadia.
 - Some buttons have changed for VR controllers so check the button mapping image further down this readme.
 - You can now customise buttons for VR controllers and gamepads. Go to Controls and choose which character you want to adjust.
@@ -19,7 +19,7 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 - Various fixes.
 
 > [!CAUTION]
-> If you find the controlelr buttons aren't right such as double action on the same button as I had to change the default layout slightly. It's best to reset to default and then customise if you need to.
+> If you find the controller buttons aren't right such as double action on the same button as I had to change the default layout slightly. It's best to reset to default and then customise if you need to.
 
 Here is list of compatible devices:
 
@@ -38,7 +38,7 @@ Here is list of compatible devices:
 > I decided to include flat versions so can multiplay on a local LAN against others including Quest/PCVR users!! Mac coming soon.
 
 > [!CAUTION]
-> This build is in playable state. I'm not primarily a programmer, this was done with a lot of help from various ai like Claude, Copilot and Gemini.
+> This build is in playable state. I'm not primarily a programmer, this was done with a lot of help from various AI like Claude, Copilot and Gemini.
 
 ![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-quest-menu.jpg)
 
@@ -73,7 +73,7 @@ Copying the game assets. Its the same for all devices:
 
 4. Files and folders all need to be lower case but not necessary for PCVR or Flat Windows/Linux, you can skip to step 6. To make renaming easier and in one go, download the [lowercase.ps1](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/assets/lowercase.ps1) powershell script or find it in the assets folder of this project. Place the script into the folder where the assets are.
 5. Run the script in Powershell (type **lowercase.ps1**) and all files will now be lowercase. On windows, if you get a security error, use this command: **powershell -ExecutionPolicy Bypass -File .\lowercase.ps1**. On Linux, run it as: **pwsh ./lowercase.ps1**. (Install **pwsh** first if it's not there - **sudo apt install powershell** or via Snap, depending on distro.)
-6. Now plug your headset in via usb.
+6. Now plug your headset in via USB.
 7. Download the Aliens Versus Predator: VR release apk and install it with [SideQuest](https://sidequestvr.com/setup-howto) using the "Install APK file from folder on computer". (Your headset probably should be in [Developer](https://developers.meta.com/horizon/documentation/native/android/mobile-device-setup/) mode already):
 
 ![Screenshot of apk install](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/sidequest_install.png)
@@ -123,12 +123,14 @@ Choose Customization and change images. The image files are named the same as th
 
 ![Screenshot of Steam options](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/steam-add-images.png)
 
-Finally, to play, on your headset, run Steam Link and navigate to the game in your library. Simply click Play! (Meta Link and Virtual Desktop is untested).
+Finally, to play, on your headset, run Steam Link and navigate to the game in your library. Simply click Play! (Virtual Desktop is untested).
 
 See below if want to include CD music if you have the physical game's second CD or a digital copy found online...
 
 ## CD music
-You can skip this if you don't absolutely need background music, game will play fine without it but you will lose the atmosphere! Steam and likely GOG have the music embedded so it wont be in their assets folder, you have to find a copy of the CD or simply download from [moddb.com](https://www.moddb.com/games/aliens-vs-predator/addons/fixed-avp-classic-soundtrack). (There may be differences in track order to the CD. I need to look into it.) Do the following for the files:
+You can skip this if you don't absolutely need background music, game will play fine without it but you will lose the atmosphere! Steam and likely GOG have the music embedded so it wont be in their assets folder, you have to find a copy of the CD or simply download from [moddb.com](https://www.moddb.com/games/aliens-vs-predator/addons/fixed-avp-classic-soundtrack). (There may be differences in track order to the CD. I need to look into it. Edit: Apparently the original CD track order is different to Steam. Use the moddb version if want same as Steam, otherwise use the CD which I think is the proper order.)
+
+Do the following for the files:
 - Create a folder in **sdcard/Android/data/com.bassquake.quest.avpvr/files/** called **cd_tracks**.
 - Or on Windows/Linux create a folder called **cd_tracks** where the exe and the assets are.
 - Either rip the CD's audio tracks to Ogg Vorbis 160kbps and copy them over into the **cd_tracks** folder on your headset or Windows game location. Make sure they're lowercase and exactly named as track01.ogg, track02.ogg etc.
@@ -184,3 +186,4 @@ Gamepad controllers use the following by default:
 - ~~Add ability to customise controller key mapping.~~ Added.
 - Add option for left handed users? Not sure if possible as cant flip 3d objects.
 - Add shadow/fog effects?
+- Do an RTX Remix version?

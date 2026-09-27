@@ -2465,10 +2465,36 @@ extern void AlienBiteAttackHasHappened(void)
 {
 	extern int AlienTongueOffset;
 	extern int AlienTeethOffset;
+	extern int VR_SessionActive(void);
 
-	AlienBiteAttackInProgress = 1;
+	/* NO CAMERA ZOOM IN VR - and the flag has to stay clear along with it.
+	 *
+	 * The punch-in is a flat-screen effect: CameraZoomScale multiplies the view matrix
+	 * (kshape.c; hmodel.c also scales viewposition.vz by it), which in a headset fights
+	 * the per-eye projection instead of reading as a zoom.
+	 *
+	 * It also got STUCK, which is how this was reported - eating a head left the view
+	 * permanently zoomed. The ramp that restores CameraZoomScale to 1.0 and clears
+	 * AlienBiteAttackInProgress lives in AvpShowViews, the FLAT render path. VR renders
+	 * through AvpShowViewsVR, which has no such ramp, so once set it never recovered.
+	 *
+	 * AlienBiteAttackInProgress must stay 0 too, not just the scale: MaintainHUD (hud.c)
+	 * draws a full-screen red D3D_FadeDownScreen while that flag is set, gated on
+	 * CameraZoomScale != 0.25f. Raising the flag while leaving the scale at 1.0 would
+	 * satisfy that test every frame forever - a permanent red screen. It is only
+	 * accidentally invisible in VR today BECAUSE the scale is stuck at exactly 0.25.
+	 *
+	 * The tongue and teeth are deliberately left alone: they are the actual bite visual
+	 * and they decay on their own timers in hud.c, not off this flag.
+	 *
+	 * CameraZoomScale is NOT force-reset here - it is shared with the Predator's zoom,
+	 * which IS live in VR (see the aim_clip_x/y compensation in the eye pass). */
+	if (!VR_SessionActive())
+	{
+		AlienBiteAttackInProgress = 1;
+		CameraZoomScale = 0.25f;
+	}
 
-	CameraZoomScale = 0.25f;
 	AlienTongueOffset = ONE_FIXED;
 	AlienTeethOffset = 0;
 }
@@ -2507,6 +2533,21 @@ void AvpShowViewsVR(void)
     if (!xr_enabled || !xr_session_running || view_count == 0 || vr_swapchains == NULL) {
         AvpShowViews();
         return;
+    }
+
+    /* Safety net for the Alien bite zoom. AlienBiteAttackHasHappened does not start it
+     * under VR, but the XR session can stop and restart mid-level, and a bite landing
+     * while it was down would set the flag with no flat frame left to clear it. Without
+     * this the stuck flag leaves MaintainHUD drawing a permanent red fade. Mirrors the
+     * ramp in AvpShowViews; costs one float compare a frame and is normally dead. */
+    if (AlienBiteAttackInProgress)
+    {
+        CameraZoomScale += (float)NormalFrameTime / 65536.0f;
+        if (CameraZoomScale > 1.0f)
+        {
+            AlienBiteAttackInProgress = 0;
+            CameraZoomScale = 1.0f;
+        }
     }
 
     /* xr_views already located by VR_WaitAndBeginFrame() in main.c */
@@ -2628,6 +2669,10 @@ void AvpShowViewsVR(void)
      * the climb. Only refresh the scale while the body is roughly upright;
      * otherwise hold the last good value so the scale stays stable on the wall. */
     static float cached_vr_y_scale = (float)GAME_UNITS_PER_METRE;
+    /* The game eye height the cached scale was derived from, i.e. the STANDING one.
+       Crouching is measured against this - see the crouch-drop note before the eye
+       loop below. */
+    static int   cached_standing_eye_to_floor = 0;
     int body_upright = 1;
     if (Player && Player->ObStrategyBlock && Player->ObStrategyBlock->DynPtr)
         /* Near-vertical only. game_eye_to_floor is the VERTICAL feet-to-eye
@@ -2641,6 +2686,36 @@ void AvpShowViewsVR(void)
            0.99*ONE_FIXED caps that error at ~1% (~18 units); a body tilted past
            ~8 degrees simply holds the last good scale, which is the intent. */
         body_upright = (Player->ObStrategyBlock->DynPtr->OrientMat.mat22 > 64881); /* 0.99*ONE_FIXED => tilt < ~8 deg */
+    /* ...and only while STANDING AT FULL HEIGHT, for the same reason one step removed.
+     *
+     * game_eye_to_floor is measured live as (feet - eye), so it is the GAME camera's
+     * height above the feet - and crouching is precisely the game lowering that camera.
+     * Refreshing the scale while crouched therefore divides a shorter game eye height by
+     * the player's unchanged physical standing height, shrinking vr_y_scale and rescaling
+     * the entire world. Reported 2026-09-27: "when crouch the world scale is changed".
+     *
+     * The tilt guard above does not catch it, because a crouch keeps the body upright -
+     * mat22 stays ~1.0 - so it sails straight through.
+     *
+     * Every non-standing state is excluded, not just PMph_Crouching: PMph_Lying is lower
+     * still, and the four transitions (StoC/CtoS/StoL/LtoS) are mid-move, so capturing
+     * during one would latch an arbitrary intermediate height. IsAlive is in here too
+     * because the death view-drop collapses game_eye_to_floor the same way (see the
+     * VR_DEATH_MIN_HEAD_HEIGHT note below, which handles the camera but not the scale) -
+     * without it, dying would leave a corrupted scale cached into the next life.
+     *
+     * Same remedy as the tilt case: hold the last good value rather than substitute a
+     * guess. The scale is a property of the player's standing height and the character's
+     * eye height, neither of which a crouch changes. */
+    int body_standing = 1;
+    int vr_player_alive = 1;
+    {
+        PLAYER_STATUS *vr_scale_ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+        if (vr_scale_ps) {
+            vr_player_alive = vr_scale_ps->IsAlive;
+            body_standing = (vr_scale_ps->ShapeState == PMph_Standing) && vr_player_alive;
+        }
+    }
     /* Clamp the divisor to a plausible human eye height before it becomes a world
      * scale. ref_head_y is a measured physical height and the scale is inversely
      * proportional to it, so a bogus small value does not degrade the picture - it
@@ -2659,12 +2734,46 @@ void AvpShowViewsVR(void)
      * the backstop, because it is the one thing that holds whatever the runtime does. */
     #define VR_REF_HEAD_MIN_M 0.80f
     #define VR_REF_HEAD_MAX_M 2.20f
-    if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright) {
+    if (ref_head_y > 0.01f && game_eye_to_floor > 0 && body_upright && body_standing) {
         float ref_y = ref_head_y;
         if (ref_y < VR_REF_HEAD_MIN_M) ref_y = VR_REF_HEAD_MIN_M;
         if (ref_y > VR_REF_HEAD_MAX_M) ref_y = VR_REF_HEAD_MAX_M;
         cached_vr_y_scale = (float)game_eye_to_floor / ref_y;
+        cached_standing_eye_to_floor = game_eye_to_floor;
     }
+
+    /* CROUCH, as an explicit drop rather than a side effect of the world scale.
+     *
+     * Both the eye and the HANDS are placed as (feet - physical_height * vr_y_scale) -
+     * the eye below, the hands in GRIP_TO_GAME. The FEET do not move when the player
+     * crouches: the game lowers its own camera, which appears only in game_eye_to_floor.
+     * So while vr_y_scale was refreshed every frame, the crouch button reached the VR view
+     * ONLY by shrinking that scale - which moved eye and hands together, but resized the
+     * whole world doing it (reported 2026-09-27).
+     *
+     * Pinning the scale fixed the resize and removed the crouch outright, because nothing
+     * else in either formula reads the game's camera height; then fixing the eye alone left
+     * the arms behind, for exactly the same reason one layer along. One offset, applied to
+     * both, is the whole fix.
+     *
+     * +vy is DOWN here (the assignments subtract a height, and the death clamp notes
+     * "smaller vy = higher up"), so the drop is ADDED. Standing gives exactly zero, so
+     * upright behaviour is bit-identical to before any of this.
+     *
+     * Guarded because game_eye_to_floor collapses for reasons that are not a crouch, each
+     * of which would otherwise read as a huge drop:
+     *   - body_upright: on a wall or ceiling the vertical feet-to-eye separation shrinks as
+     *     cos(tilt). The climb branch recomputes both eye and hands from base_world, which
+     *     already carries the game's crouch, so crouching works natively there and this
+     *     offset is correctly zero.
+     *   - vr_player_alive: the death view-drop collapses it too. The clamp further down
+     *     catches that symptom; this keeps the cause out of the arithmetic. */
+    int vr_crouch_drop = 0;
+    if (body_upright && vr_player_alive
+        && cached_standing_eye_to_floor > 0
+        && game_eye_to_floor > 0
+        && game_eye_to_floor < cached_standing_eye_to_floor)
+        vr_crouch_drop = cached_standing_eye_to_floor - game_eye_to_floor;
     /* Follow the menu slider. Polled rather than hooked, the same way the texture
        filter settings are: this catches the slider, a profile load and "Use these
        settings" alike. Only on CHANGE, so the world-scale tuner (which writes
@@ -2852,7 +2961,8 @@ void AvpShowViewsVR(void)
             gdx = rdx; gdz = rdz; \
         } \
         (out_world).vx = base_world.vx + (int)(gdx * vr_y_scale); \
-        (out_world).vy = Player->ObWorld.vy - (int)(VR_STAGE_Y((pose).position.y) * vr_y_scale); \
+        (out_world).vy = Player->ObWorld.vy - (int)(VR_STAGE_Y((pose).position.y) * vr_y_scale) \
+                       + vr_crouch_drop; \
         (out_world).vz = base_world.vz - (int)(gdz * vr_y_scale); \
         QUAT gq; \
         gq.quatw =  (int)((pose).orientation.w * ONE_FIXED); \
@@ -3175,7 +3285,8 @@ void AvpShowViewsVR(void)
         Global_VDB_Ptr->VDB_World.vx = base_world.vx
             + (int)(phys_dx * vr_y_scale);
         Global_VDB_Ptr->VDB_World.vy = Player->ObWorld.vy
-            - (int)(VR_STAGE_Y(xr_views[eye].pose.position.y) * vr_y_scale);
+            - (int)(VR_STAGE_Y(xr_views[eye].pose.position.y) * vr_y_scale)
+            + vr_crouch_drop;
         /* Dead: keep the head ~10 cm above the feet/floor (smaller vy = higher up)
          * so the collapsed death-drop scale can't sink the view through the floor. */
         if (vr_view_is_dead &&

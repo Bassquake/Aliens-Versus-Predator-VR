@@ -334,6 +334,29 @@ void MaintainHUD(void)
 	PLAYER_STATUS *playerStatusPtr= (PLAYER_STATUS *) (Player->ObStrategyBlock->SBdataptr);
 	GLOBALASSERT(playerStatusPtr);
 
+	/* HUD scale, recomputed here per frame rather than latched at HUD init.
+	 *
+	 * It used to be assigned in exactly ONE place - D3D_InitialiseMarineHUD (d3d_hud.cpp)
+	 * - and PlatformSpecificInitAlienHUD (ddplat.cpp) only calls that in its MULTIPLAYER
+	 * branch. So a single-player Alien game ran the whole level with HUDScaleFactor at
+	 * ZERO, collapsing every element sized by MUL_FIXED(x, HUDScaleFactor). Measured on
+	 * Quest: "HUDScale=0" for an entire Alien session.
+	 *
+	 * Computing it here rather than patching the init call is the fix that matches the
+	 * rest of the HUD: the OTHER TWO scale sites - MotionTrackerScale (game.c) and
+	 * DisplayPredatorHealthAndEnergy (hud.c) - already derive SDB_Height/540 inline every
+	 * frame. This one being cached at init was the odd one out, so all three now agree by
+	 * construction (see "There are THREE HUD scale sites" in CLAUDE.md), and a resolution
+	 * change no longer leaves it stale.
+	 *
+	 * The SDB is correct at this point on every target: in VR the eye pass has already
+	 * swapped in the HUD's virtual block (640x680) and does not restore it until after
+	 * MaintainHUD returns, and on flat it is simply the screen. */
+	{
+		extern int HUDScaleFactor;
+		HUDScaleFactor = DIV_FIXED(ScreenDescriptorBlock.SDB_Height,540);
+	}
+
 //	RenderSmokeTest();
 	PlatformSpecificEnteringHUD();
 	

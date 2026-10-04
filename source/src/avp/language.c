@@ -327,6 +327,13 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_SWAPJOYSTICKS_YES:  return "Yes";
 			case TEXTSTRING_SWAPJOYSTICKS_HELP: return "Swap the left and right sticks: movement moves to the right stick and turning to the left. Applies to VR controllers and to a gamepad.";
 			case TEXTSTRING_RIGHTSTICKDEADZONE:      return "Right Joystick Deadzone";
+			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES:      return "Enlarge Messages Text";
+			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_HELP: return "Draw the messages, logs and instructions that drop down from the top of the screen at a larger size.";
+			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_OFF:  return "Off (Default)";
+			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_125:  return "1.25x";
+			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_150:  return "1.5x";
+			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_175:  return "1.75x";
+			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_200:  return "2.0x";
 			case TEXTSTRING_RIGHTSTICKDEADZONE_HELP: return "How far the right stick must be pushed before it registers. Applies to VR controllers and to a gamepad, and stays with the right stick if the sticks are swapped.";
 			default: break;
 		}

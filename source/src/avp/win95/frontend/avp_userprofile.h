@@ -239,7 +239,10 @@ typedef struct
 	   lives in the old region because it predates this block). Taken out of
 	   PadReserved for the same reason SwapJoysticksEnabled was. */
 	unsigned char RightStickDeadzonePlus1;    //0=unset->2 (was PadReserved)
-	char PadReserved[2];                      //room for the next option
+	/* AV Options "Enlarge Messages Text". Stored plain: the default is Off, so the
+	   zero every older profile has here already decodes to it. */
+	unsigned char EnlargeMessagesText;        //0=Off (default), 1=1.25x, 2=1.5x, 3=1.75x, 4=2.0x (was PadReserved)
+	char PadReserved[1];                      //room for the next option
 
 } AVP_USER_PROFILE;
 

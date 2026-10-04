@@ -39,6 +39,18 @@
 	#define MAX_MESSAGES_TO_DISPLAY		(20)
 	#define PARTIAL_MESSAGES_TO_DISPLAY	(5)
 
+	/* "Enlarge Messages Text" (AV Options). The box is laid out and wrapped in its
+	   usual unscaled pixels and then magnified as a whole at draw time, about the
+	   top-centre of the box, so it still drops from the top edge and the same words
+	   land on each line - just bigger. Indexed by EnlargeMessagesText; entry 0 is
+	   Off. Keep in step with the TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_* labels. */
+	static const float EnlargedMessagesScale[] = { 1.0f, 1.25f, 1.5f, 1.75f, 2.0f };
+
+extern "C" {
+	extern int EnlargeMessagesText;
+	void OGL_SetHUDQuadScale(float scale, float originX, float originY);
+};
+
 	#define FIXP_SECONDS_UNTIL_TEXT_REPORTS_DISAPPEAR (ONE_FIXED * 5)
 	#define FIXP_CHEESY_FLASH_RATE		(ONE_FIXED * 6)
 	#define INT_CHEESY_FLASH_DURATION	(1)
@@ -156,6 +168,18 @@ void TextReportGadget :: Render
 
 		int FontHeight = pLetterFont -> GetHeight();
 
+		// Cleared again at the bottom of this block; nothing in between returns.
+		if (EnlargeMessagesText > 0 &&
+		    EnlargeMessagesText < (int)(sizeof(EnlargedMessagesScale)/sizeof(EnlargedMessagesScale[0])))
+		{
+			OGL_SetHUDQuadScale
+			(
+				EnlargedMessagesScale[EnlargeMessagesText],
+				(float)(R2Pos . x + TEXT_REPORT_MAX_W/2),
+				0.0f
+			);
+		}
+
 		struct r2rect R2Rect_ClipForText = r2rect
 		(
 			R2Pos,
@@ -255,6 +279,8 @@ void TextReportGadget :: Render
 			}
 		}
 
+
+		OGL_SetHUDQuadScale(1.0f, 0.0f, 0.0f);
 
 		#if 0
 		// Diagnostic on queuing messages:

@@ -431,6 +431,27 @@ static void ApplyFilterToBoundTexture(D3DTexture *tex)
 		pglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, TexAnisotropy());
 }
 
+/* HUD quad scale, in SCREEN PIXELS, about (hud_quad_origin_x, hud_quad_origin_y).
+   Applied to every HUD quad and rectangle before the pixel -> NDC conversion, so it
+   composes with the VR HUD scale/offset below rather than fighting them. 1.0 is a
+   no-op. Set and cleared around one draw by OGL_SetHUDQuadScale - currently only the
+   drop-down message box ("Enlarge Messages Text", trepgadg.cpp), which lays itself
+   out in unscaled pixels and so can be enlarged wholesale without re-wrapping. It is
+   a vertex-time transform, not a uniform, so it needs no batch flush. */
+static float hud_quad_scale    = 1.0f;
+static float hud_quad_origin_x = 0.0f;
+static float hud_quad_origin_y = 0.0f;
+
+void OGL_SetHUDQuadScale(float scale, float originX, float originY)
+{
+	hud_quad_scale    = scale;
+	hud_quad_origin_x = originX;
+	hud_quad_origin_y = originY;
+}
+
+#define HUD_QUAD_SCALE_X(px) (hud_quad_origin_x + ((float)(px) - hud_quad_origin_x) * hud_quad_scale)
+#define HUD_QUAD_SCALE_Y(py) (hud_quad_origin_y + ((float)(py) - hud_quad_origin_y) * hud_quad_scale)
+
 /* VR HUD clip-space controls — active only during MaintainHUD() in VR.
    vr_hud_clip_scale: < 1.0 shrinks the HUD toward centre (1.0 = no scale).
    vr_hud_offset_x/y: shift the entire HUD in clip space after scaling.
@@ -1212,24 +1233,24 @@ void D3D_Rectangle(int x0, int y0, int x1, int y1, int r, int g, int b, int a)
 
 	CheckTriangleBuffer(4, 0, 0, 0, NULL, TRANSLUCENCY_GLOWING, -1);
 
-	x[0] = x0;
+	x[0] = HUD_QUAD_SCALE_X(x0);
 	x[0] =  (x[0] - ScreenDescriptorBlock.SDB_CentreX)/ScreenDescriptorBlock.SDB_CentreX;
-	y[0] = y0;
+	y[0] = HUD_QUAD_SCALE_Y(y0);
 	y[0] = -(y[0] - ScreenDescriptorBlock.SDB_CentreY)/ScreenDescriptorBlock.SDB_CentreY;
 
-	x[1] = x1 - 1;
+	x[1] = HUD_QUAD_SCALE_X(x1 - 1);
 	x[1] =  (x[1] - ScreenDescriptorBlock.SDB_CentreX)/ScreenDescriptorBlock.SDB_CentreX;
-	y[1] = y0;
+	y[1] = HUD_QUAD_SCALE_Y(y0);
 	y[1] = -(y[1] - ScreenDescriptorBlock.SDB_CentreY)/ScreenDescriptorBlock.SDB_CentreY;
 
-	x[2] = x1 - 1;
+	x[2] = HUD_QUAD_SCALE_X(x1 - 1);
 	x[2] =  (x[2] - ScreenDescriptorBlock.SDB_CentreX)/ScreenDescriptorBlock.SDB_CentreX;
-	y[2] = y1 - 1;
+	y[2] = HUD_QUAD_SCALE_Y(y1 - 1);
 	y[2] = -(y[2] - ScreenDescriptorBlock.SDB_CentreY)/ScreenDescriptorBlock.SDB_CentreY;
 
-	x[3] = x0;
+	x[3] = HUD_QUAD_SCALE_X(x0);
 	x[3] =  (x[3] - ScreenDescriptorBlock.SDB_CentreX)/ScreenDescriptorBlock.SDB_CentreX;
-	y[3] = y1 - 1;
+	y[3] = HUD_QUAD_SCALE_Y(y1 - 1);
 	y[3] = -(y[3] - ScreenDescriptorBlock.SDB_CentreY)/ScreenDescriptorBlock.SDB_CentreY;
 
 	for (i = 0; i < 4; i++) {
@@ -2327,9 +2348,9 @@ void D3D_HUDQuad_Output(int imageNumber, struct VertexTag *quadVerticesPtr, unsi
 	a = (colour >> 24) & 0xFF;
 
 	for (i = 0; i < 4; i++) {
-		x = quadVerticesPtr[i].X;
+		x = HUD_QUAD_SCALE_X(quadVerticesPtr[i].X);
 		x =  (x - ScreenDescriptorBlock.SDB_CentreX)/ScreenDescriptorBlock.SDB_CentreX;
-		y = quadVerticesPtr[i].Y;
+		y = HUD_QUAD_SCALE_Y(quadVerticesPtr[i].Y);
 		y = -(y - ScreenDescriptorBlock.SDB_CentreY)/ScreenDescriptorBlock.SDB_CentreY;
 		x = x * vr_hud_clip_scale + vr_hud_offset_x + vr_eye_clip_off_x;
 		y = y * vr_hud_clip_scale + vr_hud_offset_y + vr_eye_clip_off_y;

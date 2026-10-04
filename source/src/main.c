@@ -251,6 +251,35 @@ int Pad_IsActive(void)
     return (gamepad != NULL);
 }
 
+/* Stick directions as bindable controls, set each frame by ReadJoysticks from the
+   deadzoned sticks: held past PAD_STICKDIR_ON, released inside PAD_STICKDIR_OFF - the
+   same 0.6 / 0.3 pair the VR stick directions use. Indexed from PAD_SRC_LSTICK_UP. */
+#define PAD_STICKDIR_ON  0.6f
+#define PAD_STICKDIR_OFF 0.3f
+static int pad_stick_dir_level[PAD_SRC_RSTICK_RIGHT - PAD_SRC_LSTICK_UP + 1];
+
+/* Update one stick's four levels. x/y are in "up is positive" form. */
+static void Pad_UpdateStickDirs(int firstSrc, float x, float y)
+{
+    const float v[4] = { y, -y, -x, x };   /* up, down, left, right */
+    int i;
+    for (i = 0; i < 4; i++) {
+        int *on = &pad_stick_dir_level[firstSrc - PAD_SRC_LSTICK_UP + i];
+        *on = *on ? (v[i] > PAD_STICKDIR_OFF) : (v[i] > PAD_STICKDIR_ON);
+    }
+}
+
+/* Whether any action of the species being played is bound to this source, plain or
+   Hold. A bound stick direction gives up its built-in job, exactly as in VR. */
+static int Pad_SourceIsBoundForPlayer(int src)
+{
+    int sp = (int)AvP.PlayerType, a;
+    if (sp < 0 || sp >= PAD_SPECIES_COUNT) sp = 0;
+    for (a = 0; a < PAD_ACT_COUNT; a++)
+        if (PadBinding[sp][a] != PAD_SRC_NONE && PAD_BIND_SRC(PadBinding[sp][a]) == src) return 1;
+    return 0;
+}
+
 /* Raw state of one source. Triggers are analogue, so they get a threshold - past half
    travel counts as pressed, which is where a shooter's trigger normally breaks. */
 static int Pad_SourceLevel(int src)
@@ -276,7 +305,10 @@ static int Pad_SourceLevel(int src)
             return SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16384;
         case PAD_SRC_RTRIGGER:
             return SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16384;
-        default: return 0;
+        default:
+            if (PAD_SOURCE_IS_STICK_DIR(src))
+                return pad_stick_dir_level[src - PAD_SRC_LSTICK_UP];
+            return 0;
     }
 }
 
@@ -312,15 +344,92 @@ static int Pad_ActionIsTap(int action)
    Predator's vision control behaves identically in a headset and on a pad. */
 #define INPUT_LONG_PRESS_SECS 0.5f
 
+/* ---- Tap / hold resolution, shared by the pad and VR paths ----------------------
+ *
+ * One BIND_SLOT per (species, action) tracks the control that action is bound to, and
+ * Bind_Step turns that control's level into the four signals the consumers read. Both
+ * input paths go through it so a Hold binding behaves identically on a pad and in a
+ * headset.
+ *
+ * The three cases, decided per binding each frame:
+ *
+ *   PLAIN, and nothing else on this control is a Hold    - exactly the old behaviour:
+ *       level while held, edge on the press, plus the tap-short / long split the
+ *       Predator's vision control reads.
+ *   HOLD ("A Hold")                                       - nothing until the control
+ *       has been held for INPUT_LONG_PRESS_SECS; then a one-frame edge, and for a
+ *       level action the level for as long as it stays held.
+ *   PLAIN, sharing its control with a Hold binding        - fires on RELEASE, and only
+ *       if the press never reached the hold threshold. A press cannot know yet which
+ *       of the two it is going to be, so the tap has to wait. A level action gets one
+ *       frame of level, which is a single shot / jump / step rather than a sustained
+ *       hold - the unavoidable cost of putting a held action on a shared control.
+ *
+ * `suppress` is the VR path's "coming out of a 2D menu" guard: a press already in
+ * progress is adopted as held, and must neither edge nor mature into a hold. */
+typedef struct BIND_SLOT {
+    int   prev;
+    float secs;
+    int   longFired;
+    int   suppressed;
+} BIND_SLOT;
+
+typedef struct BIND_OUT {
+    int edge;       /* tap actions read this */
+    int level;      /* hold actions read this */
+    int tapShort;   /* released before the threshold */
+    int longEdge;   /* reached the threshold this frame */
+} BIND_OUT;
+
+static void Bind_Step(BIND_SLOT *st, int lv, int suppress, float dt,
+                      int isHold, int sharedWithHold, BIND_OUT *out)
+{
+    const int pressed  = (lv && !st->prev);
+    const int released = (!lv && st->prev);
+    int tap = 0, longE = 0;
+
+    if (pressed) {
+        st->secs       = 0.0f;
+        st->longFired  = suppress;   /* an adopted press may not become a long one */
+        st->suppressed = suppress;
+    }
+    if (lv) {
+        st->secs += dt;
+        if (!st->longFired && st->secs >= INPUT_LONG_PRESS_SECS) {
+            longE = 1;
+            st->longFired = 1;
+        }
+    } else if (released) {
+        if (!st->longFired) tap = 1;
+    }
+    st->prev = lv;
+
+    if (isHold) {
+        out->edge     = longE;
+        out->level    = (lv && !st->suppressed && st->secs >= INPUT_LONG_PRESS_SECS);
+        /* The hold IS this binding's press, so a reader of the tap/long split (the
+           Predator's vision control) sees it as the tap, and there is no further hold
+           left to give - zoom is unreachable while vision is itself a Hold binding. */
+        out->tapShort = longE;
+        out->longEdge = 0;
+    } else if (sharedWithHold) {
+        out->edge     = tap;
+        out->level    = tap;
+        out->tapShort = tap;
+        out->longEdge = 0;           /* the hold belongs to the other binding */
+    } else {
+        out->edge     = (pressed && !suppress);
+        out->level    = lv;
+        out->tapShort = tap;
+        out->longEdge = longE;
+    }
+}
+
 /* Per-frame input state. File-static rather than function-static because three entry
    points share it - see Pad_UpdateFrame. */
-static int   pad_prevLevel[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
-static int   pad_edge     [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
-static int   pad_tapShort [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
-static int   pad_longEdge [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
-static float pad_holdSecs [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
-static int   pad_longFired[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
-static int   pad_lastFrame = -1;
+static BIND_SLOT pad_slot[PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+static BIND_OUT  pad_out [PAD_SPECIES_COUNT][PAD_ACT_COUNT];
+static int       pad_lastFrame = -1;
 
 /* Edges are recomputed ONCE per frame and then read from the tables, so several sites
    reading the same action in one frame all see them. Consuming on first read would give
@@ -329,35 +438,29 @@ static void Pad_UpdateFrame(void)
 {
     extern int GlobalFrameCounter;
     extern int RealFrameTime;
+    const float dt = (float)RealFrameTime / 65536.0f;   /* 16.16 seconds */
     int a, sp;
 
     if (GlobalFrameCounter == pad_lastFrame) return;
     pad_lastFrame = GlobalFrameCounter;
 
-    for (a = 0; a < PAD_ACT_COUNT; a++) {
-        for (sp = 0; sp < PAD_SPECIES_COUNT; sp++) {
-            int lv = Pad_SourceLevel(PadBinding[sp][a]);
+    for (sp = 0; sp < PAD_SPECIES_COUNT; sp++) {
+        int holdOnSrc[PAD_SRC_COUNT] = { 0 };
 
-            pad_edge[sp][a]     = (lv && !pad_prevLevel[sp][a]);
-            pad_tapShort[sp][a] = 0;
-            pad_longEdge[sp][a] = 0;
+        for (a = 0; a < PAD_ACT_COUNT; a++) {
+            const int v = PadBinding[sp][a];
+            if (PAD_BIND_IS_HOLD(v) && PAD_BIND_SRC(v) < PAD_SRC_COUNT)
+                holdOnSrc[PAD_BIND_SRC(v)] = 1;
+        }
+        for (a = 0; a < PAD_ACT_COUNT; a++) {
+            const int v   = PadBinding[sp][a];
+            const int src = PAD_BIND_SRC(v);
+            const int hold = PAD_BIND_IS_HOLD(v);
+            const int shared = (!hold && src > PAD_SRC_NONE && src < PAD_SRC_COUNT
+                                && holdOnSrc[src]);
 
-            if (lv && !pad_prevLevel[sp][a]) {
-                pad_holdSecs[sp][a]  = 0.0f;
-                pad_longFired[sp][a] = 0;
-            }
-            if (lv) {
-                /* RealFrameTime is 16.16 seconds, as the VR path reads it. */
-                pad_holdSecs[sp][a] += (float)RealFrameTime / 65536.0f;
-                if (!pad_longFired[sp][a] && pad_holdSecs[sp][a] >= INPUT_LONG_PRESS_SECS) {
-                    pad_longEdge[sp][a]  = 1;
-                    pad_longFired[sp][a] = 1;
-                }
-            } else if (pad_prevLevel[sp][a]) {
-                /* Released: a press that never became a long press is a tap. */
-                if (!pad_longFired[sp][a]) pad_tapShort[sp][a] = 1;
-            }
-            pad_prevLevel[sp][a] = lv;
+            Bind_Step(&pad_slot[sp][a], Pad_SourceLevel(src), 0, dt,
+                      hold, shared, &pad_out[sp][a]);
         }
     }
 }
@@ -371,19 +474,20 @@ static int Pad_CurrentSpecies(void)
 
 int Pad_Action(int action)
 {
+    const BIND_OUT *o;
     if (action < 0 || action >= PAD_ACT_COUNT) return 0;
     Pad_UpdateFrame();
-    if (Pad_ActionIsTap(action)) return pad_edge[Pad_CurrentSpecies()][action];
-    return Pad_SourceLevel(PadBinding[Pad_CurrentSpecies()][action]);
+    o = &pad_out[Pad_CurrentSpecies()][action];
+    return Pad_ActionIsTap(action) ? o->edge : o->level;
 }
 
 /* One control, two meanings - the Predator's vision button taps to cycle vision mode and
    holds to step the zoom, exactly as the headset's Y does.
  *
- * Deliberately NOT two actions sharing a button: pad bindings permit duplicates (the
- * profile loader says so explicitly), and a shared button fires both actions, so a tap
- * would cycle the vision mode AND zoom at once. One binding read two ways is what
- * separates them.
+ * Deliberately NOT two actions sharing a button: a shared button fires both actions, so
+ * a tap would cycle the vision mode AND zoom at once. One binding read two ways is what
+ * separates them. (A HOLD binding is the player choosing to split a button themselves;
+ * see Bind_Step for how that reads here.)
  *
  * The two are mutually exclusive by construction - the tap only fires on release, and
  * only when the hold never reached the threshold - so a long hold cannot also cycle the
@@ -392,14 +496,14 @@ int Pad_ActionTapShort(int action)
 {
     if (action < 0 || action >= PAD_ACT_COUNT) return 0;
     Pad_UpdateFrame();
-    return pad_tapShort[Pad_CurrentSpecies()][action];
+    return pad_out[Pad_CurrentSpecies()][action].tapShort;
 }
 
 int Pad_ActionLong(int action)
 {
     if (action < 0 || action >= PAD_ACT_COUNT) return 0;
     Pad_UpdateFrame();
-    return pad_longEdge[Pad_CurrentSpecies()][action];
+    return pad_out[Pad_CurrentSpecies()][action].longEdge;
 }
 
 
@@ -1121,9 +1225,50 @@ static int VR_ActionIsTap(int action)
     }
 }
 
-/* Whether the control is held right now. X and the stick directions are reported by the
-   runtime as edges only and have no level to give, so a HOLD action bound to one of
-   those behaves as a tap - which is a real limitation of those controls, not of this. */
+/* Stick directions as bindable controls. Each is HELD while the stick is pushed past
+   VR_STICKDIR_ON and released once it comes back inside VR_STICKDIR_OFF - the same
+   0.6 / 0.3 pair weapon cycling has always used, so Right Stick Up/Down step a weapon
+   exactly as before, and a held action (crouch, jetpack) now holds on a stick direction
+   instead of lasting one frame. Gameplay only: they all read 0 in a 2D menu, where the
+   sticks navigate. Set by ReadJoysticks, read by VR_SourceLevel. */
+enum {
+    VR_STICKDIR_L_UP, VR_STICKDIR_L_DOWN, VR_STICKDIR_L_LEFT, VR_STICKDIR_L_RIGHT,
+    VR_STICKDIR_R_UP, VR_STICKDIR_R_DOWN, VR_STICKDIR_R_LEFT, VR_STICKDIR_R_RIGHT,
+    VR_STICKDIR_COUNT
+};
+#define VR_STICKDIR_ON  0.6f
+#define VR_STICKDIR_OFF 0.3f
+static int vr_stick_dir_level[VR_STICKDIR_COUNT];
+
+/* Update one stick's four direction levels from its (deadzoned) position. */
+static void VR_UpdateStickDirs(int first, float x, float y, int gameplay)
+{
+    const float v[4] = { y, -y, -x, x };   /* up, down, left, right */
+    int i;
+    for (i = 0; i < 4; i++) {
+        int *on = &vr_stick_dir_level[first + i];
+        if (!gameplay)       *on = 0;
+        else if (*on)        *on = (v[i] > VR_STICKDIR_OFF);
+        else                 *on = (v[i] > VR_STICKDIR_ON);
+    }
+}
+
+/* Whether any action of the species being played is bound to this source (either way -
+   plain or Hold). A stick direction that is bound gives up its built-in job: binding
+   Left Stick Down to Crouch should crouch, not walk backwards as well, and binding Right
+   Stick Left should not also turn you left. */
+static int VR_SourceIsBoundForPlayer(int src)
+{
+    int sp = (int)AvP.PlayerType, a;
+    if (sp < 0 || sp >= VR_SPECIES_COUNT) sp = 0;
+    for (a = 0; a < VR_ACT_COUNT; a++)
+        if (VRBinding[sp][a] != VR_SRC_NONE && VR_BIND_SRC(VRBinding[sp][a]) == src) return 1;
+    return 0;
+}
+
+/* Whether the control is held right now. X is reported by the runtime as an edge only
+   and has no level to give, so a HOLD action bound to it behaves as a tap - a real
+   limitation of that control, not of this. */
 static int VR_SourceLevel(int src)
 {
     switch (src) {
@@ -1136,22 +1281,25 @@ static int VR_SourceLevel(int src)
         case VR_SRC_X:             return xr_x_button_gameplay_pressed;
         case VR_SRC_Y:             return xr_y_button_gameplay_pressed;
         case VR_SRC_L_STICK_CLICK: return xr_left_thumbstick_click_pressed;
-        case VR_SRC_R_STICK_UP:    return xr_right_thumbstick_click_pressed;
-        case VR_SRC_R_STICK_DOWN:  return xr_right_thumbstick_down_pressed;
+        case VR_SRC_R_STICK_UP:    return vr_stick_dir_level[VR_STICKDIR_R_UP];
+        case VR_SRC_R_STICK_DOWN:  return vr_stick_dir_level[VR_STICKDIR_R_DOWN];
+        case VR_SRC_L_STICK_UP:    return vr_stick_dir_level[VR_STICKDIR_L_UP];
+        case VR_SRC_L_STICK_DOWN:  return vr_stick_dir_level[VR_STICKDIR_L_DOWN];
+        case VR_SRC_L_STICK_LEFT:  return vr_stick_dir_level[VR_STICKDIR_L_LEFT];
+        case VR_SRC_L_STICK_RIGHT: return vr_stick_dir_level[VR_STICKDIR_L_RIGHT];
+        case VR_SRC_R_STICK_LEFT:  return vr_stick_dir_level[VR_STICKDIR_R_LEFT];
+        case VR_SRC_R_STICK_RIGHT: return vr_stick_dir_level[VR_STICKDIR_R_RIGHT];
         case VR_SRC_R_STICK_CLICK: return xr_right_stick_click_pressed;
         default:                   return 0;   /* VR_SRC_NONE: deliberately unbound */
     }
 }
 
 /* Per-frame input state. File-static rather than function-static because three entry
-   points share it - see VR_UpdateFrame. */
-static int   vr_prevLevel[VR_SPECIES_COUNT][VR_ACT_COUNT];
-static int   vr_edge     [VR_SPECIES_COUNT][VR_ACT_COUNT];
-static int   vr_tapShort [VR_SPECIES_COUNT][VR_ACT_COUNT];
-static int   vr_longEdge [VR_SPECIES_COUNT][VR_ACT_COUNT];
-static float vr_holdSecs [VR_SPECIES_COUNT][VR_ACT_COUNT];
-static int   vr_longFired[VR_SPECIES_COUNT][VR_ACT_COUNT];
-static int   vr_actLastFrame = -1;
+   points share it - see VR_UpdateFrame. Resolved through Bind_Step, the same tap/hold
+   logic the pad uses. */
+static BIND_SLOT vr_slot[VR_SPECIES_COUNT][VR_ACT_COUNT];
+static BIND_OUT  vr_out [VR_SPECIES_COUNT][VR_ACT_COUNT];
+static int       vr_actLastFrame = -1;
 
 /* Edges are recomputed ONCE per frame for every action and then read from the
    tables, so several sites reading the same action in one frame all see them - the
@@ -1162,6 +1310,7 @@ static void VR_UpdateFrame(void)
     extern int GlobalFrameCounter;
     extern int RealFrameTime;
     extern int vr_suppress_edges_frames;
+    const float dt = (float)RealFrameTime / 65536.0f;
     int a2, s2, suppress;
 
     if (GlobalFrameCounter == vr_actLastFrame) return;
@@ -1173,38 +1322,32 @@ static void VR_UpdateFrame(void)
        Use and threw whatever switch happened to be in view. Same hazard
        xr_x_pause_latch guards on the way in; this is the way out.
 
-       The levels are still sampled into prevLevel during the suppressed frames, so
-       the button is simply adopted as "already held" and the next real edge needs a
-       genuine release and press. */
+       The levels are still sampled during the suppressed frames, so the button is
+       simply adopted as "already held" and the next real edge needs a genuine release
+       and press. Bind_Step also keeps an adopted press from maturing into a HOLD. */
     suppress = (vr_suppress_edges_frames > 0);
     if (suppress) vr_suppress_edges_frames--;
     vr_actLastFrame = GlobalFrameCounter;
 
-    for (s2 = 0; s2 < VR_SPECIES_COUNT; s2++)
+    for (s2 = 0; s2 < VR_SPECIES_COUNT; s2++) {
+        int holdOnSrc[VR_SRC_COUNT] = { 0 };
+
         for (a2 = 0; a2 < VR_ACT_COUNT; a2++) {
-            int lv = VR_SourceLevel(VRBinding[s2][a2]);
-
-            vr_edge[s2][a2]     = (!suppress && lv && !vr_prevLevel[s2][a2]);
-            vr_tapShort[s2][a2] = 0;
-            vr_longEdge[s2][a2] = 0;
-
-            if (lv && !vr_prevLevel[s2][a2]) {
-                vr_holdSecs[s2][a2]  = 0.0f;
-                /* A suppressed press is adopted as "already held", so it must not be
-                   allowed to mature into a long press either. */
-                vr_longFired[s2][a2] = suppress;
-            }
-            if (lv) {
-                vr_holdSecs[s2][a2] += (float)RealFrameTime / 65536.0f;
-                if (!vr_longFired[s2][a2] && vr_holdSecs[s2][a2] >= INPUT_LONG_PRESS_SECS) {
-                    vr_longEdge[s2][a2]  = 1;
-                    vr_longFired[s2][a2] = 1;
-                }
-            } else if (vr_prevLevel[s2][a2]) {
-                if (!vr_longFired[s2][a2]) vr_tapShort[s2][a2] = 1;
-            }
-            vr_prevLevel[s2][a2] = lv;
+            const int v = VRBinding[s2][a2];
+            if (VR_BIND_IS_HOLD(v) && VR_BIND_SRC(v) < VR_SRC_COUNT)
+                holdOnSrc[VR_BIND_SRC(v)] = 1;
         }
+        for (a2 = 0; a2 < VR_ACT_COUNT; a2++) {
+            const int v      = VRBinding[s2][a2];
+            const int src    = VR_BIND_SRC(v);
+            const int hold   = VR_BIND_IS_HOLD(v);
+            const int shared = (!hold && src > VR_SRC_NONE && src < VR_SRC_COUNT
+                                && holdOnSrc[src]);
+
+            Bind_Step(&vr_slot[s2][a2], VR_SourceLevel(src), suppress, dt,
+                      hold, shared, &vr_out[s2][a2]);
+        }
+    }
 }
 
 static int VR_CurrentSpecies(void)
@@ -1216,10 +1359,11 @@ static int VR_CurrentSpecies(void)
 
 int VR_Action(int action)
 {
+    const BIND_OUT *o;
     if (action < 0 || action >= VR_ACT_COUNT) return 0;
     VR_UpdateFrame();
-    if (VR_ActionIsTap(action)) return vr_edge[VR_CurrentSpecies()][action];
-    return VR_SourceLevel(VRBinding[VR_CurrentSpecies()][action]);
+    o = &vr_out[VR_CurrentSpecies()][action];
+    return VR_ActionIsTap(action) ? o->edge : o->level;
 }
 
 /* Short tap / long hold on the control bound to `action`, the headset counterpart of
@@ -1237,14 +1381,14 @@ int VR_ActionTapShort(int action)
 {
     if (action < 0 || action >= VR_ACT_COUNT) return 0;
     VR_UpdateFrame();
-    return vr_tapShort[VR_CurrentSpecies()][action];
+    return vr_out[VR_CurrentSpecies()][action].tapShort;
 }
 
 int VR_ActionLong(int action)
 {
     if (action < 0 || action >= VR_ACT_COUNT) return 0;
     VR_UpdateFrame();
-    return vr_longEdge[VR_CurrentSpecies()][action];
+    return vr_out[VR_CurrentSpecies()][action].longEdge;
 }
 static float xr_left_stick_x = 0.0f;
 static float xr_left_stick_y = 0.0f;
@@ -4075,9 +4219,24 @@ int axes, balls, hats;
             }
         }
 
+        /* Left Stick Up/Down/Left/Right as bindable controls, from the deadzoned stick.
+           A direction bound to an action stops moving the player that way, so the
+           movement fed below is a copy with those directions removed. The raw values
+           are kept for the 2D menu navigation further down, which is not affected. */
+        {
+            VR_UpdateStickDirs(VR_STICKDIR_L_UP, xr_left_stick_x, xr_left_stick_y, !xr_2d_mode);
+        }
+        {
+            float mx = xr_left_stick_x, my = xr_left_stick_y;
+            if (my > 0.0f && VR_SourceIsBoundForPlayer(VR_SRC_L_STICK_UP))    my = 0.0f;
+            if (my < 0.0f && VR_SourceIsBoundForPlayer(VR_SRC_L_STICK_DOWN))  my = 0.0f;
+            if (mx < 0.0f && VR_SourceIsBoundForPlayer(VR_SRC_L_STICK_LEFT))  mx = 0.0f;
+            if (mx > 0.0f && VR_SourceIsBoundForPlayer(VR_SRC_L_STICK_RIGHT)) mx = 0.0f;
+
         /* Convert OpenXR [-1,1] floats to Win95 JOYINFOEX 0..65535 convention. */
-        JoystickData.dwXpos = (DWORD)((xr_left_stick_x  * 32767.0f) + 32768.0f);
-        JoystickData.dwYpos = (DWORD)((-xr_left_stick_y * 32767.0f) + 32768.0f);
+        JoystickData.dwXpos = (DWORD)((mx  * 32767.0f) + 32768.0f);
+        JoystickData.dwYpos = (DWORD)((-my * 32767.0f) + 32768.0f);
+        }
 
         /* The left stick is delivered by OpenXR, not the SDL gamepad API, so the
          * usr_io.c locomotion consumer (gated on GotJoystick) must be enabled here:
@@ -4222,6 +4381,17 @@ int axes, balls, hats;
                 }
             }
 #endif
+
+            /* Right Stick Up/Down/Left/Right as bindable controls. Computed after the
+               tuner above has had the chance to consume the stick. */
+            VR_UpdateStickDirs(VR_STICKDIR_R_UP, rx, ry, !xr_2d_mode);
+
+            /* A direction bound to an action no longer turns that way. Up/down need no
+               such treatment: they have no built-in job beyond their bindings. */
+            if (!xr_2d_mode) {
+                if (rx < 0.0f && VR_SourceIsBoundForPlayer(VR_SRC_R_STICK_LEFT))  rx = 0.0f;
+                if (rx > 0.0f && VR_SourceIsBoundForPlayer(VR_SRC_R_STICK_RIGHT)) rx = 0.0f;
+            }
 
             /* X axis: turning */
             bool smooth_turning = false;
@@ -4849,6 +5019,21 @@ int axes, balls, hats;
            Y is negated so forward is positive: SDL reports a stick pushed forward as
            negative on both sticks. PadLookY keeps SDL's sign because usr_io.c reads
            positive as "look down", which is what pulling the stick back should do. */
+        /* Stick directions as bindable controls (SDL's Y is negative-up, hence the
+           negation). Then any direction bound to an action stops moving or looking
+           that way, so binding Left Stick Down to Crouch crouches without also walking
+           backwards. */
+        Pad_UpdateStickDirs(PAD_SRC_LSTICK_UP, lx, -ly);
+        Pad_UpdateStickDirs(PAD_SRC_RSTICK_UP, rx, -ry);
+        if (ly < 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_LSTICK_UP))    ly = 0.0f;
+        if (ly > 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_LSTICK_DOWN))  ly = 0.0f;
+        if (lx < 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_LSTICK_LEFT))  lx = 0.0f;
+        if (lx > 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_LSTICK_RIGHT)) lx = 0.0f;
+        if (ry < 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_RSTICK_UP))    ry = 0.0f;
+        if (ry > 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_RSTICK_DOWN))  ry = 0.0f;
+        if (rx < 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_RSTICK_LEFT))  rx = 0.0f;
+        if (rx > 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_RSTICK_RIGHT)) rx = 0.0f;
+
         Pad_ApplyMove(lx, -ly);
         Pad_ApplyLook(rx, ry);
     }

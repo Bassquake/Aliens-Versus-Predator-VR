@@ -226,7 +226,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_FLARE:         return "Throw Flare";
 			case TEXTSTRING_BIND_NEXTWEAPON:    return "Next Weapon";
 			case TEXTSTRING_BIND_PREVWEAPON:    return "Previous Weapon";
-			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. Triggers, grips, A/B/Y and stick clicks are held; X and stick up/down register a single press.";
+			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. A Hold option fires after holding the control for half a second, so one control can do two things. X and the stick directions cannot be held. A stick direction given an action stops moving or turning that way.";
 			case TEXTSTRING_VRWORLDSCALE:       return "World Scale (Default: 1.30)";
 			case TEXTSTRING_VRWORLDSCALE_HELP:  return "How large the world feels. Higher values make one real step cover more ground, so the world seems smaller.";
 			case TEXTSTRING_LEFTSTICKDEADZONE:     return "Left Joystick Deadzone";
@@ -247,12 +247,18 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BINDSRC_RSTICKUP:   return "Right Stick Up";
 			case TEXTSTRING_BINDSRC_RSTICKDOWN: return "Right Stick Down";
 			case TEXTSTRING_BINDSRC_RSTICKCLICK:return "Right Stick Click";
+			case TEXTSTRING_BINDSRC_LSTICKUP:   return "Left Stick Up";
+			case TEXTSTRING_BINDSRC_LSTICKDOWN: return "Left Stick Down";
+			case TEXTSTRING_BINDSRC_LSTICKLEFT: return "Left Stick Left";
+			case TEXTSTRING_BINDSRC_LSTICKRIGHT:return "Left Stick Right";
+			case TEXTSTRING_BINDSRC_RSTICKLEFT: return "Right Stick Left";
+			case TEXTSTRING_BINDSRC_RSTICKRIGHT:return "Right Stick Right";
 
 			/* Flat-build game controller. Face buttons are named by POSITION as SDL
 			   reports them (A = bottom, B = right, X = left, Y = top), which is what
 			   an Xbox pad is labelled; a DualSense player reads A as cross, B as
 			   circle and so on, in the same places. */
-			case TEXTSTRING_PADBIND_HELP:       return "Choose which controller button performs this action.";
+			case TEXTSTRING_PADBIND_HELP:       return "Choose which controller button performs this action. A Hold option fires after holding the button for half a second, so one button can do two things. A stick direction given an action stops moving or looking that way.";
 			case TEXTSTRING_PADSRC_NONE:        return "Unbound";
 			case TEXTSTRING_PADSRC_A:           return "A / Cross";
 			case TEXTSTRING_PADSRC_B:           return "B / Circle";
@@ -270,6 +276,14 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_PADSRC_DPADRIGHT:   return "D-Pad Right";
 			case TEXTSTRING_PADSRC_START:       return "Start";
 			case TEXTSTRING_PADSRC_BACK:        return "Back / Select";
+			case TEXTSTRING_PADSRC_LSTICKUP:    return "Left Stick Up";
+			case TEXTSTRING_PADSRC_LSTICKDOWN:  return "Left Stick Down";
+			case TEXTSTRING_PADSRC_LSTICKLEFT:  return "Left Stick Left";
+			case TEXTSTRING_PADSRC_LSTICKRIGHT: return "Left Stick Right";
+			case TEXTSTRING_PADSRC_RSTICKUP:    return "Right Stick Up";
+			case TEXTSTRING_PADSRC_RSTICKDOWN:  return "Right Stick Down";
+			case TEXTSTRING_PADSRC_RSTICKLEFT:  return "Right Stick Left";
+			case TEXTSTRING_PADSRC_RSTICKRIGHT: return "Right Stick Right";
 			case TEXTSTRING_PADSENSITIVITY:      return "Sensitivity";
 			case TEXTSTRING_PADSENSITIVITY_HELP: return "How far the right stick turns or looks on this axis.";
 			case TEXTSTRING_PADVERTSENSITIVITY:  return "Vertical Sensitivity";

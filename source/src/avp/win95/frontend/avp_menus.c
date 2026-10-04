@@ -1387,87 +1387,84 @@ static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
  *
  * Two actions on one button would fire both at once, which the engine has no way to
  * arbitrate - so a control in use is simply not offered rather than allowed and then
- * resolved. Unbound is exempt: any number of actions may be on nothing.
+ * resolved. Unbound is exempt: any number of actions may be on nothing. A control and
+ * its HOLD ("A" and "A Hold") are different values and so may carry two actions; that
+ * is the point of offering the hold (see Bind_Step in main.c).
  *
- * The row is identified by its value POINTER landing inside VRBinding, the same test
- * the "(Default)" marker uses; the species and action indices fall out of the offset,
- * so this works for all three menus without knowing which one is open.
+ * The cycle runs Unbound, then each source followed by its Hold where the source can be
+ * held: Unbound, Right Trigger, Right Trigger Hold, Right Grip, Right Grip Hold, ... The
+ * stored value is not that position - a Hold is the source with the *_BIND_HOLD flag -
+ * so the order is built here rather than read off the value.
  *
- * The guard bounds the search to one full pass. If every other source were taken the
- * value simply stays put, which is the correct outcome and cannot spin. */
-static int VR_CycleBinding(int *valuePtr, int maxValue, int forward)
+ * The row is identified by its value POINTER landing inside the binding table, the same
+ * test the "(Default)" marker uses; the species and action indices fall out of the
+ * offset, so this works for every species menu without knowing which one is open.
+ *
+ * The guard bounds the search to one full pass. If every other value were taken the
+ * row simply stays put, which is the correct outcome and cannot spin. */
+static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCount,
+                               int speciesCount, int lastSource, int holdFlag,
+                               int (*canHold)(int), int (*bindable)(int))
 {
-	int *first = &VRBinding[0][0];
-	int idx, sp, act, guard, v;
+	int order[2 * 64 + 1];
+	int count = 0, pos = 0, idx, sp, act, guard, s;
 
-	if (valuePtr < first || valuePtr >= first + VR_SPECIES_COUNT*VR_ACT_COUNT)
+	if (valuePtr < table || valuePtr >= table + speciesCount * actCount)
 		return 0;                       /* not a binding row - caller does its thing */
 
-	idx = (int)(valuePtr - first);
-	sp  = idx / VR_ACT_COUNT;
-	act = idx % VR_ACT_COUNT;
-	v   = *valuePtr;
+	idx = (int)(valuePtr - table);
+	sp  = idx / actCount;
+	act = idx % actCount;
 
-	for (guard = 0; guard <= maxValue; guard++)
+	order[count++] = 0;                 /* Unbound */
+	for (s = 1; s <= lastSource && s < 64; s++)
 	{
-		int taken = 0, other;
+		if (bindable && !bindable(s)) continue;   /* reserved (the pad's Start/Back) */
+		order[count++] = s;
+		if (canHold(s)) order[count++] = s | holdFlag;
+	}
 
-		v += forward ? 1 : -1;
-		if (v > maxValue) v = 0;
-		if (v < 0)        v = maxValue;
+	for (s = 0; s < count; s++)
+		if (order[s] == *valuePtr) { pos = s; break; }
 
-		if (v != VR_SRC_NONE)
+	for (guard = 0; guard < count; guard++)
+	{
+		int v, taken = 0, other;
+
+		pos += forward ? 1 : -1;
+		if (pos >= count) pos = 0;
+		if (pos < 0)      pos = count - 1;
+		v = order[pos];
+
+		if (v != 0)
 		{
-			for (other = 0; other < VR_ACT_COUNT; other++)
-				if (other != act && VRBinding[sp][other] == v) { taken = 1; break; }
+			for (other = 0; other < actCount; other++)
+				if (other != act && table[sp * actCount + other] == v) { taken = 1; break; }
 		}
 		if (!taken) { *valuePtr = v; return 1; }
 	}
 	return 1;                           /* nothing free: leave it where it was */
 }
 
-/* The pad counterpart of VR_CycleBinding above, and for the same reason: two actions on
- * one button would both fire, and the engine has no way to arbitrate that. A control
- * already in use is simply not offered rather than allowed and then resolved.
- *
- * Unbound is exempt - any number of actions may be on nothing - which is what makes it
- * always reachable while cycling, however full the pad is.
- *
- * Identified by the value POINTER landing inside PadBinding, exactly as the VR version
- * uses VRBinding; the species and action indices fall out of the offset, so one function
- * serves all three screens without being told which is open.
- *
- * The guard bounds the search to one full pass. If every other source were taken the
- * value simply stays put, which is the correct outcome and cannot spin. */
+static int VR_SourceCanHoldFn(int s)  { return VR_SOURCE_CAN_HOLD(s); }
+static int Pad_SourceCanHoldFn(int s) { return PAD_SOURCE_CAN_HOLD(s); }
+static int Pad_SourceBindableFn(int s) { return PAD_SOURCE_BINDABLE(s); }
+
+static int VR_CycleBinding(int *valuePtr, int maxValue, int forward)
+{
+	return CycleBindingInTable(valuePtr, forward, &VRBinding[0][0], VR_ACT_COUNT,
+	                           VR_SPECIES_COUNT, maxValue, VR_BIND_HOLD,
+	                           VR_SourceCanHoldFn, NULL);
+}
+
+/* The pad counterpart. Start and Back - reserved by the frontend - sit in the middle
+   of the source list now that the stick directions follow them, so they are skipped by
+   PAD_SOURCE_BINDABLE rather than capped off by maxValue (see padinput.h). */
 static int Pad_CycleBinding(int *valuePtr, int maxValue, int forward)
 {
-	int *first = &PadBinding[0][0];
-	int idx, sp, act, guard, v;
-
-	if (valuePtr < first || valuePtr >= first + PAD_SPECIES_COUNT*PAD_ACT_COUNT)
-		return 0;                       /* not a binding row - caller does its thing */
-
-	idx = (int)(valuePtr - first);
-	sp  = idx / PAD_ACT_COUNT;
-	act = idx % PAD_ACT_COUNT;
-	v   = *valuePtr;
-
-	for (guard = 0; guard <= maxValue; guard++)
-	{
-		int taken = 0, other;
-
-		v += forward ? 1 : -1;
-		if (v > maxValue) v = 0;
-		if (v < 0)        v = maxValue;
-
-		if (v != PAD_SRC_NONE)
-		{
-			for (other = 0; other < PAD_ACT_COUNT; other++)
-				if (other != act && PadBinding[sp][other] == v) { taken = 1; break; }
-		}
-		if (!taken) { *valuePtr = v; return 1; }
-	}
-	return 1;                           /* nothing free: leave it where it was */
+	return CycleBindingInTable(valuePtr, forward, &PadBinding[0][0], PAD_ACT_COUNT,
+	                           PAD_SPECIES_COUNT, maxValue, PAD_BIND_HOLD,
+	                           Pad_SourceCanHoldFn, Pad_SourceBindableFn);
 }
 
 /* Rows that do not apply to the current Turning Mode: greyed out and skipped by the
@@ -4049,6 +4046,7 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 		case AVPMENU_ELEMENT_CHEATMODE_ENVIRONMENT_TEXTSLIDER:
 		{
 			char *textPtr = "";
+			int bindingIsHold = 0;   /* a controller binding on its Hold - see below */
 			if(elementPtr->ElementID == AVPMENU_ELEMENT_TEXTSLIDER_POINTER ||
 			   elementPtr->ElementID == AVPMENU_ELEMENT_DUMMYTEXTSLIDER_POINTER)	
 			{
@@ -4060,8 +4058,30 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 			}
 			else
 			{
+				/* Controller bindings carry a Hold flag on top of the source index
+				   (VR_BIND_HOLD / PAD_BIND_HOLD), which a base + value lookup would
+				   run straight past the end of the source names with. Strip it for
+				   the name and say "Hold" after it instead - no second run of
+				   strings to keep in step with the first. */
+				const int *val      = elementPtr->c.SliderValuePtr;
+				const int *vrFirst  = &VRBinding[0][0];
+				const int *padFirst = &PadBinding[0][0];
+				int sliderValue = *val;
+
+				bindingIsHold = 0;
+				if (val >= vrFirst && val < vrFirst + VR_SPECIES_COUNT*VR_ACT_COUNT)
+				{
+					bindingIsHold = VR_BIND_IS_HOLD(sliderValue);
+					sliderValue   = VR_BIND_SRC(sliderValue);
+				}
+				else if (val >= padFirst && val < padFirst + PAD_SPECIES_COUNT*PAD_ACT_COUNT)
+				{
+					bindingIsHold = PAD_BIND_IS_HOLD(sliderValue);
+					sliderValue   = PAD_BIND_SRC(sliderValue);
+				}
+
 				//we have the index of the first string
-				textPtr = GetTextString(elementPtr->d.FirstTextSliderString+*(elementPtr->c.SliderValuePtr));
+				textPtr = GetTextString(elementPtr->d.FirstTextSliderString+sliderValue);
 			}
 
 			/* The Predator's Zoom readout names the button it follows, marked as a
@@ -4076,7 +4096,12 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 			if (elementPtr->a.TextDescription == TEXTSTRING_BIND_ZOOM)
 			{
 				static char holdText[64];
-				snprintf(holdText, sizeof(holdText), "%s (Hold)", textPtr);
+				/* With vision itself on a Hold binding, the hold is what cycles the
+				   vision mode and there is no longer a hold left over for zoom. */
+				if (bindingIsHold)
+					snprintf(holdText, sizeof(holdText), "%s", GetTextString(elementPtr->d.FirstTextSliderString));
+				else
+					snprintf(holdText, sizeof(holdText), "%s (Hold)", textPtr);
 				textPtr = holdText;
 			}
 			/* Controller bindings, VR and pad alike: mark the value this action
@@ -4108,9 +4133,11 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 					isDefault = (*val == (&PadBindingDefault[0][0])[idx]);
 				}
 
-				if (matched && isDefault)
+				if (matched)
 				{
-					snprintf(bindText, sizeof(bindText), "%s (Default)", textPtr);
+					snprintf(bindText, sizeof(bindText), "%s%s%s", textPtr,
+					         bindingIsHold ? " Hold" : "",
+					         isDefault ? " (Default)" : "");
 					textPtr = bindText;
 				}
 			}

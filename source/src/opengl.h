@@ -94,8 +94,42 @@ enum VR_SOURCE {
     /* Appended, never inserted: a stored binding is a source INDEX, so putting a new
        one in the middle would silently re-point every saved binding after it. */
     VR_SRC_R_STICK_CLICK,
+    /* Stick directions. "Left" is the MOVEMENT stick and "Right" the TURN stick, so
+       they follow Swap Joysticks the same way the original Right Stick Up/Down always
+       have. Each reads as held while pushed past 0.6 and released below 0.3. A
+       direction bound to an action stops doing its built-in job (moving or turning that
+       way) - see VR_StickDirIsBound. */
+    VR_SRC_L_STICK_UP,
+    VR_SRC_L_STICK_DOWN,
+    VR_SRC_L_STICK_LEFT,
+    VR_SRC_L_STICK_RIGHT,
+    VR_SRC_R_STICK_LEFT,
+    VR_SRC_R_STICK_RIGHT,
     VR_SRC_COUNT
 };
+
+/* HOLD bindings. A binding value is a VR_SOURCE, optionally with VR_BIND_HOLD set:
+   "A Hold" fires once A has been held past the long-press threshold
+   (INPUT_LONG_PRESS_SECS, 0.5s), so one control can carry two actions - a tap and a
+   hold. When a control has BOTH, its plain binding fires on a quick release instead
+   of on the press, since a press cannot yet tell which of the two it will become.
+   A control with no Hold binding behaves exactly as it always did.
+
+   A FLAG rather than a second run of source values so every existing value - and
+   every saved profile, which stores them +1 in a byte - keeps its meaning; nothing
+   before this ever set the bit. 0x40 is clear of any source index.
+
+   Not offered on X - on PCVR it is already a staged hold of its own (taunt / mission
+   log / pause), since SteamVR keeps the menu button - nor on any stick direction. */
+#define VR_BIND_HOLD          0x40
+#define VR_BIND_SRC(v)        ((v) & ~VR_BIND_HOLD)
+#define VR_BIND_IS_HOLD(v)    (((v) & VR_BIND_HOLD) != 0)
+#define VR_SOURCE_IS_STICK_DIR(s) ((s) == VR_SRC_R_STICK_UP || (s) == VR_SRC_R_STICK_DOWN \
+                                   || ((s) >= VR_SRC_L_STICK_UP && (s) <= VR_SRC_R_STICK_RIGHT))
+#define VR_SOURCE_CAN_HOLD(s) ((s) > VR_SRC_NONE && (s) < VR_SRC_COUNT \
+                               && (s) != VR_SRC_X && !VR_SOURCE_IS_STICK_DIR(s))
+/* A stored value is usable: a real source, and the Hold flag only where it can apply. */
+#define VR_BINDING_VALID(v)   ((v) >= 0 && VR_BIND_SRC(v) < VR_SRC_COUNT                                && (((v) & ~(VR_BIND_HOLD | 0x3F)) == 0)                                && (!VR_BIND_IS_HOLD(v) || VR_SOURCE_CAN_HOLD(VR_BIND_SRC(v))))
 
 /* Bindings are PER SPECIES: each plays differently enough to want its own layout,
    and the three menus mirror the per-species key configuration the flat game already

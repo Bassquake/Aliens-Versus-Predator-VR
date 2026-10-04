@@ -60,17 +60,43 @@ typedef enum PAD_SOURCE
     PAD_SRC_DPAD_RIGHT,
     PAD_SRC_START,
     PAD_SRC_BACK,
+    /* Stick directions, appended after Start/Back so no stored value moves. "Left" is
+       the MOVEMENT stick and "Right" the LOOK stick, so they follow Swap Joysticks as the
+       VR ones do. Each reads as held while pushed past 0.6 and released below 0.3, and a
+       direction bound to an action stops moving / looking that way (see ReadJoysticks). */
+    PAD_SRC_LSTICK_UP,
+    PAD_SRC_LSTICK_DOWN,
+    PAD_SRC_LSTICK_LEFT,
+    PAD_SRC_LSTICK_RIGHT,
+    PAD_SRC_RSTICK_UP,
+    PAD_SRC_RSTICK_DOWN,
+    PAD_SRC_RSTICK_LEFT,
+    PAD_SRC_RSTICK_RIGHT,
     PAD_SRC_COUNT
 } PAD_SOURCE;
 
-/* Highest source the binding menus offer.
+/* Which sources the binding menus offer.
  *
  * Start and Back are reserved by the frontend - Start opens the in-game menu - so they
  * are not bindable: an action on Start would fire every time the menu was opened. They
- * are deliberately the LAST two entries above so that excluding them is a cap rather
- * than a hole in the middle, which a TEXTSLIDER (base + value) could not express.
- * KEEP THEM LAST if more sources are ever added. */
-#define PAD_SRC_LAST_BINDABLE (PAD_SRC_START - 1)
+ * used to be the last two sources so that excluding them could be a cap on the slider;
+ * the stick directions were then appended after them (appending is what keeps saved
+ * values meaning the same thing), so they are now a hole, skipped by the binding cycle
+ * in avp_menus.c and unbound by the profile loader. */
+#define PAD_SOURCE_BINDABLE(s)  ((s) > PAD_SRC_NONE && (s) < PAD_SRC_COUNT \
+                                 && (s) != PAD_SRC_START && (s) != PAD_SRC_BACK)
+#define PAD_SOURCE_IS_STICK_DIR(s) ((s) >= PAD_SRC_LSTICK_UP && (s) <= PAD_SRC_RSTICK_RIGHT)
+
+/* HOLD bindings - the same scheme as VR_BIND_HOLD in opengl.h, and the same value so
+   the two read alike. "A Hold" fires once A has been held past the long-press
+   threshold; a control that ALSO has a plain binding fires that one on a quick release
+   instead of on the press. Every bindable BUTTON can be held; the stick directions
+   cannot, matching VR. The flag keeps every existing value (and saved profile) meaning
+   what it did. */
+#define PAD_BIND_HOLD          0x40
+#define PAD_BIND_SRC(v)        ((v) & ~PAD_BIND_HOLD)
+#define PAD_BIND_IS_HOLD(v)    (((v) & PAD_BIND_HOLD) != 0)
+#define PAD_SOURCE_CAN_HOLD(s) (PAD_SOURCE_BINDABLE(s) && !PAD_SOURCE_IS_STICK_DIR(s))
 
 /* One map PER SPECIES, as the VR bindings are: the actions differ (a Marine's jetpack is
    a Predator's recall disc, and only the Marine throws flares), so each gets its own

@@ -526,7 +526,8 @@ extern void GetSettingsFromUserProfile(void)
 				int stored = (i < 12) ? UserProfilePtr->VRBindingPlus1[sp][i] : 0;
 				/* 0 = never written; keep this action's default. */
 				candidate[i] = stored ? stored - 1 : VRBinding[sp][i];
-				if (candidate[i] < 0 || candidate[i] >= VR_SRC_COUNT) ok = 0;
+				/* A source, optionally flagged Hold (VR_BIND_HOLD) where it can apply. */
+				if (!VR_BINDING_VALID(candidate[i])) ok = 0;
 			}
 			/* No control may drive two actions - Unbound excepted. */
 			for (i = 0; ok && i < VR_ACT_COUNT; i++)
@@ -565,7 +566,12 @@ extern void GetSettingsFromUserProfile(void)
 		{
 			int stored = (i < 16) ? UserProfilePtr->PadBindingPlus1[psp][i] : 0;
 			candidate[i] = stored ? stored - 1 : PadBinding[psp][i];
-			if (candidate[i] < 0 || candidate[i] >= PAD_SRC_COUNT) ok = 0;
+			/* A source, optionally flagged Hold (PAD_BIND_HOLD) - never on Unbound. */
+			if (candidate[i] < 0
+			    || (candidate[i] & ~(PAD_BIND_HOLD | 0x3F)) != 0
+			    || PAD_BIND_SRC(candidate[i]) >= PAD_SRC_COUNT
+			    || (PAD_BIND_IS_HOLD(candidate[i]) && !PAD_SOURCE_CAN_HOLD(PAD_BIND_SRC(candidate[i]))))
+				ok = 0;
 		}
 		/* Duplicates are UNBOUND rather than rejected, which is the difference from the
 		   VR set above.
@@ -590,7 +596,8 @@ extern void GetSettingsFromUserProfile(void)
 				   so a binding on one can only come from an older profile. Start in
 				   particular would fire its action every time the in-game menu was
 				   opened. */
-				if (candidate[i] > PAD_SRC_LAST_BINDABLE)
+				if (candidate[i] != PAD_SRC_NONE
+				    && !PAD_SOURCE_BINDABLE(PAD_BIND_SRC(candidate[i])))
 				{
 					SDL_Log("PROFILE: species %d action %d was bound to a reserved "
 					        "control (older profile) - unbound", psp, i);

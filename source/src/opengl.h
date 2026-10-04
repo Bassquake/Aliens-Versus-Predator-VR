@@ -303,6 +303,13 @@ extern float     vr_weapon_view_scale;
  * weapon, logged as VRGRIP lines, persists nothing - bake the logged rows into
  * vr_two_hand_grip_adj[] in avpview.c. Its toggle is distinct from the hand tuner's
  * (click + B) and the world-scale tuner's (click + A), so all three can be built in. */
+/* In-world FIRST-PERSON SIZE tuner: one multiplier on the size of the arms, hands and
+ * weapon (vr_rig_size in avpview.c), applied to the gun rig and the Alien's claws alike.
+ * Toggle with LEFT STICK CLICK + RIGHT TRIGGER; the right stick then changes it -
+ * left/right by 0.01, up/down by 0.05. Logged as VRSIZE lines, persists nothing - bake
+ * the final value into vr_rig_size's initialiser. */
+#define AVP_VR_SIZE_TUNER 0
+
 #define AVP_VR_GRIP_TUNER 0
 
 #define VR_WEAPON_OFFSET_FORWARD  (-300)   /* was VR_WEAPON_PULLBACK = 300 */

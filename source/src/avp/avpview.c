@@ -269,6 +269,36 @@ int vr_recalibrate = 1;
    why the left-hand code could not reference it. */
 #define VR_WEAPON_VIEW_SCALE 0.90f
 
+/* Overall size of the first-person arms, hands and weapon, on top of the base factor
+   above (and VR_ALIEN_VIEW_SCALE for the claws/tail). 1.0 = the size the offsets and
+   trims were tuned at; 0.85 was chosen on-device as reading closer to real hands.
+
+   Applied to wscale where the rig's scale is baked into ObMat, so it reaches everything
+   that already follows the rig's size with no further work: the weapon's tuned offsets
+   (the eye pass pulls ObWorld toward the grip by wscale), the left hand's trim (divided by
+   VR_WEAPON_VIEW_SCALE, NOT by this, so it shrinks with the rig as it should), and the
+   fire paths in weapons.c (they read vr_weapon_view_scale, which includes it). The
+   VR_WEAPON_VIEW_SCALE divisions stay on the constant on purpose: the trims were tuned at
+   that base, and dividing by the live figure would cancel this multiplier out.
+
+   Live-adjustable with the size tuner (AVP_VR_SIZE_TUNER in opengl.h). */
+/* PER SPECIES, indexed by AvP.PlayerType (I_Marine 0, I_Predator 1, I_Alien 2). The
+   Predator stays at the tuned size; the Marine and Alien read as oversized there. */
+float vr_rig_size[3] = {
+    [I_Marine]   = 0.85f,
+    [I_Predator] = 1.00f,
+    [I_Alien]    = 0.85f,
+};
+
+/* The size for the species being played - the slot the size tuner edits too. */
+static float *VR_RigSizeSlot(void)
+{
+    int sp = (int)AvP.PlayerType;
+    if (sp < 0 || sp > 2) sp = 0;
+    return &vr_rig_size[sp];
+}
+float VR_RigSizeCurrent(void) { return *VR_RigSizeSlot(); }
+
 /* -vrdiag bookkeeping, reset on each recentre - see the VR scale / VR hands lines. */
 static int vr_logged_scale = 0;
 static int vr_diag_hand_frames = 0;
@@ -1166,6 +1196,21 @@ static VECTORCH VR_TwoHandLeftRef(VECTORCH from, int weaponID)
     }
     return from;
 }
+
+#if AVP_VR_SIZE_TUNER
+/* ---- in-world first-person size tuning (see AVP_VR_SIZE_TUNER in opengl.h) ---- */
+int vr_size_tune_active = 0;
+
+void VR_SizeTuneAdjust(float delta)
+{
+    float *s = VR_RigSizeSlot();
+    *s += delta;
+    if (*s < 0.30f) *s = 0.30f;
+    if (*s > 2.00f) *s = 2.00f;
+    SDL_Log("VRSIZE vr_rig_size[%d] = %.2f  (species %d)", (int)AvP.PlayerType, *s,
+            (int)AvP.PlayerType);
+}
+#endif
 
 #if AVP_VR_GRIP_TUNER
 /* ---- in-world grip tuning (see AVP_VR_GRIP_TUNER in opengl.h) ---------------- */
@@ -4812,7 +4857,7 @@ void AvpShowViewsVR(void)
                  * and unlike a gun, which is held out at arm's length, the claws sit
                  * right at the eye, so the same 0.90 reads as far bigger on them. */
                 #define VR_ALIEN_VIEW_SCALE 0.55f
-                float wscale = is_alien ? VR_ALIEN_VIEW_SCALE : VR_WEAPON_VIEW_SCALE;
+                float wscale = (is_alien ? VR_ALIEN_VIEW_SCALE : VR_WEAPON_VIEW_SCALE) * VR_RigSizeCurrent();
                 int wscale_baked = 0;
                 if (vr_weapon_ref_scale > 0.0f)
                     wscale *= vr_y_scale / vr_weapon_ref_scale;
@@ -5658,6 +5703,18 @@ void AvpShowViewsVR(void)
         {   /* live hand-tuning readout */
             extern void VR_TuneRenderHUD(void);
             VR_TuneRenderHUD();
+        }
+#endif
+#if AVP_VR_SIZE_TUNER
+        {   /* live first-person size readout */
+            extern int vr_size_tune_active;
+            if (vr_size_tune_active) {
+                char line[80];
+                RenderString("VR ARM/WEAPON SIZE  (stick: left/right fine, up/down coarse)",
+                             20, 320, 0xFF00FFFF);
+                SDL_snprintf(line, sizeof(line), "  size %.2f (this character)", VR_RigSizeCurrent());
+                RenderString(line, 20, 336, 0xFFFFFF00);
+            }
         }
 #endif
 #if AVP_VR_GRIP_TUNER

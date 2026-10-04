@@ -4337,6 +4337,51 @@ int axes, balls, hats;
             }
 #endif
 
+#if AVP_VR_SIZE_TUNER
+            /* In-world first-person size tuning (see AVP_VR_SIZE_TUNER in opengl.h).
+               Toggled with crouch-click + right trigger; owns the right stick while
+               open, as the other tuners do. */
+            {
+                extern int  vr_size_tune_active;
+                extern float VR_RigSizeCurrent(void);
+                extern void VR_SizeTuneAdjust(float delta);
+                extern int  xr_left_thumbstick_click_pressed;
+                extern int  xr_trigger_right_pressed;
+                static bool st_toggle_armed = true;
+                static bool st_coarse_armed = true;
+                static Uint64 st_next_step  = 0;
+
+                if (xr_left_thumbstick_click_pressed && xr_trigger_right_pressed) {
+                    if (st_toggle_armed) {
+                        st_toggle_armed = false;
+                        vr_size_tune_active = !vr_size_tune_active;
+                        SDL_Log("VRSIZE %s (size %.2f)",
+                                vr_size_tune_active ? "ON" : "OFF", VR_RigSizeCurrent());
+                    }
+                } else {
+                    st_toggle_armed = true;
+                }
+
+                if (vr_size_tune_active) {
+                    Uint64 now = SDL_GetTicks();
+                    if (ry > 0.6f || ry < -0.6f) {
+                        if (st_coarse_armed) {
+                            st_coarse_armed = false;
+                            VR_SizeTuneAdjust(ry > 0.0f ? 0.05f : -0.05f);
+                        }
+                    } else {
+                        st_coarse_armed = true;
+                    }
+                    if ((rx > 0.5f || rx < -0.5f) && now >= st_next_step) {
+                        st_next_step = now + 80;   /* repeat rate while held */
+                        VR_SizeTuneAdjust(rx > 0.0f ? 0.01f : -0.01f);
+                    }
+                    rx = 0.0f;   /* consume: no turning, no weapon cycling */
+                    ry = 0.0f;
+                }
+            }
+#endif
+
 #if AVP_VR_GRIP_TUNER
             /* In-world two-handed grip tuning (see AVP_VR_GRIP_TUNER in opengl.h).
                Toggled with crouch-click + right grip; owns the right stick while open,

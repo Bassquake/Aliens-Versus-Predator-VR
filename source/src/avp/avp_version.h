@@ -8,6 +8,6 @@
  * header and CMake does not feed the Android version, so the two are updated by hand -
  * there is deliberately only this one copy on the C side, so every desktop target and
  * the in-game display agree with each other. */
-#define AVP_VERSION_STRING "1.0"
+#define AVP_VERSION_STRING "1.1"
 
 #endif

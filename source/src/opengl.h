@@ -297,6 +297,14 @@ extern float     vr_weapon_view_scale;
  * separately so both can be built independently. */
 #define AVP_VR_WORLD_TUNER 0
 
+/* In-world TWO-HANDED GRIP tuner (Auto Two-Handed Weapons): where the left hand sits
+ * once it has taken hold of a two-handed weapon. Toggle with LEFT STICK CLICK + RIGHT
+ * GRIP; the right stick then picks a field (up/down) and changes it (left/right). Per
+ * weapon, logged as VRGRIP lines, persists nothing - bake the logged rows into
+ * vr_two_hand_grip_adj[] in avpview.c. Its toggle is distinct from the hand tuner's
+ * (click + B) and the world-scale tuner's (click + A), so all three can be built in. */
+#define AVP_VR_GRIP_TUNER 0
+
 #define VR_WEAPON_OFFSET_FORWARD  (-300)   /* was VR_WEAPON_PULLBACK = 300 */
 #define VR_WEAPON_OFFSET_RIGHT    0
 #define VR_WEAPON_OFFSET_UP       0

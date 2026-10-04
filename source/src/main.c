@@ -718,6 +718,7 @@ int VRVignetteStrength  = 5;
 int VRClimbVignetteOn   = 1;
 int VRClimbVignetteStrength = 5;
 int MarineLeftArmVisible = 1;
+int AutoTwoHandedWeapons = 1;   /* defined in avpview.c on VR builds; inert here */
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;
 int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
@@ -4331,6 +4332,52 @@ int axes, balls, hats;
                     }
                     /* Owns the stick while open, exactly as the hand tuner does. */
                     rx = 0.0f;
+                    ry = 0.0f;
+                }
+            }
+#endif
+
+#if AVP_VR_GRIP_TUNER
+            /* In-world two-handed grip tuning (see AVP_VR_GRIP_TUNER in opengl.h).
+               Toggled with crouch-click + right grip; owns the right stick while open,
+               as the other tuners do. */
+            {
+                extern int  vr_grip_tune_active;
+                extern void VR_GripTuneCycleField(int dir);
+                extern void VR_GripTuneAdjustValue(int dir);
+                extern void VR_GripTuneDump(void);
+                extern int  xr_left_thumbstick_click_pressed;
+                extern int  xr_grip_right_squeeze_pressed;
+                static bool gt_toggle_armed = true;
+                static bool gt_field_armed  = true;
+                static Uint64 gt_next_step  = 0;
+
+                if (xr_left_thumbstick_click_pressed && xr_grip_right_squeeze_pressed) {
+                    if (gt_toggle_armed) {
+                        gt_toggle_armed = false;
+                        vr_grip_tune_active = !vr_grip_tune_active;
+                        SDL_Log("VRGRIP %s", vr_grip_tune_active ? "ON" : "OFF");
+                        if (!vr_grip_tune_active) VR_GripTuneDump();
+                    }
+                } else {
+                    gt_toggle_armed = true;
+                }
+
+                if (vr_grip_tune_active) {
+                    Uint64 now = SDL_GetTicks();
+                    if (ry > 0.6f || ry < -0.6f) {
+                        if (gt_field_armed) {
+                            gt_field_armed = false;
+                            VR_GripTuneCycleField(ry > 0.0f ? -1 : 1);
+                        }
+                    } else {
+                        gt_field_armed = true;
+                    }
+                    if ((rx > 0.5f || rx < -0.5f) && now >= gt_next_step) {
+                        gt_next_step = now + 80;   /* repeat rate while held */
+                        VR_GripTuneAdjustValue(rx > 0.0f ? 1 : -1);
+                    }
+                    rx = 0.0f;   /* consume: no turning, no weapon cycling */
                     ry = 0.0f;
                 }
             }

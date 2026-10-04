@@ -1638,6 +1638,13 @@ enum TEXTSTRING_ID
 	TEXTSTRING_AVOPTIONS_MENUVIDEO_OFF,  // value 0
 	TEXTSTRING_AVOPTIONS_MENUVIDEO_ON,   // value 1 (default)
 
+	/* VR Configuration "Auto Two-Handed Weapons". */
+	TEXTSTRING_AUTOTWOHANDED,
+	TEXTSTRING_AUTOTWOHANDED_HELP,
+	/* These two must stay consecutive and in this order - TEXTSLIDER base + value. */
+	TEXTSTRING_AUTOTWOHANDED_OFF,  // value 0
+	TEXTSTRING_AUTOTWOHANDED_ON,   // value 1 (default)
+
 	MAX_NEW_TEXTSTRINGS
 };
 

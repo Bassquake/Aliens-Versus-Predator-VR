@@ -1032,6 +1032,367 @@ SECTION_DATA *VR_FindRightHandSection(HMODELCONTROLLER *hmc)
    VR_RenderWeaponSplitHands below. */
 float vr_left_anim_blend = 0.0f;
 
+/* "Auto Two-Handed Weapons" (VR Configuration, On by default).
+ *
+ * On a two-handed weapon, bringing the left controller up to where the left hand sits
+ * on the gun snaps the left arm onto the weapon's own grip - the pose the model was
+ * authored with - and holds it there until the controller is pulled away again. It is
+ * the same handover the animations use (vr_left_anim_blend): at 1 the left rig's root
+ * matches the primary's and its palm lands on the primary's palm, so the arm is drawn
+ * exactly as an un-split rig would draw it, on the RIGHT controller's weapon.
+ *
+ * The distance is measured from where the left palm WOULD be drawn on the controller
+ * (grip plus this weapon's trim) to that authored palm position, so "close" means
+ * close to the foregrip of this particular gun, wherever its model puts it. Hysteresis
+ * keeps it from chattering at the edge. Distances are physical, via vr_y_scale. */
+int AutoTwoHandedWeapons = 1;
+#define VR_TWO_HAND_ENGAGE_M   0.20f   /* within 20 cm of the grip: take hold */
+#define VR_TWO_HAND_RELEASE_M  0.30f   /* beyond 30 cm: let go */
+#define VR_TWO_HAND_BLEND_SECS 0.12f   /* ease on and off */
+static float vr_two_hand_units_per_m = (float)GAME_UNITS_PER_METRE;  /* set per frame */
+
+static int VR_WeaponIsTwoHanded(int weaponID)
+{
+    switch (weaponID) {
+        case WEAPON_PULSERIFLE:
+        case WEAPON_SMARTGUN:
+        case WEAPON_GRENADELAUNCHER:
+        case WEAPON_FLAMETHROWER:
+        case WEAPON_PRED_RIFLE:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/* Two-handed AIMING, the second half of Auto Two-Handed Weapons.
+ *
+ * While the left hand holds the grip, the weapon points along the line from the right
+ * hand to the left one instead of along the right controller alone. Done by rotating
+ * vr_right_hand_mat itself, once per frame, right after the hand poses are final
+ * (VR_ApplyTwoHandedAim, from the eye pass) - because EVERYTHING that aims reads that
+ * matrix: the drawn weapon via VR_ComputeWeaponAnchor, the shot spawn in weapons.c, the
+ * crosshair / GunMuzzleSight, flares, the disc and the grapple. Rotating it once keeps
+ * all of them on the same line by construction, rather than correcting each.
+ *
+ * The rotation is the SMALLEST one taking the gun's own right-grip-to-foregrip line
+ * onto the right-hand-to-left-hand line, about the right grip. Being the smallest, it
+ * leaves the twist about the barrel to the right controller, which is how two-handed
+ * VR weapons conventionally behave. It is scaled by the grip blend, so taking hold and
+ * letting go ease rather than snap.
+ *
+ * vr_two_hand_grip_local is that grip-to-foregrip line in the RIGHT CONTROLLER'S frame,
+ * recorded from the rig as it is drawn. The rig is rigid in that frame, so the vector
+ * does not depend on the correction itself - which is what stops this feeding back on
+ * itself. It is a frame old when used, which is immaterial for a fixed vector. */
+static float vr_two_hand_grip_local[3];
+static int   vr_two_hand_grip_weapon = -1;
+static float vr_two_hand_blend_out   = 0.0f;  /* smoothstepped grip blend, last frame */
+static int   vr_two_hand_blend_frame = -1;    /* frame it was last advanced on */
+/* Set by VR_ApplyTwoHandedAim when the two-hand line has swung too far from where the
+   right controller is pointing (or the hands are almost on top of each other): the grip
+   is released, so the gun cannot be dragged round to point somewhere silly. */
+static int   vr_two_hand_pose_ok     = 1;
+
+/* WHERE THE REAL HAND IS ON THE MODEL'S HAND.
+ *
+ * The left limb is anchored on its subtree root ("ppump palm" and friends), and that
+ * section's ORIGIN is not where the visible hand is - it is the pump / wrist pivot the
+ * hand hangs off. The free left hand still looks right because vr_left_hand_trim was
+ * tuned with the origin at the controller-plus-trim and the controller's orientation;
+ * the trims carry large rotations (the pulse rifle's is 45 pitch, 94 yaw). Once the arm
+ * takes the gun's own orientation instead, that origin is no longer a stand-in for the
+ * hand: lining the ORIGIN up with the controller left the drawn hand well off it -
+ * reported as the controller sitting below and to the right of the model's hand.
+ *
+ * So the point that matters is the CONTROLLER expressed in the palm section's own
+ * frame, measured while the hand is free - exactly the relationship the trim was tuned
+ * to look right with. Carried onto the gun (the same local point under the authored
+ * palm), it says where your real hand is on the gripped model, and that is what the
+ * grab distance and the two-handed aim line up against.
+ *
+ * Per weapon, because each has its own trim and limb. Captured only while the blend is
+ * at 0 - once gripped, the palm wears the gun's orientation and the relationship is no
+ * longer the free one. Until a weapon has been seen free once, the old origin-based
+ * reference is used. */
+static float vr_two_hand_palm_local[MAX_NO_OF_WEAPON_TEMPLATES][3];
+static unsigned char vr_two_hand_palm_local_ok[MAX_NO_OF_WEAPON_TEMPLATES];
+/* The left reference VR_ApplyTwoHandedAim should aim at this frame: 1 = the controller
+   itself (the palm point is known), 0 = controller plus trim (the fallback). */
+static int   vr_two_hand_ref_is_controller = 0;
+
+/* Per-weapon placement of the GRIPPED left hand, in millimetres (physical, so World
+   Scale does not change them). Edited live by the grip tuner (AVP_VR_GRIP_TUNER).
+
+     [0] RIGHT  [1] UP   where the grip takes the left controller to be, in the
+                         controller's own frame. Moving it right makes the gun swing
+                         so the held hand sits further right of your real hand.
+                         Started at 5 cm left: with the hand point lined up exactly,
+                         the gun sat too far right of the real hand.
+     [2] ALONG  slides the drawn hand along the gun, + toward the muzzle. A shift
+                along the hands' own line would change nothing visible (the gun only
+                turns to face it), so this one moves the hand on the model instead.
+
+   [0]/[1] are used where the grip is MATCHED (grab distance, aim line) and deliberately
+   NOT where the hand point is LEARNT: shifting both would cancel out exactly. */
+static int vr_two_hand_grip_adj[MAX_NO_OF_WEAPON_TEMPLATES][3] = {
+    [WEAPON_PULSERIFLE]      = { 100, -80, 0 },
+    [WEAPON_SMARTGUN]        = { 0, 0, 0 },
+    [WEAPON_GRENADELAUNCHER] = { 80, -180, 0 },
+    [WEAPON_FLAMETHROWER]    = { 100, -80, 0 },
+    [WEAPON_PRED_RIFLE]      = { 90, -100, 0 },
+};
+
+static VECTORCH VR_TwoHandLeftRef(VECTORCH from, int weaponID)
+{
+    const MATRIXCH *m = &vr_left_hand_mat;
+    float ax[2][3], mm[2];
+    int i, j;
+    if (weaponID < 0 || weaponID >= MAX_NO_OF_WEAPON_TEMPLATES) return from;
+    /* Row 1 is the controller's right axis, row 3 its up (the grip frame used by
+       VR_ComputeWeaponAnchor: X right, Y aim, Z up). */
+    ax[0][0] = m->mat11; ax[0][1] = m->mat12; ax[0][2] = m->mat13;
+    ax[1][0] = m->mat31; ax[1][1] = m->mat32; ax[1][2] = m->mat33;
+    mm[0] = (float)vr_two_hand_grip_adj[weaponID][0];
+    mm[1] = (float)vr_two_hand_grip_adj[weaponID][1];
+    for (i = 0; i < 2; i++) {
+        float n = SDL_sqrtf(ax[i][0]*ax[i][0] + ax[i][1]*ax[i][1] + ax[i][2]*ax[i][2]);
+        float d = mm[i] * 0.001f * vr_two_hand_units_per_m;
+        if (n < 1.0f || d == 0.0f) continue;
+        for (j = 0; j < 3; j++) ax[i][j] = ax[i][j] / n * d;
+        from.vx += (int)ax[i][0];
+        from.vy += (int)ax[i][1];
+        from.vz += (int)ax[i][2];
+    }
+    return from;
+}
+
+#if AVP_VR_GRIP_TUNER
+/* ---- in-world grip tuning (see AVP_VR_GRIP_TUNER in opengl.h) ---------------- */
+int vr_grip_tune_active = 0;
+static int vr_grip_tune_field  = 0;
+static int vr_grip_tune_weapon = -1;
+static const char *vr_grip_tune_names[3] = { "left/right", "up/down", "along gun" };
+
+void VR_GripTuneCycleField(int dir)
+{
+    vr_grip_tune_field = (vr_grip_tune_field + dir + 3) % 3;
+}
+
+void VR_GripTuneAdjustValue(int dir)
+{
+    int w = vr_grip_tune_weapon;
+    if (w < 0 || w >= MAX_NO_OF_WEAPON_TEMPLATES) return;
+    vr_two_hand_grip_adj[w][vr_grip_tune_field] += dir * 5;   /* 5 mm a step */
+    SDL_Log("VRGRIP weapon %d  %s = %d mm", w, vr_grip_tune_names[vr_grip_tune_field],
+            vr_two_hand_grip_adj[w][vr_grip_tune_field]);
+}
+
+/* The row in a form that pastes straight into vr_two_hand_grip_adj[]. */
+void VR_GripTuneDump(void)
+{
+    int w = vr_grip_tune_weapon;
+    if (w < 0 || w >= MAX_NO_OF_WEAPON_TEMPLATES) return;
+    SDL_Log("VRGRIP weapon %d  vr_two_hand_grip_adj = { %d, %d, %d }", w,
+            vr_two_hand_grip_adj[w][0], vr_two_hand_grip_adj[w][1], vr_two_hand_grip_adj[w][2]);
+}
+
+void VR_GripTuneRenderHUD(void)
+{
+    char line[80];
+    int i, w = vr_grip_tune_weapon;
+    if (!vr_grip_tune_active) return;
+    RenderString("VR GRIP TUNING  (stick: up/down field, left/right value)",
+                 20, 250, 0xFF00FF00);
+    if (w < 0 || w >= MAX_NO_OF_WEAPON_TEMPLATES || !VR_WeaponIsTwoHanded(w)) {
+        RenderString("  hold a two-handed weapon", 20, 266, 0xFFFFFFFF);
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        SDL_snprintf(line, sizeof(line), "%s %-10s %d mm",
+                     (i == vr_grip_tune_field) ? ">" : " ",
+                     vr_grip_tune_names[i], vr_two_hand_grip_adj[w][i]);
+        RenderString(line, 20, 266 + i * 14, (i == vr_grip_tune_field) ? 0xFFFFFF00 : 0xFFFFFFFF);
+    }
+}
+#endif
+
+/* World point of palm-local `l` on section `sd`. Rows of SecMat are its axes, scaled by
+   the rig's view scale; RotateVector(v,M) = M^T v is local -> world. */
+static VECTORCH VR_SectionPoint(const SECTION_DATA *sd, const float l[3])
+{
+    VECTORCH out = sd->World_Offset;
+    const MATRIXCH *m = &sd->SecMat;
+    out.vx += (int)((l[0]*m->mat11 + l[1]*m->mat21 + l[2]*m->mat31) / 65536.0f);
+    out.vy += (int)((l[0]*m->mat12 + l[1]*m->mat22 + l[2]*m->mat32) / 65536.0f);
+    out.vz += (int)((l[0]*m->mat13 + l[1]*m->mat23 + l[2]*m->mat33) / 65536.0f);
+    return out;
+}
+
+/* Inverse of the above: world point `w` into `sd`'s local frame. Each row has length
+   s*65536 for view scale s, so the dot with a row is s^2 times the local coordinate. */
+static void VR_SectionLocal(const SECTION_DATA *sd, VECTORCH w, float l[3])
+{
+    const MATRIXCH *m = &sd->SecMat;
+    float d[3], r[3][3];
+    int i;
+    d[0] = (float)(w.vx - sd->World_Offset.vx);
+    d[1] = (float)(w.vy - sd->World_Offset.vy);
+    d[2] = (float)(w.vz - sd->World_Offset.vz);
+    r[0][0]=m->mat11/65536.0f; r[0][1]=m->mat12/65536.0f; r[0][2]=m->mat13/65536.0f;
+    r[1][0]=m->mat21/65536.0f; r[1][1]=m->mat22/65536.0f; r[1][2]=m->mat23/65536.0f;
+    r[2][0]=m->mat31/65536.0f; r[2][1]=m->mat32/65536.0f; r[2][2]=m->mat33/65536.0f;
+    for (i = 0; i < 3; i++) {
+        float n2 = r[i][0]*r[i][0] + r[i][1]*r[i][1] + r[i][2]*r[i][2];
+        l[i] = (n2 > 0.000001f) ? (r[i][0]*d[0] + r[i][1]*d[1] + r[i][2]*d[2]) / n2 : 0.0f;
+    }
+}
+#define VR_TWO_HAND_MAX_DEG  55.0f     /* beyond this off the right controller's aim: let go */
+#define VR_TWO_HAND_MIN_SEP_M 0.10f    /* hands closer than this give no usable line */
+
+/* Where the left palm is drawn relative to the left controller: the grip plus this
+   weapon's trim, in the controller's own frame. Shared by the split draw and the aim.
+   trim_scale keeps the trim at a constant PHYSICAL size - see its use below. */
+static VECTORCH VR_LeftPalmTarget(int weaponID, float trim_scale);
+
+/* Advance the grip blend (once per frame - the split draw runs per eye) and return it,
+   smoothstepped. distUnits < 0 means "not applicable this frame": the blend eases out. */
+static float VR_TwoHandGripBlend(int weaponID, float distUnits)
+{
+    extern int GlobalFrameCounter;
+    extern int NormalFrameTime;
+    static int   lastFrame  = -1;
+    static int   lastWeapon = -1;
+    static int   engaged    = 0;
+    static float t          = 0.0f;
+
+    if (GlobalFrameCounter != lastFrame) {
+        const float step = (NormalFrameTime / 65536.0f) / VR_TWO_HAND_BLEND_SECS;
+        lastFrame = GlobalFrameCounter;
+
+        if (weaponID != lastWeapon) {      /* never carry a grip across a weapon change */
+            lastWeapon = weaponID;
+            engaged = 0;
+            t = 0.0f;
+        }
+        if (distUnits < 0.0f || !vr_two_hand_pose_ok)
+            engaged = 0;
+        else if (engaged)
+            engaged = (distUnits < VR_TWO_HAND_RELEASE_M * vr_two_hand_units_per_m);
+        else
+            engaged = (distUnits < VR_TWO_HAND_ENGAGE_M * vr_two_hand_units_per_m);
+
+        if (engaged) { t += step; if (t > 1.0f) t = 1.0f; }
+        else         { t -= step; if (t < 0.0f) t = 0.0f; }
+
+        vr_two_hand_blend_out   = t * t * (3.0f - 2.0f * t);
+        vr_two_hand_blend_frame = GlobalFrameCounter;
+    }
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static VECTORCH VR_LeftPalmTarget(int weaponID, float trim_scale)
+{
+    VECTORCH target = vr_left_hand_world;
+    if (weaponID >= 0 && weaponID < MAX_NO_OF_WEAPON_TEMPLATES) {
+        const VR_HAND_TRIM *t = &vr_left_hand_trim[weaponID];
+        if (t->right | t->forward | t->up) {
+            VECTORCH wofs;
+            wofs.vx = t->right; wofs.vy = t->forward; wofs.vz = t->up;
+            RotateVector(&wofs, &vr_left_hand_mat);
+            target.vx += (int)(wofs.vx * trim_scale);
+            target.vy += (int)(wofs.vy * trim_scale);
+            target.vz += (int)(wofs.vz * trim_scale);
+        }
+    }
+    return target;
+}
+
+/* Rotate vr_right_hand_mat for two-handed aiming. Once per frame, after the hand poses
+   are final and before anything reads them for aiming - see the block comment above. */
+static void VR_ApplyTwoHandedAim(float unitsPerMetre)
+{
+    extern int GlobalFrameCounter;
+    float rows[3][3], a[3], w[3], k[3], len, dot, ang, blend, c, s;
+    int i;
+    VECTORCH lt;
+    float trim_scale;
+
+    vr_two_hand_pose_ok = 1;
+
+    /* Only while the grip is genuinely held THIS frame: the blend is advanced by the
+       split draw, so if that did not run last frame (weapon released for a reload,
+       left hand lost, a non-two-handed weapon) the stored value is stale - not 0. */
+    if (!AutoTwoHandedWeapons || !vr_right_hand_valid || !vr_left_hand_valid) return;
+    if (GlobalFrameCounter - vr_two_hand_blend_frame > 1) return;
+    if (!VR_WeaponIsTwoHanded(vr_two_hand_grip_weapon)) return;
+
+    for (i = 0; i < 3; i++) {
+        const int *m = (i == 0) ? &vr_right_hand_mat.mat11
+                     : (i == 1) ? &vr_right_hand_mat.mat21 : &vr_right_hand_mat.mat31;
+        rows[i][0] = m[0] / 65536.0f; rows[i][1] = m[1] / 65536.0f; rows[i][2] = m[2] / 65536.0f;
+    }
+
+    /* a: the gun's grip-to-foregrip line in the world, as the right controller has it. */
+    for (i = 0; i < 3; i++)
+        a[i] = vr_two_hand_grip_local[0] * rows[0][i]
+             + vr_two_hand_grip_local[1] * rows[1][i]
+             + vr_two_hand_grip_local[2] * rows[2][i];
+
+    /* w: from the right grip to where the left palm is. */
+    /* Aim at the real hand when its place on the model is known (see
+       vr_two_hand_palm_local); the recorded grip line then ends at that same point. */
+    trim_scale = (vr_weapon_view_scale > 0.0f) ? vr_weapon_view_scale / VR_WEAPON_VIEW_SCALE : 1.0f;
+    lt = VR_TwoHandLeftRef(vr_two_hand_ref_is_controller
+                               ? vr_left_hand_world
+                               : VR_LeftPalmTarget(vr_two_hand_grip_weapon, trim_scale),
+                           vr_two_hand_grip_weapon);
+    w[0] = (float)(lt.vx - vr_right_hand_world.vx);
+    w[1] = (float)(lt.vy - vr_right_hand_world.vy);
+    w[2] = (float)(lt.vz - vr_right_hand_world.vz);
+    len = SDL_sqrtf(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
+    if (len < VR_TWO_HAND_MIN_SEP_M * unitsPerMetre) { vr_two_hand_pose_ok = 0; return; }
+    w[0] /= len; w[1] /= len; w[2] /= len;
+
+    len = SDL_sqrtf(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+    if (len < 0.0001f) return;
+    a[0] /= len; a[1] /= len; a[2] /= len;
+
+    dot = a[0]*w[0] + a[1]*w[1] + a[2]*w[2];
+    if (dot >  1.0f) dot =  1.0f;
+    if (dot < -1.0f) dot = -1.0f;
+    ang = SDL_acosf(dot);
+    if (ang > VR_TWO_HAND_MAX_DEG * (SDL_PI_F / 180.0f)) { vr_two_hand_pose_ok = 0; return; }
+
+    blend = vr_two_hand_blend_out;
+    if (blend <= 0.0f || ang < 0.0001f) return;
+
+    k[0] = a[1]*w[2] - a[2]*w[1];
+    k[1] = a[2]*w[0] - a[0]*w[2];
+    k[2] = a[0]*w[1] - a[1]*w[0];
+    len = SDL_sqrtf(k[0]*k[0] + k[1]*k[1] + k[2]*k[2]);
+    if (len < 0.0001f) return;
+    k[0] /= len; k[1] /= len; k[2] /= len;
+
+    /* Rodrigues on each axis row: the rows ARE the controller's axes in the world, so
+       rotating them rotates the frame about the grip (the position is untouched). */
+    ang *= blend;
+    c = SDL_cosf(ang); s = SDL_sinf(ang);
+    for (i = 0; i < 3; i++) {
+        float *r = rows[i], kr, kx[3], o[3];
+        int j;
+        kr = k[0]*r[0] + k[1]*r[1] + k[2]*r[2];
+        kx[0] = k[1]*r[2] - k[2]*r[1];
+        kx[1] = k[2]*r[0] - k[0]*r[2];
+        kx[2] = k[0]*r[1] - k[1]*r[0];
+        for (j = 0; j < 3; j++) o[j] = r[j]*c + kx[j]*s + k[j]*kr*(1.0f - c);
+        for (j = 0; j < 3; j++) r[j] = o[j];
+    }
+    vr_right_hand_mat.mat11 = (int)(rows[0][0]*65536.0f); vr_right_hand_mat.mat12 = (int)(rows[0][1]*65536.0f); vr_right_hand_mat.mat13 = (int)(rows[0][2]*65536.0f);
+    vr_right_hand_mat.mat21 = (int)(rows[1][0]*65536.0f); vr_right_hand_mat.mat22 = (int)(rows[1][1]*65536.0f); vr_right_hand_mat.mat23 = (int)(rows[1][2]*65536.0f);
+    vr_right_hand_mat.mat31 = (int)(rows[2][0]*65536.0f); vr_right_hand_mat.mat32 = (int)(rows[2][1]*65536.0f); vr_right_hand_mat.mat33 = (int)(rows[2][2]*65536.0f);
+}
+
 
 /* Blend two rotation-with-uniform-scale matrices.
  *
@@ -1215,38 +1576,79 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
         /* Where the palm should end up: the grip, plus this weapon's trim expressed in
            the controller's own frame (RotateVector(v,M) = M^T * v maps local -> world,
            the same step VR_ComputeWeaponAnchor uses for the right hand). */
-        VECTORCH target = vr_left_hand_world;
-        if (weaponID >= 0 && weaponID < MAX_NO_OF_WEAPON_TEMPLATES) {
-            const VR_HAND_TRIM *t = &vr_left_hand_trim[weaponID];
-            if (t->right | t->forward | t->up) {
-                VECTORCH wofs;
-                wofs.vx = t->right; wofs.vy = t->forward; wofs.vz = t->up;
-                RotateVector(&wofs, &vr_left_hand_mat);
-                /* SCALE THE TRIM WITH THE RIG, or the hand walks as vr_y_scale moves.
-                 *
-                 * Everything else keeps a constant PHYSICAL offset from the controller:
-                 * the rig's game-unit size is scale/vr_y_scale, which is invariant, and
-                 * the right hand gets the same treatment explicitly where the eye pass
-                 * pulls ObWorld toward the grip by wscale ("every part keeps a constant
-                 * physical offset from the hand at any wscale"). This trim was the one
-                 * term left in raw game units, so its physical size went as 1/vr_y_scale.
-                 *
-                 * Measured on Quest (2026-09-24), recentring seated then standing:
-                 * ref_head_y 1.161m -> 1.686m, vr_y_scale 1959 -> 1349, rig scale
-                 * 1.2789 -> 0.8806. The hands themselves were correct throughout (the
-                 * left-right separation held at 0.049m in both postures) - only this
-                 * offset grew, by ~45%, which is the left hand "moving back" when you
-                 * recentre standing up.
-                 *
-                 * Divided by VR_WEAPON_VIEW_SCALE deliberately: the factor is then
-                 * vr_y_scale/vr_weapon_ref_scale, which is exactly 1.0 at the posture the
-                 * session was calibrated in, so the tuned values in vr_left_hand_trim
-                 * keep their current meaning and need no re-tune. The right hand's
-                 * offsets carry the bare wscale because they were tuned with it applied. */
-                float trim_scale = scale / VR_WEAPON_VIEW_SCALE;
-                target.vx += (int)(wofs.vx * trim_scale);
-                target.vy += (int)(wofs.vy * trim_scale);
-                target.vz += (int)(wofs.vz * trim_scale);
+        /* VR_LeftPalmTarget applies the trim; the scale it is given is explained here. */
+        VECTORCH target = VR_LeftPalmTarget(weaponID, scale / VR_WEAPON_VIEW_SCALE);
+        /* SCALE THE TRIM WITH THE RIG, or the hand walks as vr_y_scale moves.
+         *
+         * Everything else keeps a constant PHYSICAL offset from the controller:
+         * the rig's game-unit size is scale/vr_y_scale, which is invariant, and
+         * the right hand gets the same treatment explicitly where the eye pass
+         * pulls ObWorld toward the grip by wscale ("every part keeps a constant
+         * physical offset from the hand at any wscale"). This trim was the one
+         * term left in raw game units, so its physical size went as 1/vr_y_scale.
+         *
+         * Measured on Quest (2026-09-24), recentring seated then standing:
+         * ref_head_y 1.161m -> 1.686m, vr_y_scale 1959 -> 1349, rig scale
+         * 1.2789 -> 0.8806. The hands themselves were correct throughout (the
+         * left-right separation held at 0.049m in both postures) - only this
+         * offset grew, by ~45%, which is the left hand "moving back" when you
+         * recentre standing up.
+         *
+         * Divided by VR_WEAPON_VIEW_SCALE deliberately: the factor is then
+         * vr_y_scale/vr_weapon_ref_scale, which is exactly 1.0 at the posture the
+         * session was calibrated in, so the tuned values in vr_left_hand_trim
+         * keep their current meaning and need no re-tune. The right hand's
+         * offsets carry the bare wscale because they were tuned with it applied. */
+
+        /* Record where this gun's foregrip sits in the right controller's frame, for
+           two-handed aiming (VR_ApplyTwoHandedAim). larmR is the authored left palm in
+           the PRIMARY rig, solved right-rooted above; world -> controller-local is the
+           dot with each axis row. */
+        /* The grab point on the gun, and what it is compared against: the real hand's
+           place on the model's hand when that is known, else the section origin and the
+           controller-plus-trim (see vr_two_hand_palm_local). */
+        int haveHandPoint = (weaponID >= 0 && weaponID < MAX_NO_OF_WEAPON_TEMPLATES
+                             && vr_two_hand_palm_local_ok[weaponID]);
+        VECTORCH gripPoint = larmR->World_Offset;
+        VECTORCH leftRef;
+        /* "Along gun" (vr_two_hand_grip_adj[2]): where the gripped hand is drawn,
+           slid along the line from the right grip. Applied to the hand's endpoint and
+           to the grab point alike, so the grab distance follows the hand you see. */
+        VECTORCH slide = { 0, 0, 0 };
+        if (haveHandPoint)
+            gripPoint = VR_SectionPoint(larmR, vr_two_hand_palm_local[weaponID]);
+        if (weaponID >= 0 && weaponID < MAX_NO_OF_WEAPON_TEMPLATES
+            && VR_WeaponIsTwoHanded(weaponID) && vr_two_hand_grip_adj[weaponID][2]) {
+            float dx = (float)(gripPoint.vx - vr_right_hand_world.vx);
+            float dy = (float)(gripPoint.vy - vr_right_hand_world.vy);
+            float dz = (float)(gripPoint.vz - vr_right_hand_world.vz);
+            float n  = SDL_sqrtf(dx*dx + dy*dy + dz*dz);
+            if (n > 1.0f) {
+                float d = vr_two_hand_grip_adj[weaponID][2] * 0.001f * vr_two_hand_units_per_m / n;
+                slide.vx = (int)(dx * d); slide.vy = (int)(dy * d); slide.vz = (int)(dz * d);
+                gripPoint.vx += slide.vx; gripPoint.vy += slide.vy; gripPoint.vz += slide.vz;
+            }
+        }
+        leftRef = VR_TwoHandLeftRef(haveHandPoint ? vr_left_hand_world : target, weaponID);
+#if AVP_VR_GRIP_TUNER
+        vr_grip_tune_weapon = weaponID;
+#endif
+        vr_two_hand_ref_is_controller = haveHandPoint;
+
+        if (larmR && VR_WeaponIsTwoHanded(weaponID)) {
+            float g[3], l[3], n;
+            g[0] = (float)(gripPoint.vx - vr_right_hand_world.vx);
+            g[1] = (float)(gripPoint.vy - vr_right_hand_world.vy);
+            g[2] = (float)(gripPoint.vz - vr_right_hand_world.vz);
+            l[0] = (g[0]*vr_right_hand_mat.mat11 + g[1]*vr_right_hand_mat.mat12 + g[2]*vr_right_hand_mat.mat13) / 65536.0f;
+            l[1] = (g[0]*vr_right_hand_mat.mat21 + g[1]*vr_right_hand_mat.mat22 + g[2]*vr_right_hand_mat.mat23) / 65536.0f;
+            l[2] = (g[0]*vr_right_hand_mat.mat31 + g[1]*vr_right_hand_mat.mat32 + g[2]*vr_right_hand_mat.mat33) / 65536.0f;
+            n = SDL_sqrtf(l[0]*l[0] + l[1]*l[1] + l[2]*l[2]);
+            if (n > 1.0f) {
+                vr_two_hand_grip_local[0] = l[0] / n;
+                vr_two_hand_grip_local[1] = l[1] / n;
+                vr_two_hand_grip_local[2] = l[2] / n;
+                vr_two_hand_grip_weapon   = weaponID;
             }
         }
 
@@ -1265,12 +1667,34 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
          * The measured correction below then lands the palm exactly there, as it
          * already does for the controller target. At blend 1 the split draw and the
          * un-split draw coincide, so there is nothing left to flip. */
-        if (vr_left_anim_blend > 0.0f && larmR) {
-            float t = vr_left_anim_blend;
+        /* Auto Two-Handed Weapons: the left controller near this gun's own grip is
+           the same handover as an animation - see AutoTwoHandedWeapons above. The
+           larger of the two blends wins, so neither can pull the arm off the other. */
+        float leftBlend = vr_left_anim_blend;
+        {
+            float distUnits = -1.0f;
+            if (AutoTwoHandedWeapons && VR_WeaponIsTwoHanded(weaponID) && larmR) {
+                float dx = (float)(leftRef.vx - gripPoint.vx);
+                float dy = (float)(leftRef.vy - gripPoint.vy);
+                float dz = (float)(leftRef.vz - gripPoint.vz);
+                distUnits = SDL_sqrtf(dx*dx + dy*dy + dz*dz);
+            }
+            {
+                float grip = VR_TwoHandGripBlend(weaponID, distUnits);
+                if (grip > leftBlend) leftBlend = grip;
+            }
+        }
+
+        if (leftBlend > 0.0f && larmR) {
+            float t = leftBlend;
             float u = 1.0f - t;
-            target.vx = (int)(target.vx * u + larmR->World_Offset.vx * t);
-            target.vy = (int)(target.vy * u + larmR->World_Offset.vy * t);
-            target.vz = (int)(target.vz * u + larmR->World_Offset.vz * t);
+            /* The slide belongs to the GRIP, not to an animation handover: scale it by
+               how much of this blend is the grip, so a medicomp or reload sequence
+               still lands the palm exactly where the animation puts it. */
+            float gs = (leftBlend > vr_left_anim_blend) ? 1.0f : 0.0f;
+            target.vx = (int)(target.vx * u + (larmR->World_Offset.vx + slide.vx * gs) * t);
+            target.vy = (int)(target.vy * u + (larmR->World_Offset.vy + slide.vy * gs) * t);
+            target.vz = (int)(target.vz * u + (larmR->World_Offset.vz + slide.vz * gs) * t);
             VR_BlendMatrixCH(&ObMat_B, &ObMat_B, &ObMat_A, t);
         }
 
@@ -1278,6 +1702,21 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
         PlayersWeapon.ObMat   = ObMat_B;
         PlayersWeapon.ObWorld = target;
         ProveHModel(&vr_left_hmc, &PlayersWeapon);
+
+        /* Learn where the real hand is on the model's hand (vr_two_hand_palm_local),
+           only while the arm is entirely on the controller. The solve above put the
+           palm at larmL->World_Offset; the measured shift below moves it to exactly
+           `target` without turning it, so the controller's place relative to the palm
+           is (controller - target) in the palm's own axes. */
+        if (leftBlend <= 0.0f && VR_WeaponIsTwoHanded(weaponID)) {
+            VECTORCH rel;
+            rel.vx = larmL->World_Offset.vx + (vr_left_hand_world.vx - target.vx);
+            rel.vy = larmL->World_Offset.vy + (vr_left_hand_world.vy - target.vy);
+            rel.vz = larmL->World_Offset.vz + (vr_left_hand_world.vz - target.vz);
+            VR_SectionLocal(larmL, rel, vr_two_hand_palm_local[weaponID]);
+            vr_two_hand_palm_local_ok[weaponID] = 1;
+        }
+
         ObWorld_B.vx = target.vx + (target.vx - larmL->World_Offset.vx);
         ObWorld_B.vy = target.vy + (target.vy - larmL->World_Offset.vy);
         ObWorld_B.vz = target.vz + (target.vz - larmL->World_Offset.vz);
@@ -3592,6 +4031,11 @@ void AvpShowViewsVR(void)
             }
         }
 
+        /* Auto Two-Handed Weapons: point the gun along the line between the hands while
+           the left hand holds its grip. Here because the hand poses are final now and
+           nothing has aimed with them yet - see VR_ApplyTwoHandedAim. Once a frame. */
+        if (eye == 0) VR_ApplyTwoHandedAim(vr_y_scale);
+
         /* The climbing view/hand/eye transforms above were settled on-device with
          * temporary particle markers and two logs (VRDBG, VRCEIL), removed
          * 2026-09-04. What they established, so it need not be re-measured:
@@ -4933,6 +5377,7 @@ void AvpShowViewsVR(void)
                         (AvP.PlayerType == I_Predator
                          && wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
                          && wpn->CurrentState == WEAPONSTATE_IDLE) ? "right stabme" : NULL;
+                    vr_two_hand_units_per_m = vr_y_scale;   /* physical grip distances */
                     if (!weapon_is_free
                         && VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
                         && PlayersWeapon.HModelControlBlock
@@ -5169,6 +5614,12 @@ void AvpShowViewsVR(void)
         {   /* live hand-tuning readout */
             extern void VR_TuneRenderHUD(void);
             VR_TuneRenderHUD();
+        }
+#endif
+#if AVP_VR_GRIP_TUNER
+        {   /* live two-handed grip readout */
+            extern void VR_GripTuneRenderHUD(void);
+            VR_GripTuneRenderHUD();
         }
 #endif
 #if AVP_VR_WORLD_TUNER

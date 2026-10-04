@@ -63,6 +63,7 @@ extern int VRVignetteOn;
 extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
+extern int AutoTwoHandedWeapons;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
 extern int LeftStickDeadzone;
 extern int RightStickDeadzone;
@@ -295,8 +296,8 @@ static int LoadUserProfiles(void)
 				continue;
 			}
 			if (got < sizeof(AVP_USER_PROFILE))
-				SDL_Log("PROFILE: '%s' predates controller support (%u of %u bytes) - "
-				        "loaded, controller settings defaulted",
+				SDL_Log("PROFILE: '%s' is from an older build (%u of %u bytes) - "
+				        "loaded, newer settings defaulted",
 				        pszFullPath, (unsigned)got, (unsigned)sizeof(AVP_USER_PROFILE));
 		}
 
@@ -347,6 +348,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRClimbVignetteOn = 1; /* wall-walk transition vignette on by default */
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
+	AutoTwoHandedWeapons = 1; /* left hand takes the grip when brought to it */
 	LeftStickDeadzone = 2;
 	RightStickDeadzone = 2;
 	PadVertSensitivity = 10;
@@ -493,6 +495,7 @@ extern void GetSettingsFromUserProfile(void)
 						: 5;
 	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
+	AutoTwoHandedWeapons =			!UserProfilePtr->AutoTwoHandedDisabled;
 	LeftStickDeadzone =			UserProfilePtr->LeftStickDeadzonePlus1
 					? UserProfilePtr->LeftStickDeadzonePlus1 - 1 : 2;
 	RightStickDeadzone =			UserProfilePtr->RightStickDeadzonePlus1
@@ -674,6 +677,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRClimbVignetteDisabled =	!VRClimbVignetteOn;
 	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
 	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
+	profilePtr->AutoTwoHandedDisabled =	(unsigned char)(AutoTwoHandedWeapons ? 0 : 1);
 	profilePtr->LeftStickDeadzonePlus1 =	(unsigned char)(LeftStickDeadzone + 1);
 	profilePtr->RightStickDeadzonePlus1 =	(unsigned char)(RightStickDeadzone + 1);
 	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);

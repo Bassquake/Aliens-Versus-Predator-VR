@@ -248,6 +248,15 @@ typedef struct
 	   has to be APPENDED, see above. */
 	unsigned char MenuBackgroundVideoDisabled; //0=On (default), 1=Off (was PadReserved)
 
+	/* ---- APPENDED after the controller block, the same way and for the same reason:
+	   PadReserved ran out. A profile written before this is a prefix of the struct and
+	   LoadUserProfiles leaves these bytes zero, so every field here must decode zero as
+	   its default. ExtReserved is headroom so the next options need not grow the struct
+	   again; take bytes out of it and shrink it to match. */
+	/* VR Configuration "Auto Two-Handed Weapons". Stored INVERTED - it defaults to On. */
+	unsigned char AutoTwoHandedDisabled;      //0=On (default), 1=Off
+	unsigned char ExtReserved[15];
+
 } AVP_USER_PROFILE;
 
 

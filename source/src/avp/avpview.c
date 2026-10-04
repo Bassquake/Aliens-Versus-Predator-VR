@@ -3381,6 +3381,48 @@ void AvpShowViewsVR(void)
         vr_head_world.vz = base_world.vz + vr_room_offset_z;
     }
 
+    /* HEADROOM: keep the VR eye below whatever is overhead - and the HANDS with it.
+     *
+     * The VR eye is placed from the player's REAL height, and World Scale lifts it
+     * further, while the body's collision extents are deliberately not scaled (see the
+     * note in los.c). So the eye can sit at or above the top of the collision body,
+     * and once the body is pressed against a ceiling - the jetpack does exactly that -
+     * the eye is already through it. Reported as vision clipping through ceilings
+     * while jetpacking.
+     *
+     * So cast straight up from base_world - the game's own camera, inside the body and
+     * therefore always on the right side of the ceiling - and if the eye would come
+     * within VR_HEADROOM_M of what it hits, push it down by the difference. Physical,
+     * via vr_y_scale, so it is the same real gap at any World Scale.
+     *
+     * ONE drop, applied like vr_crouch_drop to everything placed as
+     * "feet - height * vr_y_scale": both eyes, the hands (GRIP_TO_GAME) and
+     * vr_head_world. Lowering only the eyes was the first version, and it left the arms
+     * and weapon at their tracked height - i.e. drifting up toward the ceiling relative
+     * to the view. Measured at the eye MIDPOINT so the two eyes stay level.
+     *
+     * Same guards as the crouch drop: upright (a climb re-bases eyes and hands from
+     * base_world, where "up" is the surface's) and alive (the death clamp owns the eye). */
+    #define VR_HEADROOM_M 0.12f
+    int vr_headroom_drop = 0;
+    if (body_upright && vr_player_alive) {
+        extern int  LOS_Lambda;
+        extern DISPLAYBLOCK *LOS_ObjectHitPtr;
+        extern void FindPolygonInLineOfSight(VECTORCH *dir, VECTORCH *pos, int useOnScreen,
+                                             DISPLAYBLOCK *ignore);
+        VECTORCH up  = { 0, -ONE_FIXED, 0 };   /* +y is DOWN in game space */
+        VECTORCH src = base_world;
+        FindPolygonInLineOfSight(&up, &src, 0, Player);
+        /* Only a ceiling within reach of the eye matters; the sentinel for "nothing hit"
+           is 10,000,000 and fails this test on its own. */
+        if (LOS_ObjectHitPtr && LOS_Lambda < (int)(3.0f * vr_y_scale)) {
+            int limit_vy = base_world.vy - LOS_Lambda + (int)(VR_HEADROOM_M * vr_y_scale);
+            int eye_vy   = Player->ObWorld.vy - (int)(eye_mid_y * vr_y_scale) + vr_crouch_drop;
+            if (eye_vy < limit_vy) vr_headroom_drop = limit_vy - eye_vy;   /* +vy is down */
+        }
+    }
+    vr_head_world.vy += vr_headroom_drop;
+
     /* Reset hand pose validity; updated below from controller tracking. */
     vr_right_hand_valid = 0;
     vr_left_hand_valid  = 0;
@@ -3401,7 +3443,7 @@ void AvpShowViewsVR(void)
         } \
         (out_world).vx = base_world.vx + (int)(gdx * vr_y_scale); \
         (out_world).vy = Player->ObWorld.vy - (int)(VR_STAGE_Y((pose).position.y) * vr_y_scale) \
-                       + vr_crouch_drop; \
+                       + vr_crouch_drop + vr_headroom_drop; \
         (out_world).vz = base_world.vz - (int)(gdz * vr_y_scale); \
         QUAT gq; \
         gq.quatw =  (int)((pose).orientation.w * ONE_FIXED); \
@@ -3700,6 +3742,8 @@ void AvpShowViewsVR(void)
         if (vr_view_is_dead &&
             Player->ObWorld.vy - Global_VDB_Ptr->VDB_World.vy < VR_DEATH_MIN_HEAD_HEIGHT)
             Global_VDB_Ptr->VDB_World.vy = Player->ObWorld.vy - VR_DEATH_MIN_HEAD_HEIGHT;
+        /* Headroom: the same drop the hands were given (see vr_headroom_drop). */
+        Global_VDB_Ptr->VDB_World.vy += vr_headroom_drop;
         Global_VDB_Ptr->VDB_World.vz = base_world.vz
             - (int)(phys_dz * vr_y_scale);
 

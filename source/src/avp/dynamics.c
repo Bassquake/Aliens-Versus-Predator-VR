@@ -1591,12 +1591,46 @@ static int MoveObject(STRATEGYBLOCK *sbPtr)
 	
     		/* collision - elasticity */
 			{
+				/* An ANGLED CEILING must not turn the player's upward impulse into a
+				   sideways one. Removing the impulse's component along a sloped
+				   ceiling's normal leaves a slide along the slope, which has a
+				   horizontal part - and LinImpulse only loses its horizontal part
+				   through floor friction (IsInContactWithFloor), so it carried the
+				   player away from the slope for the whole flight, too strong for the
+				   quarter-speed airborne input to push back against, until they
+				   landed. Reported against the jetpack, which drives straight up into
+				   ceilings; a jump into one did the same, only less.
+
+				   So for the player (Marine and Predator - the Alien's gravity follows
+				   the surface it clings to, and that must stay untouched) hitting a
+				   surface that faces against gravity, the impulse keeps the
+				   perpendicular-to-gravity part it had BEFORE the hit: it stops rising
+				   or bounces back down, and moves sideways exactly as it already was.
+				   Normals point out of the surface (a floor reads < -60000 against
+				   gravity elsewhere in this file), so a ceiling reads positive; 16384
+				   takes anything tilted at least ~15 degrees toward the floor, which
+				   leaves walls alone. */
+				int ceilingHit = (sbPtr == Player->ObStrategyBlock
+				                  && AvP.PlayerType != I_Alien
+				                  && DotProduct(&obstacleNormal, &dynPtr->GravityDirection) > 16384);
+				VECTORCH impBefore = dynPtr->LinImpulse;
+
 				int magOfPerpImp =	MUL_FIXED
 									(
 										DotProduct(&obstacleNormal,&dynPtr->LinImpulse),
 										65536 + dynPtr->Elasticity
 									);
 				SubScaledVectorFromVector(obstacleNormal, magOfPerpImp, dynPtr->LinImpulse);
+
+				if (ceilingHit)
+				{
+					/* Swap the new along-gravity part onto the old perpendicular part:
+					   new = before - (before.g)g + (after.g)g, g being unit length. */
+					int gBefore = DotProduct(&impBefore, &dynPtr->GravityDirection);
+					int gAfter  = DotProduct(&dynPtr->LinImpulse, &dynPtr->GravityDirection);
+					dynPtr->LinImpulse = impBefore;
+					AddScaledVectorToVector(dynPtr->GravityDirection, gAfter - gBefore, dynPtr->LinImpulse);
+				}
 			}
 			/* momentum test */
 			/* OnlyCollideWithObjects flag indicates a platform lift etc. which should not be involved with momentum transfer */

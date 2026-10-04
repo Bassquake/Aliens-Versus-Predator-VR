@@ -672,21 +672,24 @@ int VR_Reach(int range)
         VR_SRC_L_GRIP,          /* SPECIAL - jetpack */ \
         VR_SRC_R_STICK_CLICK,   /* FLARE          */ \
         VR_SRC_R_STICK_UP,      /* NEXT_WEAPON    */ \
-        VR_SRC_R_STICK_DOWN     /* PREV_WEAPON    */ \
+        VR_SRC_R_STICK_DOWN,    /* PREV_WEAPON    */ \
+        VR_SRC_A | VR_BIND_HOLD /* RELOAD - A Hold; A's Use then fires on release */ \
     }, \
     /* [I_Predator] */ { \
         VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
         VR_SRC_A, VR_SRC_Y, VR_SRC_X, \
         VR_SRC_L_TRIGGER,       /* SPECIAL - recall disc */ \
         VR_SRC_R_STICK_CLICK,   /* FLARE slot = the Predator's CLOAK (see usr_io.c) */ \
-        VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN \
+        VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN, \
+        VR_SRC_A | VR_BIND_HOLD /* RELOAD - same as the Marine */ \
     }, \
     /* [I_Alien] */ { \
         VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
         VR_SRC_A, VR_SRC_Y, VR_SRC_X, \
         VR_SRC_NONE,            /* SPECIAL - Marine/Predator only */ \
         VR_SRC_NONE,            /* FLARE   - Marine only */ \
-        VR_SRC_NONE, VR_SRC_NONE /* NEXT/PREV WEAPON - one weapon only, see the pad table */ \
+        VR_SRC_NONE, VR_SRC_NONE, /* NEXT/PREV WEAPON - one weapon only, see the pad table */ \
+        VR_SRC_NONE             /* RELOAD - Marine and Predator only */ \
     } }
 
 int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;
@@ -718,7 +721,6 @@ int MarineLeftArmVisible = 1;
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;
 int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
-int ManualReloadEnabled = 0; /* "Manual Reload": 0=off (default), 1=on. Gates the VR knock + desktop R key. */
 /* "Swap Joysticks": 0=No (default), 1=Yes. ONE setting for both input paths - the VR
  * thumbsticks and the flat gamepad - so it is defined on every target, not just VR. */
 int SwapJoysticksEnabled = 0;
@@ -1219,6 +1221,8 @@ static int VR_ActionIsTap(int action)
         case VR_ACT_TAUNT:
         case VR_ACT_NEXT_WEAPON:
         case VR_ACT_PREV_WEAPON:
+        /* Reload once per press, as the keyboard and pad do. */
+        case VR_ACT_RELOAD:
             return 1;
         default:
             return 0;
@@ -1468,9 +1472,6 @@ int MarineLeftArmVisible = 1;
  * HUD progressively toward the centre of view for narrow-FOV headsets.
  * Consumed in AvpShowViewsVR when setting vr_hud_clip_scale. */
 int HUDInsetLevel = 0;
-/* "Manual Reload" (Controller Config): 0=off (default), 1=on. Gates the VR
- * controller-knock gesture and the desktop R key (checked in PlayerRequestManualReload). */
-int ManualReloadEnabled = 0;
 /* "Swap Joysticks" (Controller Config / Joystick Configuration): 0=No (default), 1=Yes.
  * Applied where each stick is READ, so everything downstream is untouched - see
  * VR_MoveStickAction below and the gamepad read in ReadJoysticks. */

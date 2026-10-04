@@ -1897,8 +1897,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 	/* Manual reload: rebindable key from the Marine/Predator key config (default R).
 	   The binding lives in the free config byte right after the standard keys
 	   (offset NUMBER_OF_*_INPUTS) of the live primary/secondary configs. Only while
-	   the player has control (not typing in the console or in a menu). On VR this is
-	   triggered by the controller proximity gesture instead. */
+	   the player has control (not typing in the console or in a menu). In VR it is
+	   the Reload binding (A Hold by default). */
 	if (IOFOCUS_AcceptControls() && !InGameMenusAreRunning())
 	{
 		int reloadByte = -1;
@@ -1915,7 +1915,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			  ||(ks!=KEY_VOID && ks!=KEY_ESCAPE && DebouncedKeyboardInput[ks])
 			  /* Pad: D-pad Left by default. Inside the same species test above, so
 			     the Alien - which has no reload - never reaches it. */
-			  ||Pad_Action(PAD_ACT_RELOAD))
+			  ||Pad_Action(PAD_ACT_RELOAD)
+			  ||VR_Action(VR_ACT_RELOAD))
 			{
 				extern void PlayerRequestManualReload(void);
 				PlayerRequestManualReload();

@@ -143,7 +143,7 @@ PS: Be aware I may rename the folder **cd_tracks** to **music** at some point.
 ![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers.jpg)
 
 > [!NOTE]
-> If you have Manual Reload on in the Controls setting of the game, to trigger it, you almost touch controllers close together.
+> Manual reload is **hold A** (Marine and Predator). A quick press of A still uses switches and doors. It can be rebound in the Controller Configuration for each species.
 
 > [!CAUTION]
 > If you've updated and find the controller buttons aren't right such as double action on the same button, I had to change the default layout slightly, it's best to reset to default and then customise if you need to.

@@ -74,7 +74,6 @@ extern int EnemySpeedAlien;
 extern int EnemySpeedMarine;
 extern int EnemySpeedPredator;
 extern int HUDInsetLevel;
-extern int ManualReloadEnabled;
 extern int SwapJoysticksEnabled;
 
 
@@ -363,7 +362,6 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	EnemySpeedMarine = 10;
 	EnemySpeedPredator = 10;
 	HUDInsetLevel = 0;       /* "Adjust HUD elements" defaults to level 1 (current layout) */
-	ManualReloadEnabled = 0; /* "Manual Reload" defaults to Off */
 	SwapJoysticksEnabled = 0; /* "Swap Joysticks" defaults to No */
 	/* All three reproduce the filtering the port had before these were options. */
 	AnisotropicFilterIndex = 0; /* 16x, matching the old always-maximum behaviour */
@@ -630,7 +628,6 @@ extern void GetSettingsFromUserProfile(void)
 	EnemySpeedMarine =			10 - UserProfilePtr->EnemySpeedMarine;
 	EnemySpeedPredator =			10 - UserProfilePtr->EnemySpeedPredator;
 	HUDInsetLevel =				UserProfilePtr->HUDInsetLevel;
-	ManualReloadEnabled =			UserProfilePtr->ManualReloadEnabled;
 	SwapJoysticksEnabled =			UserProfilePtr->SwapJoysticksEnabled;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
@@ -703,7 +700,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->EnemySpeedMarine =		10 - EnemySpeedMarine;
 	profilePtr->EnemySpeedPredator =	10 - EnemySpeedPredator;
 	profilePtr->HUDInsetLevel =		HUDInsetLevel;
-	profilePtr->ManualReloadEnabled =	ManualReloadEnabled;
+	profilePtr->ReservedWasManualReloadEnabled = 0;
 	profilePtr->SwapJoysticksEnabled =	SwapJoysticksEnabled;
    	strncpy(profilePtr->MultiplayerCallsign,MP_PlayerName,15);
 }

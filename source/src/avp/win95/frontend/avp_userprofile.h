@@ -104,7 +104,7 @@ typedef struct
 	unsigned char EnemySpeedMarine;   //main menu Cheats: marine enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char EnemySpeedPredator; //main menu Cheats: predator enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char HUDInsetLevel; //Controller Config: "Adjust HUD elements" 0=default,1,2 pull HUD toward centre (was Padding)
-	unsigned char ManualReloadEnabled; //Controller Config: "Manual Reload" 0=off (default), 1=on (was Padding)
+	unsigned char ReservedWasManualReloadEnabled; //"Manual Reload" gesture toggle, removed (now the Reload binding) - byte kept so the blob layout does not shift
 	/* AV Options texture filtering. All three are index 0 = the port's previous
 	   behaviour, which is required rather than tidy: these come out of Padding,
 	   so every profile written before they existed has zeroes here. See the

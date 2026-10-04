@@ -75,6 +75,11 @@ enum VR_ACTION {
     VR_ACT_FLARE,          /* Marine flare, an edge action */
     VR_ACT_NEXT_WEAPON,
     VR_ACT_PREV_WEAPON,
+    /* Marine and Predator manual reload (A Hold by default). Replaced the old
+       "touch the controllers together" gesture. Appended, so it lands in the 12th and
+       last slot of the profile's VRBindingPlus1[3][12]; profiles written before it
+       have a zero there and get the default. */
+    VR_ACT_RELOAD,
     VR_ACT_COUNT
 };
 

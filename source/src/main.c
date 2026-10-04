@@ -488,10 +488,18 @@ static const char * gamedatapath = NULL;
    Controller Configuration menu array references them on every target - only the
    links into that menu are gated, not the array itself. Defaults reproduce the
    original hard-coded scheme exactly, so an untouched profile plays as before. */
-/* Movement deadzone (General VR Configuration). Defined out here with VRBinding, ahead
-   of the AVP_XR split, because the menu array references it on every target.
-     VRMoveDeadzone  0..10, movement stick only; turning has its own
-                     (VRSmoothDeadzone) and they are not the same knob.
+/* Stick deadzones (VR Configuration and Joystick Configuration). Defined out here with
+   VRBinding, ahead of the AVP_XR split, because the menu arrays reference them on every
+   target.
+     LeftStickDeadzone   0..10 -> 0 .. 0.5 of full travel, the PHYSICAL left stick
+     RightStickDeadzone  0..10 -> 0 .. 0.5 of full travel, the PHYSICAL right stick
+   Both apply to the VR thumbsticks and to a flat gamepad alike. They follow the
+   hardware, not the role: "Swap Joysticks" moves movement onto the right stick, but a
+   deadzone exists to soak up a worn or drifting stick, so it stays with the stick.
+   StickDeadzoneFraction() is the one place that resolves that.
+   These replaced a separate Smooth Turn Deadzone, which stacked on top of the turn
+   stick's deadzone and made two sliders for one threshold; smooth turning now starts
+   as soon as the stick leaves its deadzone.
 
    Two options were built here and removed again, both worth knowing about before they
    are proposed a second time:
@@ -505,32 +513,43 @@ static const char * gamedatapath = NULL;
    are not mirrored on the hardware, so the result was a left hand wearing a right arm
    with A/B still on the right controller. It needs mirrored art to be worth having,
    not more input plumbing. */
-int VRMoveDeadzone = 2;
-int VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
-
+int LeftStickDeadzone = 2;
+int RightStickDeadzone = 2;
+
+/* The deadzone, as a fraction of full travel, for the stick currently doing a ROLE:
+   isLookStick 0 = the movement stick, 1 = the turn/look stick. Resolves Swap Joysticks
+   back to the physical stick, so a setting always follows the hardware. */
+static float StickDeadzoneFraction(int isLookStick)
+{
+    extern int SwapJoysticksEnabled;
+    const int physicalRight = isLookStick ? !SwapJoysticksEnabled : SwapJoysticksEnabled;
+    return (physicalRight ? RightStickDeadzone : LeftStickDeadzone) / 20.0f;
+}
+int VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 
 
-/* The live world scale, and the melee-reach helper that reads it (see vr_scale.h).
 
-   Both live out here, ahead of the AVP_XR split: the range macros in bh_pred.h and
+/* The live world scale, and the melee-reach helper that reads it (see vr_scale.h).
 
-   friends are unconditional, so the behaviour files call VR_Reach on every target.
+   Both live out here, ahead of the AVP_XR split: the range macros in bh_pred.h and
 
-   It returns the range untouched with no headset, so the flat game is unchanged. */
+   friends are unconditional, so the behaviour files call VR_Reach on every target.
 
-float vr_world_scale = VR_WorldScaleFromIndex(VR_WORLD_SCALE_DEFAULT_INDEX);
-
+   It returns the range untouched with no headset, so the flat game is unchanged. */
+
+float vr_world_scale = VR_WorldScaleFromIndex(VR_WORLD_SCALE_DEFAULT_INDEX);
 
 
-int VR_Reach(int range)
 
-{
+int VR_Reach(int range)
 
-    extern int VR_IsIn3DMode(void);
+{
 
-    if (!VR_IsIn3DMode() || vr_world_scale <= 1.001f) return range;
+    extern int VR_IsIn3DMode(void);
 
-    return (int)(range * vr_world_scale);
+    if (!VR_IsIn3DMode() || vr_world_scale <= 1.001f) return range;
+
+    return (int)(range * vr_world_scale);
 
 }
 
@@ -587,7 +606,6 @@ int VRRefreshRateHz     = 0;   /* chosen rate in Hz; 0 = unset. Saved in the pro
 int VRTurnMode          = 0;
 int VRSnapAngleIndex    = 1;
 int VRSmoothTurnSpeed   = 5;
-int VRSmoothDeadzone    = 4;
 int VRVignetteOn        = 1;
 int VRVignetteStrength  = 5;
 int VRClimbVignetteOn   = 1;
@@ -1284,8 +1302,6 @@ int VRTurnMode = 0;
 int VRSnapAngleIndex = 1;
 /* Smooth turn speed slider 0..10; maps to 60..180 deg/sec. Default 5 (~120 deg/sec). */
 int VRSmoothTurnSpeed = 5;
-/* Smooth turn deadzone slider 0..10; maps to 0.0..0.5 stick deflection. Default 4 (0.2). */
-int VRSmoothDeadzone = 4;
 /* Comfort vignette while smooth-turning: on/off + strength 0..10 (tunnel closure). */
 int VRVignetteOn = 1;
 int VRVignetteStrength = 5;
@@ -4039,13 +4055,12 @@ int axes, balls, hats;
             xr_left_stick_x = state.currentState.x;
             xr_left_stick_y = state.currentState.y;
         }
-        /* Movement deadzone, applied once here where the stick becomes movement.
+        /* Movement stick deadzone, applied once here where the stick becomes movement.
            Rescaled beyond the threshold rather than merely clipped, so the full speed
-           range is still reachable however large the deadzone is set. The turning
-           stick has its own deadzone (VRSmoothDeadzone) - these are different sticks
-           and different settings. */
+           range is still reachable however large the deadzone is set. Left or Right
+           Joystick Deadzone, whichever physical stick is moving (Swap Joysticks). */
         {
-            float dz = VRMoveDeadzone / 20.0f;   /* 0..10 -> 0 .. 0.5 of full travel */
+            float dz = StickDeadzoneFraction(0);
             float mag = SDL_sqrtf(xr_left_stick_x*xr_left_stick_x
                                 + xr_left_stick_y*xr_left_stick_y);
             if (dz > 0.0f && mag > 0.0f) {
@@ -4081,7 +4096,6 @@ int axes, balls, hats;
             static bool xr_prev_weapon_armed = true;
             const float SNAP_THRESHOLD  = 0.6f;
             const float SNAP_REARM_ZONE = 0.3f;
-            const float SMOOTH_DEADZONE = (float)VRSmoothDeadzone * 0.05f; /* 0..10 -> 0.0..0.5 */
             /* Snap angles in game units (4096 = full circle): 30/45/60/90 degrees. */
             static const int SNAP_ANGLES[4] = { 341, 512, 683, 1024 };
 
@@ -4092,6 +4106,24 @@ int axes, balls, hats;
             if (XR_SUCCEEDED(pfn_xrGetActionStateVector2f(xr_session, &rget, &rstate)) && rstate.isActive) {
                 rx = rstate.currentState.x;
                 ry = rstate.currentState.y;
+            }
+            /* Turn stick deadzone: radial and rescaled, exactly as the movement stick
+               above, so snap/smooth turning and weapon cycling all see a stick that
+               still reaches full deflection. This is the ONLY turn threshold for smooth
+               turning - there is no separate smooth-turn deadzone any more. */
+            {
+                float dz  = StickDeadzoneFraction(1);
+                float mag = SDL_sqrtf(rx*rx + ry*ry);
+                if (dz > 0.0f && mag > 0.0f) {
+                    if (mag <= dz) {
+                        rx = 0.0f;
+                        ry = 0.0f;
+                    } else {
+                        float scale = ((mag - dz) / (1.0f - dz)) / mag;
+                        rx *= scale;
+                        ry *= scale;
+                    }
+                }
             }
 
 #if AVP_VR_WORLD_TUNER
@@ -4197,7 +4229,7 @@ int axes, balls, hats;
                 /* Smooth turn: continuously accumulate yaw, scaled by stick deflection.
                  * Speed slider 0..100 maps to ~60..180 deg/sec. RealFrameTime is fixed-
                  * point seconds (65536 = 1s). */
-                if (rx > SMOOTH_DEADZONE || rx < -SMOOTH_DEADZONE) {
+                if (rx != 0.0f) {   /* already past the Right/Left Joystick Deadzone above */
                     extern int RealFrameTime;
                     float dt          = (float)RealFrameTime / 65536.0f;
                     float deg_per_sec = 60.0f + (float)VRSmoothTurnSpeed * 12.0f;
@@ -4776,7 +4808,10 @@ int axes, balls, hats;
      * Deadzones are applied per stick and RESCALED, not clipped, so there is no jump as
      * the stick leaves the dead area. */
     if (Pad_IsActive()) {
-        const float DEAD = 0.20f;
+        /* Left / Right Joystick Deadzone, resolved to the role each stick is playing. */
+        const float moveDead = StickDeadzoneFraction(0);
+        const float lookDead = StickDeadzoneFraction(1);
+        float DEAD;
         /* "Swap Joysticks" (Joystick Configuration). Swapped HERE, at the read, so the
            deadzones and everything downstream in usr_io.c are untouched - lx/ly stay
            "the movement stick" and rx/ly "the look stick" whichever physical stick that
@@ -4797,8 +4832,8 @@ int axes, balls, hats;
         float ry = SDL_GetGamepadAxis(gamepad, lookY) / 32767.0f;
 
         #define PAD_DEADZONE(v) do {             float m = (v) < 0.0f ? -(v) : (v);             if (m <= DEAD) (v) = 0.0f;             else { m = (m - DEAD) / (1.0f - DEAD); (v) = ((v) < 0.0f) ? -m : m; }         } while (0)
-        PAD_DEADZONE(lx); PAD_DEADZONE(ly);
-        PAD_DEADZONE(rx); PAD_DEADZONE(ry);
+        DEAD = moveDead; PAD_DEADZONE(lx); PAD_DEADZONE(ly);
+        DEAD = lookDead; PAD_DEADZONE(rx); PAD_DEADZONE(ry);
         #undef PAD_DEADZONE
 
         /* Both sticks are applied DIRECTLY (usr_io.c turns these into movement and look

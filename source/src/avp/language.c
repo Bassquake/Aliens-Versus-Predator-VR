@@ -229,8 +229,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. Triggers, grips, A/B/Y and stick clicks are held; X and stick up/down register a single press.";
 			case TEXTSTRING_VRWORLDSCALE:       return "World Scale (Default: 1.30)";
 			case TEXTSTRING_VRWORLDSCALE_HELP:  return "How large the world feels. Higher values make one real step cover more ground, so the world seems smaller.";
-			case TEXTSTRING_VRMOVEDEADZONE:     return "Movement Deadzone";
-			case TEXTSTRING_VRMOVEDEADZONE_HELP:return "How far the movement stick must be pushed before you start moving. Turning has its own deadzone.";
+			case TEXTSTRING_LEFTSTICKDEADZONE:     return "Left Joystick Deadzone";
+			case TEXTSTRING_LEFTSTICKDEADZONE_HELP:return "How far the left stick must be pushed before it registers. Applies to VR controllers and to a gamepad, and stays with the left stick if the sticks are swapped.";
 			case TEXTSTRING_BIND_RESET:         return "Reset All To Default";
 			case TEXTSTRING_BIND_RESET_HELP:    return "Put every control for this species back to its original mapping. Use These Settings still has to be chosen to keep it.";
 
@@ -326,6 +326,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_SWAPJOYSTICKS_NO:   return "No (Default)";
 			case TEXTSTRING_SWAPJOYSTICKS_YES:  return "Yes";
 			case TEXTSTRING_SWAPJOYSTICKS_HELP: return "Swap the left and right sticks: movement moves to the right stick and turning to the left. Applies to VR controllers and to a gamepad.";
+			case TEXTSTRING_RIGHTSTICKDEADZONE:      return "Right Joystick Deadzone";
+			case TEXTSTRING_RIGHTSTICKDEADZONE_HELP: return "How far the right stick must be pushed before it registers. Applies to VR controllers and to a gamepad, and stays with the right stick if the sticks are swapped.";
 			default: break;
 		}
 	}

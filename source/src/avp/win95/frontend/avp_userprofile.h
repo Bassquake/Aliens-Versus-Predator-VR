@@ -95,7 +95,7 @@ typedef struct
 	unsigned char ReservedWasFSRQualityIndex;
 	unsigned char VRSnapAngleIndex; //VR snap turn angle: 0=30,1=45,2=60,3=90
 	unsigned char VRSmoothTurnSpeed; //VR smooth turn speed: 0..10
-	unsigned char VRSmoothDeadzone; //VR smooth turn deadzone: 0..10
+	unsigned char ReservedWasVRSmoothDeadzone; //Smooth Turn Deadzone, removed (replaced by the stick deadzones) - byte kept so the blob layout does not shift
 	unsigned char VRVignetteOn; //VR comfort vignette: 0=off, 1=on
 	unsigned char VRVignetteStrength; //VR comfort vignette strength: 0..10
 	unsigned char GiveAllWeaponsCheat; //main menu Cheats: give all weapons at level start (single-player only). 0=off (was Padding)
@@ -157,7 +157,7 @@ typedef struct
 	unsigned char ReservedWasVRRumbleOff;       //Rumble toggle, removed - byte kept so the blob layout does not shift
 	unsigned char ReservedWasVRRumbleStrength;  //Rumble strength, removed - ditto
 	unsigned char ReservedWasVRLeftHanded; //Left-Handed Mode, removed - byte kept so the blob layout does not shift
-	unsigned char VRMoveDeadzonePlus1;    //0=unset->2
+	unsigned char LeftStickDeadzonePlus1;    //0=unset->2
 	unsigned char VRWorldScaleIndexPlus1; //0=unset->VR_WORLD_SCALE_DEFAULT_INDEX
 	/* Flat-build game controller (padinput.h). Both stored +1 so that ZERO - which is
 	   what every profile written before this existed has here - means "not set" and
@@ -235,7 +235,11 @@ typedef struct
 	   PadReserved, so sizeof(AVP_USER_PROFILE) is unchanged and old .prf files still
 	   load: that is the whole reason the reserved bytes are there. */
 	unsigned char SwapJoysticksEnabled;       //0=No (default), 1=Yes (was PadReserved)
-	char PadReserved[3];                      //room for the next option
+	/* "Right Joystick Deadzone", the partner of LeftStickDeadzonePlus1 above (which
+	   lives in the old region because it predates this block). Taken out of
+	   PadReserved for the same reason SwapJoysticksEnabled was. */
+	unsigned char RightStickDeadzonePlus1;    //0=unset->2 (was PadReserved)
+	char PadReserved[2];                      //room for the next option
 
 } AVP_USER_PROFILE;
 

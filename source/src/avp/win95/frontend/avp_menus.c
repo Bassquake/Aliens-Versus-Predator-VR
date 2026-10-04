@@ -103,7 +103,6 @@ extern int MSAASampleIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
-extern int VRSmoothDeadzone;
 extern int VRVignetteOn;
 extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
@@ -371,7 +370,6 @@ int AvP_MainMenus(void)
 			int savedVRTurnMode = VRTurnMode;
 			int savedVRSnapAngleIndex = VRSnapAngleIndex;
 			int savedVRSmoothTurnSpeed = VRSmoothTurnSpeed;
-			int savedVRSmoothDeadzone = VRSmoothDeadzone;
 			int savedVRVignetteOn = VRVignetteOn;
 			int savedVRVignetteStrength = VRVignetteStrength;
 			int savedVRClimbVignetteOn = VRClimbVignetteOn;
@@ -391,7 +389,6 @@ int AvP_MainMenus(void)
 					savedVRTurnMode = VRTurnMode;
 					savedVRSnapAngleIndex = VRSnapAngleIndex;
 					savedVRSmoothTurnSpeed = VRSmoothTurnSpeed;
-					savedVRSmoothDeadzone = VRSmoothDeadzone;
 					savedVRVignetteOn = VRVignetteOn;
 					savedVRVignetteStrength = VRVignetteStrength;
 					savedVRClimbVignetteOn = VRClimbVignetteOn;
@@ -416,7 +413,6 @@ int AvP_MainMenus(void)
 			VRTurnMode = savedVRTurnMode;
 			VRSnapAngleIndex = savedVRSnapAngleIndex;
 			VRSmoothTurnSpeed = savedVRSmoothTurnSpeed;
-			VRSmoothDeadzone = savedVRSmoothDeadzone;
 			VRVignetteOn = savedVRVignetteOn;
 			VRVignetteStrength = savedVRVignetteStrength;
 			VRClimbVignetteOn = savedVRClimbVignetteOn;
@@ -1502,7 +1498,6 @@ static int MenuElementIsDisabled(const AVPMENU_ELEMENT *elementPtr)
 			case TEXTSTRING_VRSNAP_ANGLE:
 				return smooth;
 			case TEXTSTRING_VRSMOOTH_SPEED:
-			case TEXTSTRING_VRSMOOTH_DEADZONE:
 			case TEXTSTRING_VRVIGNETTE:
 			case TEXTSTRING_VRVIGNETTE_STRENGTH:
 				return !smooth;

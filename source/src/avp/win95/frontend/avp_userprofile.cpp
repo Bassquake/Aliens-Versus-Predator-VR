@@ -57,13 +57,13 @@ extern int DesktopMirrorIndex;
 extern int VRTurnMode;
 extern int VRSnapAngleIndex;
 extern int VRSmoothTurnSpeed;
-extern int VRSmoothDeadzone;
 extern int VRVignetteOn;
 extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
-extern int VRMoveDeadzone;
+extern int LeftStickDeadzone;
+extern int RightStickDeadzone;
 extern int VRWorldScaleIndex;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
@@ -323,12 +323,12 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRTurnMode = 0; /* snap turn by default */
 	VRSnapAngleIndex = 1; /* 45 degrees by default */
 	VRSmoothTurnSpeed = 5; /* mid speed by default (0..10) */
-	VRSmoothDeadzone = 4; /* 0.2 deflection by default (0..10) */
 	VRVignetteOn = 1; /* comfort vignette on by default */
 	VRClimbVignetteOn = 1; /* wall-walk transition vignette on by default */
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
-	VRMoveDeadzone = 2;
+	LeftStickDeadzone = 2;
+	RightStickDeadzone = 2;
 	PadVertSensitivity = 10;
 	PadHorizSensitivity = 10;
 	PadInvertVertical = 0;
@@ -463,7 +463,6 @@ extern void GetSettingsFromUserProfile(void)
 	VRTurnMode =				UserProfilePtr->VRTurnMode;
 	VRSnapAngleIndex =			UserProfilePtr->VRSnapAngleIndex;
 	VRSmoothTurnSpeed =			UserProfilePtr->VRSmoothTurnSpeed;
-	VRSmoothDeadzone =			UserProfilePtr->VRSmoothDeadzone;
 	VRVignetteOn =				UserProfilePtr->VRVignetteOn;
 	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
 	VRClimbVignetteOn =			!UserProfilePtr->VRClimbVignetteDisabled;
@@ -473,8 +472,10 @@ extern void GetSettingsFromUserProfile(void)
 						: 5;
 	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
-	VRMoveDeadzone =			UserProfilePtr->VRMoveDeadzonePlus1
-					? UserProfilePtr->VRMoveDeadzonePlus1 - 1 : 2;
+	LeftStickDeadzone =			UserProfilePtr->LeftStickDeadzonePlus1
+					? UserProfilePtr->LeftStickDeadzonePlus1 - 1 : 2;
+	RightStickDeadzone =			UserProfilePtr->RightStickDeadzonePlus1
+					? UserProfilePtr->RightStickDeadzonePlus1 - 1 : 2;
 	VRWorldScaleIndex =			UserProfilePtr->VRWorldScaleIndexPlus1
 					? UserProfilePtr->VRWorldScaleIndexPlus1 - 1
 					: VR_WORLD_SCALE_DEFAULT_INDEX;
@@ -639,12 +640,13 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRTurnMode =		VRTurnMode;
 	profilePtr->VRSnapAngleIndex =		VRSnapAngleIndex;
 	profilePtr->VRSmoothTurnSpeed =		VRSmoothTurnSpeed;
-	profilePtr->VRSmoothDeadzone =		VRSmoothDeadzone;
+	profilePtr->ReservedWasVRSmoothDeadzone = 0;
 	profilePtr->VRVignetteOn =		VRVignetteOn;
 	profilePtr->VRClimbVignetteDisabled =	!VRClimbVignetteOn;
 	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
 	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
-	profilePtr->VRMoveDeadzonePlus1 =	(unsigned char)(VRMoveDeadzone + 1);
+	profilePtr->LeftStickDeadzonePlus1 =	(unsigned char)(LeftStickDeadzone + 1);
+	profilePtr->RightStickDeadzonePlus1 =	(unsigned char)(RightStickDeadzone + 1);
 	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);
 	{
 		int sp, i;

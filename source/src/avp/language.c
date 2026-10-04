@@ -334,6 +334,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_150:  return "1.5x";
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_175:  return "1.75x";
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_200:  return "2.0x";
+			case TEXTSTRING_AVOPTIONS_MENUVIDEO:      return "Use Video Background For Menu";
+			case TEXTSTRING_AVOPTIONS_MENUVIDEO_HELP: return "Play the animated video behind the menus like Gold Edition instead of the still background from Classic 2000.";
+			case TEXTSTRING_AVOPTIONS_MENUVIDEO_OFF:  return "Off";
+			case TEXTSTRING_AVOPTIONS_MENUVIDEO_ON:   return "On (Default)";
 			case TEXTSTRING_RIGHTSTICKDEADZONE_HELP: return "How far the right stick must be pushed before it registers. Applies to VR controllers and to a gamepad, and stays with the right stick if the sticks are swapped.";
 			default: break;
 		}

@@ -242,7 +242,11 @@ typedef struct
 	/* AV Options "Enlarge Messages Text". Stored plain: the default is Off, so the
 	   zero every older profile has here already decodes to it. */
 	unsigned char EnlargeMessagesText;        //0=Off (default), 1=1.25x, 2=1.5x, 3=1.75x, 4=2.0x (was PadReserved)
-	char PadReserved[1];                      //room for the next option
+	/* AV Options "Use Video Background For Menu". Stored INVERTED, like
+	   ShowCrosshairDisabled: the option defaults to On, and the zero every older profile
+	   has here has to decode to that. The last PadReserved byte: anything after this
+	   has to be APPENDED, see above. */
+	unsigned char MenuBackgroundVideoDisabled; //0=On (default), 1=Off (was PadReserved)
 
 } AVP_USER_PROFILE;
 

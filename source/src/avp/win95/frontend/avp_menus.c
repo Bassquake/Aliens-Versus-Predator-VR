@@ -5643,31 +5643,12 @@ extern void DrawMainMenusBackdrop(void)
 {
     //SDL_Log("DrawMainMenusBackdrop: PlayMenuBackgroundBink=%d", PlayMenuBackgroundBink());
 	#if 1
+	/* "Use Video Background For Menu" (Audio/Video Options). When it is on and a frame is
+	   available, PlayMenuBackgroundBink has already painted the whole 640x480
+	   surface, letterbox bars included, so there is nothing more to do here. */
 	if (!PlayMenuBackgroundBink())
 	{
 		DrawAvPMenuGfx(AVPMENUGFX_BACKDROP,0,0,ONE_FIXED+1,AVPMENUFORMAT_LEFTJUSTIFIED);
-	}
-	else
-	{
-		extern unsigned char *ScreenBuffer;
-		unsigned int *screenPtr = (unsigned int*)ScreenBuffer;
-		int i;	  
-
-		i = ScreenDescriptorBlock.SDB_Width * 60 /2;
-		do
-		{
-			*screenPtr++=0; 
-		}
-		while(--i);
-
-		screenPtr+=ScreenDescriptorBlock.SDB_Width * 360/2;
-
-		i = ScreenDescriptorBlock.SDB_Width * 60 /2;
-		do
-		{
-			*screenPtr++=0; 
-		}
-		while(--i);
 	}
 
 

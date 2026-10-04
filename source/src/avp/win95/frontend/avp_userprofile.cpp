@@ -41,6 +41,7 @@ extern int SmackerSoundVolume;
 extern int EffectsSoundVolume;
 extern int MoviesAreActive;
 extern int IntroOutroMoviesAreActive;
+extern int MenuBackgroundVideoEnabled;
 extern char MP_PlayerName[];
 extern int AutoWeaponChangeOn;
 extern int ShowCrosshair;
@@ -100,7 +101,24 @@ extern void ExamineSavedUserProfiles(void)
 
 	strncpy(profilePtr->Name,GetTextString(TEXTSTRING_USERPROFILE_NEW),MAX_SIZE_OF_USERS_NAME);
 	profilePtr->Name[MAX_SIZE_OF_USERS_NAME]=0;
-	SetDefaultProfileOptions(profilePtr);
+	{
+		/* SetDefaultProfileOptions writes the LIVE globals as well as this placeholder
+		   entry, and this runs every time the profile list is built - including on the
+		   way into Choose Profile. The settings seeded from config.cfg exist precisely
+		   to govern the screens shown before a profile is loaded (see the #MENUVIDEO /
+		   #DESKTOPMIRROR / #INTROMOVIES notes in main.c), so the placeholder must not
+		   reset them: "Use Video Background For Menu: Off" was showing the video on the
+		   profile screen anyway, because this put it back to its default of On. */
+		const int liveMenuVideo   = MenuBackgroundVideoEnabled;
+		const int liveMirror      = DesktopMirrorIndex;
+		const int liveIntroMovies = IntroOutroMoviesAreActive;
+
+		SetDefaultProfileOptions(profilePtr);
+
+		MenuBackgroundVideoEnabled = liveMenuVideo;
+		DesktopMirrorIndex         = liveMirror;
+		IntroOutroMoviesAreActive  = liveIntroMovies;
+	}
 
 	InsertProfileIntoList(profilePtr);
 }
@@ -315,6 +333,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	CDPlayerVolume = CDDA_VOLUME_DEFAULT;
 	MoviesAreActive = 1;
 	IntroOutroMoviesAreActive = 1; 
+	MenuBackgroundVideoEnabled = 1;
 	AutoWeaponChangeOn = TRUE;
 	ShowCrosshair = 1;
 	EnlargeMessagesText = 0;
@@ -440,6 +459,7 @@ extern void GetSettingsFromUserProfile(void)
 	CDPlayerVolume = 				UserProfilePtr->CDPlayerVolume;
 	MoviesAreActive =				UserProfilePtr->MoviesAreActive;
 	IntroOutroMoviesAreActive =		UserProfilePtr->IntroOutroMoviesAreActive;
+	MenuBackgroundVideoEnabled =		!UserProfilePtr->MenuBackgroundVideoDisabled;
 	AutoWeaponChangeOn = 			!UserProfilePtr->AutoWeaponChangeDisabled;
 	ShowCrosshair =				!UserProfilePtr->ShowCrosshairDisabled;
 	EnlargeMessagesText =			(UserProfilePtr->EnlargeMessagesText <= 4) ? UserProfilePtr->EnlargeMessagesText : 0;
@@ -628,6 +648,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->CDPlayerVolume = 				CDPlayerVolume;
 	profilePtr->MoviesAreActive =				MoviesAreActive;
 	profilePtr->IntroOutroMoviesAreActive =		IntroOutroMoviesAreActive;
+	profilePtr->MenuBackgroundVideoDisabled =	(unsigned char)(MenuBackgroundVideoEnabled ? 0 : 1);
 	profilePtr->AutoWeaponChangeDisabled =	!AutoWeaponChangeOn;
 	profilePtr->ShowCrosshairDisabled =	!ShowCrosshair;
 	profilePtr->EnlargeMessagesText =	(unsigned char)EnlargeMessagesText;

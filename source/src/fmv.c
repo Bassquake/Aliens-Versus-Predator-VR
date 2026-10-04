@@ -980,6 +980,33 @@ bik_done:
 
 /* ── Looping menu background video ─────────────────────────────────────── */
 static FMVTEXTURE menu_bik_ftex;
+void EndMenuBackgroundBink(void);
+
+/* AV Options "Use Video Background For Menu": 0 = the stock still backdrop,
+   1 = fmvs/menubackground.bik looping behind the menus, as the 1999 PC release did
+   (default).
+   Stored in the profile and seeded from config.cfg (#MENUVIDEO, main.c), because
+   the menus are on screen long before a profile is chosen. */
+int MenuBackgroundVideoEnabled = 1;
+
+/* The last decoded background frame, already converted to the menu surface's
+   RGB565 and letterboxed into the full 640x480. It is copied into the surface on
+   EVERY menu frame, not just when a new video frame is decoded: the menu is an
+   ADDITIVE compositor (see menus.c) that sums glyphs and glow into whatever is in
+   the surface, so the backdrop has to be repainted from clean pixels each frame
+   or the text accumulates on top of itself until it saturates white. That is the
+   bug that had this path disabled since the original port - the video runs at
+   15 fps, so the old code left the surface untouched on most frames.
+
+   Its own buffer rather than bik_frame_rgba, which PlayBinkedFMV also scribbles
+   on while a full-screen film plays from inside the menus. */
+static Uint16 menu_bik_frame565[640 * 480];
+static int menu_bik_have_frame = 0;
+static int menu_bik_out_w = 640, menu_bik_out_h = 480;
+/* Latched when the file cannot be opened, so a missing or unreadable video is
+   tried once rather than re-opened on every menu frame. Cleared when the option
+   is switched off, so turning it back on tries again. */
+static int menu_bik_failed = 0;
 
 static void fmv_open_background(FMVTEXTURE *ftPtr, const char *path)
 {
@@ -1031,10 +1058,23 @@ static void fmv_open_background(FMVTEXTURE *ftPtr, const char *path)
 		ftPtr->fmv_codec_ctx = vctx;
 		if (avcodec_parameters_to_context(vctx, vpar) < 0 || avcodec_open2(vctx, vc, NULL) < 0)
 			{ fmv_close_decoder(ftPtr); return; }
+		/* Aspect-preserving fit into 640x480, as PlayBinkedFMV does. The stock
+		   menubackground.bik is 640x380, so this letterboxes it rather than
+		   stretching it to 4:3. */
+		if (vctx->width <= 0 || vctx->height <= 0) { fmv_close_decoder(ftPtr); return; }
+		menu_bik_out_w = 640;
+		menu_bik_out_h = (640 * vctx->height + vctx->width / 2) / vctx->width;
+		if (menu_bik_out_h > 480) {
+			menu_bik_out_h = 480;
+			menu_bik_out_w = (480 * vctx->width + vctx->height / 2) / vctx->height;
+			if (menu_bik_out_w > 640) menu_bik_out_w = 640;
+		}
 		struct SwsContext *sws = sws_getContext(vctx->width, vctx->height, vctx->pix_fmt,
-		                                        640, 480, AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
+		                                        menu_bik_out_w, menu_bik_out_h, AV_PIX_FMT_RGBA,
+		                                        SWS_BILINEAR, NULL, NULL, NULL);
 		if (!sws) { fmv_close_decoder(ftPtr); return; }
 		ftPtr->fmv_sws_ctx = sws;
+		menu_bik_have_frame = 0;
 	}
 
 	AVFrame *vf = av_frame_alloc();  if (!vf)  { fmv_close_decoder(ftPtr); return; }
@@ -1079,13 +1119,27 @@ static void fmv_open_background(FMVTEXTURE *ftPtr, const char *path)
 	FMV_LOG("fmv_open_background: ready");
 }
 
+/* Paint the held background frame into the menu surface. Returns 1 if there was
+   one to paint, 0 if nothing has been decoded yet (caller draws the stock backdrop). */
+static int fmv_blit_menu_bik_frame(void)
+{
+	extern SDL_Surface *surface;
+
+	if (!menu_bik_have_frame) return 0;
+	if (surface && surface->pixels)
+		memcpy(surface->pixels, menu_bik_frame565, sizeof(menu_bik_frame565));
+	return 1;
+}
+
 static int fmv_render_bik_frame(FMVTEXTURE *ftPtr)
 {
-	/* Returns 1 if the surface has a valid video frame (new or held). */
+	/* Returns 1 if the surface now holds a video frame (new or held). */
 	if (!ftPtr->fmv_active) return 0;
 
-	/* Still within current frame's display window — nothing new to decode */
-	if ((int)((unsigned int)SDL_GetTicks() - ftPtr->fmv_next_frame_ms) < 0) return 1;
+	/* Still within current frame's display window — nothing new to decode, but the
+	   surface still has to be repainted (see menu_bik_frame565). */
+	if ((int)((unsigned int)SDL_GetTicks() - ftPtr->fmv_next_frame_ms) < 0)
+		return fmv_blit_menu_bik_frame();
 
 	AVFormatContext   *fmt_ctx = (AVFormatContext   *)ftPtr->fmv_fmt_ctx;
 	AVCodecContext    *vctx    = (AVCodecContext    *)ftPtr->fmv_codec_ctx;
@@ -1108,9 +1162,9 @@ static int fmv_render_bik_frame(FMVTEXTURE *ftPtr)
 			avcodec_flush_buffers(vctx);
 			if (actx) avcodec_flush_buffers(actx);
 			ftPtr->fmv_start_ms = ftPtr->fmv_next_frame_ms = (unsigned int)SDL_GetTicks();
-			return 1; /* keep showing last frame while seeking */
+			return fmv_blit_menu_bik_frame(); /* keep showing last frame while seeking */
 		}
-		if (ret < 0) return 1;
+		if (ret < 0) return fmv_blit_menu_bik_frame();
 
 		if (packet->stream_index == aud_idx && actx && aframe) {
 			avcodec_send_packet(actx, packet);
@@ -1134,15 +1188,26 @@ static int fmv_render_bik_frame(FMVTEXTURE *ftPtr)
 		av_packet_unref(packet);
 		if (avcodec_receive_frame(vctx, vframe) == 0) {
 			uint8_t *dst[1] = { bik_frame_rgba };
-			int  dst_s[1]   = { 640 * 4 };
+			int  dst_s[1]   = { menu_bik_out_w * 4 };
+			const int x_off = (640 - menu_bik_out_w) / 2;
+			const int y_off = (480 - menu_bik_out_h) / 2;
+			int row, col;
 			sws_scale(sws, (const uint8_t * const *)vframe->data, vframe->linesize,
 			          0, vframe->height, dst, dst_s);
-			if (surface) {
+			/* Letterbox bars are black; the frame goes in the middle. */
+			memset(menu_bik_frame565, 0, sizeof(menu_bik_frame565));
+			{
 				const unsigned char *src = bik_frame_rgba;
-				Uint16 *px = (Uint16 *)surface->pixels;
-				int n = 640 * 480;
-				while (n--) { *px++ = ((src[0]>>3)<<11)|((src[1]>>2)<<5)|(src[2]>>3); src += 4; }
+				for (row = 0; row < menu_bik_out_h; row++) {
+					Uint16 *px = menu_bik_frame565 + (y_off + row) * 640 + x_off;
+					for (col = 0; col < menu_bik_out_w; col++) {
+						*px++ = ((src[0]>>3)<<11)|((src[1]>>2)<<5)|(src[2]>>3);
+						src += 4;
+					}
+				}
 			}
+			menu_bik_have_frame = 1;
+			fmv_blit_menu_bik_frame();
 			{
 				int64_t pts = (vframe->pts != AV_NOPTS_VALUE) ? vframe->pts : vframe->best_effort_timestamp;
 				int64_t pms = (pts * 1000LL * vtb.num) / vtb.den;
@@ -1153,7 +1218,7 @@ static int fmv_render_bik_frame(FMVTEXTURE *ftPtr)
 			return 1;
 		}
 	}
-	return 1;
+	return fmv_blit_menu_bik_frame();
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -1182,24 +1247,32 @@ void EndMenuMusic(void)
 
 void StartMenuBackgroundBink(void)
 {
-#if 1
-	if (!menu_bik_ftex.fmv_active);
-		//fmv_open_background(&menu_bik_ftex, "fmvs/menubackground.bik");
-#endif
+	if (!MenuBackgroundVideoEnabled) return;
+	if (menu_bik_ftex.fmv_active || menu_bik_failed) return;
+
+	fmv_open_background(&menu_bik_ftex, "fmvs/menubackground.bik");
+	if (!menu_bik_ftex.fmv_active) menu_bik_failed = 1;
 }
 
+/* Called once per menu frame from DrawMainMenusBackdrop. Also follows the option
+   live, so toggling it in Audio/Video Options takes effect on the next frame
+   rather than on the next visit to the main menu. */
 int PlayMenuBackgroundBink(void)
 {
+	if (!MenuBackgroundVideoEnabled) {
+		menu_bik_failed = 0;
+		if (menu_bik_ftex.fmv_active) EndMenuBackgroundBink();
+		return 0;
+	}
+	if (!menu_bik_ftex.fmv_active) StartMenuBackgroundBink();
 
 	return fmv_render_bik_frame(&menu_bik_ftex);
-
 }
 
 void EndMenuBackgroundBink(void)
 {
-
 	fmv_close_decoder(&menu_bik_ftex);
-
+	menu_bik_have_frame = 0;
 }
 
 

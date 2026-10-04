@@ -5109,6 +5109,11 @@ const int TotalVideoModes = sizeof(VideoModeList) / sizeof(VideoModeList[0]);
    "Use these settings" re-seeds this file. */
 #define INTROMOVIES_CONFIG_TAG "#INTROMOVIES"
 
+/* "Use Video Background For Menu", for the same reason once more: the menus - profile
+   select included - are drawn before any profile is loaded. On is the default,
+   so only OFF is written. */
+#define MENUVIDEO_CONFIG_TAG "#MENUVIDEO"
+
 /* Does this line carry our setting? Case-insensitive so a hand-edited file
    works either way; the console uppercases everything it reads, we don't. */
 static int ConfigLineHasTag(const char *line, const char *tag)
@@ -5136,12 +5141,17 @@ static int IntroMoviesConfigLine(const char *line)
     return ConfigLineHasTag(line, INTROMOVIES_CONFIG_TAG);
 }
 
+static int MenuVideoConfigLine(const char *line)
+{
+    return ConfigLineHasTag(line, MENUVIDEO_CONFIG_TAG);
+}
+
 /* Any of the lines this file owns. Everything else in config.cfg belongs to the
    game and has to survive a rewrite untouched. */
 static int OurConfigLine(const char *line)
 {
     return VideoModeConfigLine(line) || MirrorConfigLine(line)
-        || IntroMoviesConfigLine(line);
+        || IntroMoviesConfigLine(line) || MenuVideoConfigLine(line);
 }
 
 /* Seed DesktopMirrorIndex from config.cfg. Leaves it alone if there is no line,
@@ -5183,6 +5193,40 @@ void LoadIntroMoviesPreference(void)
         if (v == 0 || v == 1) IntroOutroMoviesAreActive = v;   /* a later line wins */
     }
     fclose(fp);
+}
+
+/* Seed MenuBackgroundVideoEnabled from config.cfg. Left alone if there is no
+   line, which already means "on". */
+void LoadMenuVideoPreference(void)
+{
+    extern int MenuBackgroundVideoEnabled;
+    FILE *fp;
+    char line[256];
+
+    fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_READONLY, FILETYPE_CONFIG);
+    if (fp == NULL) return;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        int v;
+
+        if (!MenuVideoConfigLine(line)) continue;
+        if (sscanf(line + sizeof(MENUVIDEO_CONFIG_TAG) - 1, "%d", &v) != 1) continue;
+        if (v == 0 || v == 1) MenuBackgroundVideoEnabled = v;   /* a later line wins */
+    }
+    fclose(fp);
+}
+
+/* Append the menu-video setting. Same contract as IntroMovies_WriteConfigLine,
+   including being called from KeyBinding::WriteToConfigFile. ON is the default,
+   so only OFF is written and turning it back on REMOVES the line. */
+void MenuVideo_WriteConfigLine(FILE *fp)
+{
+    extern int MenuBackgroundVideoEnabled;
+
+    if (fp == NULL) return;
+    if (MenuBackgroundVideoEnabled) return;
+
+    fprintf(fp, "%s 0\n", MENUVIDEO_CONFIG_TAG);
 }
 
 /* Append the intro/outro setting. Same contract as the two below, including being
@@ -5440,6 +5484,7 @@ void SaveDeviceAndVideoModePreferences()
     VideoMode_WriteConfigLine(fp);
     DesktopMirror_WriteConfigLine(fp);
     IntroMovies_WriteConfigLine(fp);
+    MenuVideo_WriteConfigLine(fp);
     fclose(fp);
 
     /* The setting lives in config.cfg now; retire the file it used to be in. */
@@ -5683,6 +5728,7 @@ int InitSDL()
     LoadDeviceAndVideoModePreferences();
     LoadDesktopMirrorPreference();
     LoadIntroMoviesPreference();
+    LoadMenuVideoPreference();
 
 #ifdef AVP_XR
     /* On VR builds, always enable controller input and configure left-stick

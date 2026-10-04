@@ -1617,6 +1617,13 @@ enum TEXTSTRING_ID
 	TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_175,  // value 3
 	TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_200,  // value 4
 
+	/* AV Options "Use Video Background For Menu" (main-menu AV Options only). */
+	TEXTSTRING_AVOPTIONS_MENUVIDEO,
+	TEXTSTRING_AVOPTIONS_MENUVIDEO_HELP,
+	/* These two must stay consecutive and in this order - TEXTSLIDER base + value. */
+	TEXTSTRING_AVOPTIONS_MENUVIDEO_OFF,  // value 0
+	TEXTSTRING_AVOPTIONS_MENUVIDEO_ON,   // value 1 (default)
+
 	MAX_NEW_TEXTSTRINGS
 };
 

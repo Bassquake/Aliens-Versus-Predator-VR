@@ -372,7 +372,7 @@ static VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
     /* --- Marine --- */
     [WEAPON_PULSERIFLE]          = { -270,   60,  100,    0,    0,    -8 },
     [WEAPON_AUTOSHOTGUN]         = VR_WPN_DEFAULT,
-    [WEAPON_SMARTGUN]            = { 70,  -170,    40,    0,    0,    0 },
+    [WEAPON_SMARTGUN]            = { 350,  -170,    40,    0,    0,    0 },
     [WEAPON_FLAMETHROWER]        = { -110,  -220,  100,    0,    0,    0 },
     [WEAPON_PLASMAGUN]           = VR_WPN_DEFAULT,
     [WEAPON_SADAR]               = { -210,   100,  210,    0,    0,    0 },
@@ -387,7 +387,7 @@ static VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
     /* --- Predator --- */
     [WEAPON_PRED_WRISTBLADE]     = { -620,  -240,   50,    0,    0,   45 },
     [WEAPON_PRED_PISTOL]         = { -450,  -200,    0,    0,    0,    0 },
-    [WEAPON_PRED_RIFLE]          = { -230,  -225,    0,    0,    0,    0 },
+    [WEAPON_PRED_RIFLE]          = { -40,  -225,    0,    0,    0,    0 },
     [WEAPON_PRED_SHOULDERCANNON] = { -410,  -270,   95,   26,    -27,    70 },
     [WEAPON_PRED_DISC]           = { -600,  -250,    120,    -1,    -6,    65 },
     [WEAPON_PRED_MEDICOMP]       = { -160,  0,   0,   12,    0,    77 },
@@ -1078,7 +1078,13 @@ SECTION_DATA *VR_FindRightHandSection(HMODELCONTROLLER *hmc)
    VR_RenderWeaponSplitHands below. */
 float vr_left_anim_blend = 0.0f;
 
-/* "Auto Two-Handed Weapons" (VR Configuration, On by default).
+/* Two-handed weapons: HOLD THE LEFT GRIP with the left controller near the gun.
+ *
+ * This used to be automatic ("Auto Two-Handed Weapons", a VR Configuration option),
+ * which took hold whenever the hand merely came close. It now needs the left grip held
+ * as well, so it only happens when you mean it; the option was removed (2026-10-06).
+ * AutoTwoHandedWeapons survives only because the user profile still carries its byte -
+ * nothing reads it any more.
  *
  * On a two-handed weapon, bringing the left controller up to where the left hand sits
  * on the gun snaps the left arm onto the weapon's own grip - the pose the model was
@@ -1091,7 +1097,21 @@ float vr_left_anim_blend = 0.0f;
  * (grip plus this weapon's trim) to that authored palm position, so "close" means
  * close to the foregrip of this particular gun, wherever its model puts it. Hysteresis
  * keeps it from chattering at the edge. Distances are physical, via vr_y_scale. */
-int AutoTwoHandedWeapons = 1;
+int AutoTwoHandedWeapons = 1;   /* profile byte only - see above */
+extern int xr_left_squeeze_gameplay_pressed;   /* main.c: left grip held, gameplay only */
+
+/* Is the left grip asking for a two-handed hold? Not for a Marine with the jetpack: the
+   jetpack is on the left grip by default, so a hold there means "fly", and taking hold of
+   the gun as well would tie the two together. */
+static int VR_TwoHandGripHeld(void)
+{
+    if (!xr_left_squeeze_gameplay_pressed) return 0;
+    if (AvP.PlayerType == I_Marine && Player && Player->ObStrategyBlock) {
+        PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+        if (ps && ps->JetpackEnabled) return 0;
+    }
+    return 1;
+}
 #define VR_TWO_HAND_ENGAGE_M   0.20f   /* within 20 cm of the grip: take hold */
 #define VR_TWO_HAND_RELEASE_M  0.30f   /* beyond 30 cm: let go */
 #define VR_TWO_HAND_BLEND_SECS 0.12f   /* ease on and off */
@@ -1105,13 +1125,26 @@ static int VR_WeaponIsTwoHanded(int weaponID)
         case WEAPON_GRENADELAUNCHER:
         case WEAPON_FLAMETHROWER:
         case WEAPON_PRED_RIFLE:
+        case WEAPON_SADAR:
+        case WEAPON_FRISBEE_LAUNCHER: /* the Skeeter launcher */
+        case WEAPON_MARINE_PISTOL:   /* single pistol: the left hand cups the grip */
             return 1;
         default:
             return 0;
     }
 }
 
-/* Two-handed AIMING, the second half of Auto Two-Handed Weapons.
+/* Does holding this weapon two-handed also AIM it along the line between the hands?
+   Not the single pistol: both hands are on the same grip there, a few centimetres
+   apart, so that line says nothing about where the gun points (and is shorter than
+   VR_TWO_HAND_MIN_SEP_M, which would refuse the hold outright). The left hand just
+   takes hold; the right controller keeps aiming. */
+static int VR_WeaponTwoHandAims(int weaponID)
+{
+    return weaponID != WEAPON_MARINE_PISTOL;
+}
+
+/* Two-handed AIMING, the second half of two-handed weapons (left grip held).
  *
  * While the left hand holds the grip, the weapon points along the line from the right
  * hand to the left one instead of along the right controller alone. Done by rotating
@@ -1182,10 +1215,11 @@ static int   vr_two_hand_ref_is_controller = 0;
    [0]/[1] are used where the grip is MATCHED (grab distance, aim line) and deliberately
    NOT where the hand point is LEARNT: shifting both would cancel out exactly. */
 static int vr_two_hand_grip_adj[MAX_NO_OF_WEAPON_TEMPLATES][3] = {
-    [WEAPON_PULSERIFLE]      = { 100, -80, 0 },
+    [WEAPON_PULSERIFLE]      = { 65, -135, 0 },
     [WEAPON_SMARTGUN]        = { 0, 0, 0 },
     [WEAPON_GRENADELAUNCHER] = { 80, -180, 0 },
-    [WEAPON_FLAMETHROWER]    = { 100, -80, 0 },
+	[WEAPON_SADAR] 			 = { 75, -55, 0 },
+    [WEAPON_FLAMETHROWER]    = { 60, -150, -75 },
     [WEAPON_PRED_RIFLE]      = { 90, -100, 0 },
 };
 
@@ -1476,9 +1510,10 @@ static void VR_ApplyTwoHandedAim(float unitsPerMetre)
     /* Only while the grip is genuinely held THIS frame: the blend is advanced by the
        split draw, so if that did not run last frame (weapon released for a reload,
        left hand lost, a non-two-handed weapon) the stored value is stale - not 0. */
-    if (!AutoTwoHandedWeapons || !vr_right_hand_valid || !vr_left_hand_valid) return;
+    if (!vr_right_hand_valid || !vr_left_hand_valid) return;
     if (GlobalFrameCounter - vr_two_hand_blend_frame > 1) return;
     if (!VR_WeaponIsTwoHanded(vr_two_hand_grip_weapon)) return;
+    if (!VR_WeaponTwoHandAims(vr_two_hand_grip_weapon)) return;   /* hold, don't aim */
 
     for (i = 0; i < 3; i++) {
         const int *m = (i == 0) ? &vr_right_hand_mat.mat11
@@ -1823,13 +1858,13 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
          * The measured correction below then lands the palm exactly there, as it
          * already does for the controller target. At blend 1 the split draw and the
          * un-split draw coincide, so there is nothing left to flip. */
-        /* Auto Two-Handed Weapons: the left controller near this gun's own grip is
-           the same handover as an animation - see AutoTwoHandedWeapons above. The
+        /* Two-handed weapons: the left grip held near this gun's own grip is the
+           same handover as an animation - see the note above AutoTwoHandedWeapons. The
            larger of the two blends wins, so neither can pull the arm off the other. */
         float leftBlend = vr_left_anim_blend;
         {
             float distUnits = -1.0f;
-            if (AutoTwoHandedWeapons && VR_WeaponIsTwoHanded(weaponID) && larmR) {
+            if (VR_TwoHandGripHeld() && VR_WeaponIsTwoHanded(weaponID) && larmR) {
                 float dx = (float)(leftRef.vx - gripPoint.vx);
                 float dy = (float)(leftRef.vy - gripPoint.vy);
                 float dz = (float)(leftRef.vz - gripPoint.vz);
@@ -4263,7 +4298,7 @@ void AvpShowViewsVR(void)
             }
         }
 
-        /* Auto Two-Handed Weapons: point the gun along the line between the hands while
+        /* Two-handed weapons: point the gun along the line between the hands while
            the left hand holds its grip. Here because the hand poses are final now and
            nothing has aimed with them yet - see VR_ApplyTwoHandedAim. Once a frame. */
         if (eye == 0) VR_ApplyTwoHandedAim(vr_y_scale);

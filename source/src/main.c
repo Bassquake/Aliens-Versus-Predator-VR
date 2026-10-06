@@ -202,7 +202,7 @@ static SDL_Gamepad *gamepad = NULL;
         PAD_SRC_B | PAD_BIND_HOLD, /* SPECIAL - recall disc: B Hold; B's Jump then fires on release */ \
         PAD_SRC_RSTICK,         /* FLARE slot - the cloak */ \
         PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, \
-        PAD_SRC_LSHOULDER,      /* GRAPPLE */ \
+        PAD_SRC_LTRIGGER,       /* GRAPPLE - LT, freed when the recall disc moved to B Hold */ \
         PAD_SRC_DPAD_RIGHT      /* RELOAD - same button as the Marine's */ \
     }, \
     /* [I_Alien] */ { \
@@ -1188,9 +1188,9 @@ int xr_menu_button_msg_history_edge          = 0; /* 1 once when left menu butto
 int xr_x_button_gameplay_pressed             = 0; /* 1 on X press edge in gameplay (taunt) */
 int xr_left_trigger_pressed                  = 0; /* 1 on left trigger press edge (throw flare) */
 int xr_left_trigger_gameplay_pressed         = 0; /* 1 while the physical left trigger is held (Predator secondary fire; bindings read this) */
-int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger press edge (currently unused - the hook moved to the left grip) */
+int xr_left_trigger_gameplay_edge            = 0; /* 1 on physical left trigger press edge (Predator grappling hook) */
 int xr_left_squeeze_gameplay_pressed         = 0; /* 1 while the left grip squeeze is held (Marine jetpack; bindings read this) */
-int xr_left_squeeze_gameplay_edge            = 0; /* 1 on left grip press edge (Predator grappling hook) */
+int xr_left_squeeze_gameplay_edge            = 0; /* 1 on left grip press edge (currently unused - the hook moved back to the left trigger) */
 
 /* Read whatever physical control this action is bound to.
  *
@@ -4574,10 +4574,9 @@ int axes, balls, hats;
         }
 
         /* Left grip squeeze (gameplay only). Two signals from one read: the LEVEL
-         * feeds the ordinary bindings (VR_SRC_L_GRIP), while the press EDGE drives the
-         * Predator's grappling hook, which fires once per squeeze. The hook moved here
-         * from the left trigger; the ability gate stays in usr_io.c where the player
-         * status is available. */
+         * feeds the ordinary bindings (VR_SRC_L_GRIP) and the two-handed weapon hold
+         * (avpview.c). The press EDGE used to drive the Predator's grappling hook; that
+         * is back on the left trigger now, so the edge is unused. */
         xr_left_squeeze_gameplay_pressed = 0;
         xr_left_squeeze_gameplay_edge    = 0;
         if (!xr_2d_mode && xr_left_squeeze_action && pfn_xrGetActionStateBoolean) {

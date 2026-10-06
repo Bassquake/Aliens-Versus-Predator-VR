@@ -67,6 +67,10 @@ PLAYER_STARTING_EQUIPMENT StartingEquipment;
 
 int RecallDisc_Charge=400000;
 
+/* "Give all weapons" cheat: 1 = also gives the Marine the jetpack (normal), 0 = not
+   (for testing two-handed weapons, which the jetpack blocks). */
+#define CHEAT_GIVES_JETPACK 1
+
 #define MEDICOMP_MAX_AMMO	(ONE_FIXED*4)
 
 #define SPECIALIST_PISTOLS	(netGameData.specialistPistols)
@@ -644,7 +648,10 @@ void InitialisePlayersInventory(PLAYER_STATUS *playerStatusPtr)
 	{
 		GiveAllWeaponsToPlayer(playerStatusPtr);
 
-		if (AvP.PlayerType == I_Marine)
+		/* CHEAT_GIVES_JETPACK 0 stops the cheat handing over the jetpack - useful for
+		   testing two-handed weapons, since the jetpack takes the left grip and blocks
+		   the two-handed hold while the Marine has it (avpview.c). */
+		if (CHEAT_GIVES_JETPACK && AvP.PlayerType == I_Marine)
 			playerStatusPtr->JetpackEnabled = 1;
 		if (AvP.PlayerType == I_Predator)
 			playerStatusPtr->GrapplingHookEnabled = 1;

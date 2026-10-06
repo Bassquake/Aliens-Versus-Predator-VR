@@ -67,9 +67,10 @@ PLAYER_STARTING_EQUIPMENT StartingEquipment;
 
 int RecallDisc_Charge=400000;
 
-/* "Give all weapons" cheat: 1 = also gives the Marine the jetpack (normal), 0 = not
-   (for testing two-handed weapons, which the jetpack blocks). */
-#define CHEAT_GIVES_JETPACK 1
+/* Extra Cheats "Disable Jetpack": 1 = the Marine never starts a single-player level with
+   the jetpack, whether the level or "Give all weapons" would grant it. Mostly for VR,
+   where the jetpack takes the left grip and blocks two-handed weapons (avpview.c). */
+int DisableJetpackCheatEnabled = 0;
 
 #define MEDICOMP_MAX_AMMO	(ONE_FIXED*4)
 
@@ -648,14 +649,15 @@ void InitialisePlayersInventory(PLAYER_STATUS *playerStatusPtr)
 	{
 		GiveAllWeaponsToPlayer(playerStatusPtr);
 
-		/* CHEAT_GIVES_JETPACK 0 stops the cheat handing over the jetpack - useful for
-		   testing two-handed weapons, since the jetpack takes the left grip and blocks
-		   the two-handed hold while the Marine has it (avpview.c). */
-		if (CHEAT_GIVES_JETPACK && AvP.PlayerType == I_Marine)
+		if (AvP.PlayerType == I_Marine)
 			playerStatusPtr->JetpackEnabled = 1;
 		if (AvP.PlayerType == I_Predator)
 			playerStatusPtr->GrapplingHookEnabled = 1;
 	}
+
+	/* Extra Cheats "Disable Jetpack" - after both of the above, so it wins over each. */
+	if (DisableJetpackCheatEnabled && AvP.Network == I_No_Network)
+		playerStatusPtr->JetpackEnabled = 0;
 
 	LoadAllWeapons(PlayerStatusPtr);
 }

@@ -317,6 +317,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CHEATS_GODMODE_HELP: return "Become immortal in Single Player (not Skirmish or Multiplayer).";
 			case TEXTSTRING_CHEATS_GODMODE_NO:  return "No (Default)";
 			case TEXTSTRING_CHEATS_GODMODE_YES: return "Yes";
+			case TEXTSTRING_CHEATS_DISABLEJETPACK: return "Disable Jetpack";
+			case TEXTSTRING_CHEATS_DISABLEJETPACK_HELP: return "Start each Single Player level without the Marine's jetpack, even where the level or Give all weapons would provide one. Frees the left grip for two-handed weapons in VR.";
+			case TEXTSTRING_CHEATS_DISABLEJETPACK_NO:  return "No (Default)";
+			case TEXTSTRING_CHEATS_DISABLEJETPACK_YES: return "Yes";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_ALIEN:    return "Alien speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_MARINE:   return "Marine speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR: return "Predator speed";
@@ -354,6 +358,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AUTOTWOHANDED_HELP: return "Bring your left hand to the front of the Pulse Rifle, Smart Gun, Grenade Launcher, Flamethrower or Predator Rifle and it takes hold of the weapon. Move it away to let go.";
 			case TEXTSTRING_AUTOTWOHANDED_OFF:  return "Off";
 			case TEXTSTRING_AUTOTWOHANDED_ON:   return "On (Default)";
+			case TEXTSTRING_TWOHANDPROXIMITY:      return "Hold Weapon with Left Grip if close to it";
+			case TEXTSTRING_TWOHANDPROXIMITY_HELP: return "No: hold the left grip to take hold of a two-handed weapon wherever your left hand is. Yes: your left hand must also be near the front of the weapon.";
+			case TEXTSTRING_TWOHANDPROXIMITY_NO:   return "No";
+			case TEXTSTRING_TWOHANDPROXIMITY_YES:  return "Yes (Default)";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_OFF:  return "Off";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_ON:   return "On (Default)";
 			case TEXTSTRING_RIGHTSTICKDEADZONE_HELP: return "How far the right stick must be pushed before it registers. Applies to VR controllers and to a gamepad, and stays with the right stick if the sticks are swapped.";

@@ -110,6 +110,7 @@ extern int MarineLeftArmVisible;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled; /* Extra Cheats: 0 = off */
 extern int GodModeCheatEnabled;        /* Extra Cheats: 0 = off */
+extern int DisableJetpackCheatEnabled; /* Extra Cheats: 0 = No */
 extern int EnemySpeedAlien;    /* Extra Cheats speed sliders: 10 = 1.0 .. 0 = 0.0 */
 extern int EnemySpeedMarine;
 extern int EnemySpeedPredator;
@@ -3879,6 +3880,7 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 				   by leaving the menu. */
 				GiveAllWeaponsCheatEnabled = 0;
 				GodModeCheatEnabled        = 0;
+				DisableJetpackCheatEnabled = 0;
 				EnemySpeedAlien            = 10;
 				EnemySpeedMarine           = 10;
 				EnemySpeedPredator         = 10;

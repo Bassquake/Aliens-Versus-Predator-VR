@@ -719,6 +719,7 @@ int VRClimbVignetteOn   = 1;
 int VRClimbVignetteStrength = 5;
 int MarineLeftArmVisible = 1;
 int AutoTwoHandedWeapons = 1;   /* defined in avpview.c on VR builds; inert here */
+int TwoHandProximityGrip = 1;   /* defined in avpview.c on VR builds; inert here */
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;
 int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */

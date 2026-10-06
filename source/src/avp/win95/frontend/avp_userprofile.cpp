@@ -64,6 +64,7 @@ extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int AutoTwoHandedWeapons;
+extern int TwoHandProximityGrip;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
 extern int LeftStickDeadzone;
 extern int RightStickDeadzone;
@@ -71,6 +72,7 @@ extern int VRWorldScaleIndex;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
+extern int DisableJetpackCheatEnabled;
 extern int EnemySpeedAlien;
 extern int EnemySpeedMarine;
 extern int EnemySpeedPredator;
@@ -349,6 +351,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
 	AutoTwoHandedWeapons = 1; /* left hand takes the grip when brought to it */
+	TwoHandProximityGrip = 1; /* the left hand must be near the weapon to take hold */
 	LeftStickDeadzone = 2;
 	RightStickDeadzone = 2;
 	PadVertSensitivity = 10;
@@ -360,6 +363,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
 	GodModeCheatEnabled = 0; /* "god mode" cheat off by default */
+	DisableJetpackCheatEnabled = 0; /* jetpack available as normal */
 	EnemySpeedAlien = 10;    /* enemy speed sliders default to full speed (10 = 1.0) */
 	EnemySpeedMarine = 10;
 	EnemySpeedPredator = 10;
@@ -496,6 +500,7 @@ extern void GetSettingsFromUserProfile(void)
 	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
 	AutoTwoHandedWeapons =			!UserProfilePtr->AutoTwoHandedDisabled;
+	TwoHandProximityGrip =			UserProfilePtr->TwoHandProximityOff ? 0 : 1;
 	LeftStickDeadzone =			UserProfilePtr->LeftStickDeadzonePlus1
 					? UserProfilePtr->LeftStickDeadzonePlus1 - 1 : 2;
 	RightStickDeadzone =			UserProfilePtr->RightStickDeadzonePlus1
@@ -626,6 +631,7 @@ extern void GetSettingsFromUserProfile(void)
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
 	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
 	GodModeCheatEnabled =			UserProfilePtr->GodModeCheat;
+	DisableJetpackCheatEnabled =	UserProfilePtr->DisableJetpackCheat ? 1 : 0;
 	/* Stored as (10 - speed) so a fresh/old profile (0) loads as full speed (10). */
 	EnemySpeedAlien =			10 - UserProfilePtr->EnemySpeedAlien;
 	EnemySpeedMarine =			10 - UserProfilePtr->EnemySpeedMarine;
@@ -678,6 +684,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
 	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
 	profilePtr->AutoTwoHandedDisabled =	(unsigned char)(AutoTwoHandedWeapons ? 0 : 1);
+	profilePtr->TwoHandProximityOff =	(unsigned char)(TwoHandProximityGrip ? 0 : 1);
 	profilePtr->LeftStickDeadzonePlus1 =	(unsigned char)(LeftStickDeadzone + 1);
 	profilePtr->RightStickDeadzonePlus1 =	(unsigned char)(RightStickDeadzone + 1);
 	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);
@@ -699,6 +706,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRVignetteStrength =	VRVignetteStrength;
 	profilePtr->GiveAllWeaponsCheat =	GiveAllWeaponsCheatEnabled;
 	profilePtr->GodModeCheat =		GodModeCheatEnabled;
+	profilePtr->DisableJetpackCheat =	(unsigned char)(DisableJetpackCheatEnabled ? 1 : 0);
 	/* Stored as (10 - speed) so full speed (10) writes 0, matching a fresh profile. */
 	profilePtr->EnemySpeedAlien =		10 - EnemySpeedAlien;
 	profilePtr->EnemySpeedMarine =		10 - EnemySpeedMarine;

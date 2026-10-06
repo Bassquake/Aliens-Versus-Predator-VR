@@ -255,7 +255,12 @@ typedef struct
 	   again; take bytes out of it and shrink it to match. */
 	/* VR Configuration "Auto Two-Handed Weapons". Stored INVERTED - it defaults to On. */
 	unsigned char AutoTwoHandedDisabled;      //0=On (default), 1=Off
-	unsigned char ExtReserved[15];
+	/* Extra Cheats "Disable Jetpack". 0 = No (default), 1 = Yes. */
+	unsigned char DisableJetpackCheat;
+	/* VR Configuration "Hold Weapon with Left Grip if close to it". Stored INVERTED - it
+	   defaults to Yes, and a zero byte must decode to the default. 0 = Yes, 1 = No. */
+	unsigned char TwoHandProximityOff;
+	unsigned char ExtReserved[13];
 
 } AVP_USER_PROFILE;
 

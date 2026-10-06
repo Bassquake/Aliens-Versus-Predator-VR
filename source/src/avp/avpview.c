@@ -299,6 +299,32 @@ static float *VR_RigSizeSlot(void)
 }
 float VR_RigSizeCurrent(void) { return *VR_RigSizeSlot(); }
 
+/* PER WEAPON, on top of the species size above: weapons that read too big next to the
+   rest of the arsenal. Applied the same way (through wscale), so the hands and arms
+   holding them scale with them and the grip stays pinned to the controller. 1.0 = as
+   the species size; anything not listed is 1.0. */
+static float VR_WeaponSizeFor(int weaponID)
+{
+    switch (weaponID) {
+        case WEAPON_MARINE_PISTOL: return 0.75f;   /* single pistol */
+        case WEAPON_TWO_PISTOLS:   return 0.75f;   /* dual pistols */
+        case WEAPON_GRENADELAUNCHER: return 0.80f;
+        default:                   return 1.0f;
+    }
+}
+
+/* PER WEAPON, the LEFT arm/hand only (the split left-hand pass), on top of everything
+   above. For guns whose model gives the support arm a hand that reads too big. The left
+   pass lands its palm on the target by measurement, so shrinking it scales the arm about
+   the hand rather than moving it. 1.0 = same size as the rest of the rig. */
+static float VR_LeftArmSizeFor(int weaponID)
+{
+    switch (weaponID) {
+        case WEAPON_PULSERIFLE: return 0.85f;
+        default:                return 1.0f;
+    }
+}
+
 /* -vrdiag bookkeeping, reset on each recentre - see the VR scale / VR hands lines. */
 static int vr_logged_scale = 0;
 static int vr_diag_hand_frames = 0;
@@ -1098,6 +1124,15 @@ float vr_left_anim_blend = 0.0f;
  * close to the foregrip of this particular gun, wherever its model puts it. Hysteresis
  * keeps it from chattering at the edge. Distances are physical, via vr_y_scale. */
 int AutoTwoHandedWeapons = 1;   /* profile byte only - see above */
+
+/* VR Configuration "Hold Weapon with Left Grip if close to it".
+ *   0 = No: holding the left grip takes hold of the weapon wherever the left
+ *       hand is. Two-handed AIMING still needs the hands at least VR_TWO_HAND_MIN_SEP_M
+ *       apart and within VR_TWO_HAND_MAX_DEG of the gun's line; outside that the hand
+ *       stays on the gun and the right controller keeps aiming.
+ *   1 = Yes (default): the left hand must also be near the gun (VR_TWO_HAND_ENGAGE_M of
+ *       the detection point) to take hold, and a hand position that cannot aim lets go. */
+int TwoHandProximityGrip = 1;
 extern int xr_left_squeeze_gameplay_pressed;   /* main.c: left grip held, gameplay only */
 
 /* Is the left grip asking for a two-handed hold? Not for a Marine with the jetpack: the
@@ -1115,6 +1150,10 @@ static int VR_TwoHandGripHeld(void)
 #define VR_TWO_HAND_ENGAGE_M   0.20f   /* within 20 cm of the grip: take hold */
 #define VR_TWO_HAND_RELEASE_M  0.30f   /* beyond 30 cm: let go */
 #define VR_TWO_HAND_BLEND_SECS 0.12f   /* ease on and off */
+/* Where the grab is DETECTED: this far back from the gun's foregrip, along the line to
+   the right hand (never past it), so the left hand need not reach all the way out.
+   Detection only - the hand is still drawn on the foregrip once it takes hold. */
+#define VR_TWO_HAND_DETECT_BACK_M 0.10f
 static float vr_two_hand_units_per_m = (float)GAME_UNITS_PER_METRE;  /* set per frame */
 
 static int VR_WeaponIsTwoHanded(int weaponID)
@@ -1370,8 +1409,10 @@ static float VR_TwoHandGripBlend(int weaponID, float distUnits)
             engaged = 0;
             t = 0.0f;
         }
-        if (distUnits < 0.0f || !vr_two_hand_pose_ok)
+        if (distUnits < 0.0f || (TwoHandProximityGrip && !vr_two_hand_pose_ok))
             engaged = 0;
+        else if (!TwoHandProximityGrip)
+            engaged = 1;                   /* the grip alone takes hold */
         else if (engaged)
             engaged = (distUnits < VR_TWO_HAND_RELEASE_M * vr_two_hand_units_per_m);
         else
@@ -1864,10 +1905,26 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
         float leftBlend = vr_left_anim_blend;
         {
             float distUnits = -1.0f;
-            if (VR_TwoHandGripHeld() && VR_WeaponIsTwoHanded(weaponID) && larmR) {
-                float dx = (float)(leftRef.vx - gripPoint.vx);
-                float dy = (float)(leftRef.vy - gripPoint.vy);
-                float dz = (float)(leftRef.vz - gripPoint.vz);
+            if (VR_TwoHandGripHeld() && VR_WeaponIsTwoHanded(weaponID) && larmR
+                && !TwoHandProximityGrip) {
+                distUnits = 0.0f;   /* no proximity test: the grip alone takes hold */
+            } else if (VR_TwoHandGripHeld() && VR_WeaponIsTwoHanded(weaponID) && larmR) {
+                /* The detection point: the foregrip, pulled back toward the right hand
+                   by VR_TWO_HAND_DETECT_BACK_M. */
+                float px = (float)gripPoint.vx, py = (float)gripPoint.vy, pz = (float)gripPoint.vz;
+                float bx = (float)vr_right_hand_world.vx - px;
+                float by = (float)vr_right_hand_world.vy - py;
+                float bz = (float)vr_right_hand_world.vz - pz;
+                float bl = SDL_sqrtf(bx*bx + by*by + bz*bz);
+                float back = VR_TWO_HAND_DETECT_BACK_M * vr_two_hand_units_per_m;
+                float dx, dy, dz;
+                if (bl > 1.0f) {
+                    if (back > bl) back = bl;
+                    px += bx / bl * back; py += by / bl * back; pz += bz / bl * back;
+                }
+                dx = (float)leftRef.vx - px;
+                dy = (float)leftRef.vy - py;
+                dz = (float)leftRef.vz - pz;
                 distUnits = SDL_sqrtf(dx*dx + dy*dy + dz*dz);
             }
             {
@@ -1887,6 +1944,16 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
             target.vy = (int)(target.vy * u + (larmR->World_Offset.vy + slide.vy * gs) * t);
             target.vz = (int)(target.vz * u + (larmR->World_Offset.vz + slide.vz * gs) * t);
             VR_BlendMatrixCH(&ObMat_B, &ObMat_B, &ObMat_A, t);
+        }
+
+        /* Left arm only: its own size for this weapon (VR_LeftArmSizeFor). After the
+           blend, so it holds while the hand is on the gun as well. */
+        {
+            float ls = VR_LeftArmSizeFor(weaponID);
+            if (ls != 1.0f) {
+                int *m = &ObMat_B.mat11, i;
+                for (i = 0; i < 9; i++) m[i] = (int)(m[i] * ls);
+            }
         }
 
         PlayersWeapon.HModelControlBlock = &vr_left_hmc;
@@ -5056,7 +5123,8 @@ void AvpShowViewsVR(void)
                  * and unlike a gun, which is held out at arm's length, the claws sit
                  * right at the eye, so the same 0.90 reads as far bigger on them. */
                 #define VR_ALIEN_VIEW_SCALE 0.55f
-                float wscale = (is_alien ? VR_ALIEN_VIEW_SCALE : VR_WEAPON_VIEW_SCALE) * VR_RigSizeCurrent();
+                float wscale = (is_alien ? VR_ALIEN_VIEW_SCALE : VR_WEAPON_VIEW_SCALE) * VR_RigSizeCurrent()
+                             * VR_WeaponSizeFor(wpn->WeaponIDNumber);
                 int wscale_baked = 0;
                 if (vr_weapon_ref_scale > 0.0f)
                     wscale *= vr_y_scale / vr_weapon_ref_scale;

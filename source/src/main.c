@@ -199,7 +199,7 @@ static SDL_Gamepad *gamepad = NULL;
     /* [I_Predator] */ { \
         PAD_SRC_RTRIGGER, PAD_SRC_RSHOULDER, PAD_SRC_B, PAD_SRC_LSTICK, \
         PAD_SRC_A, PAD_SRC_Y, PAD_SRC_X, \
-        PAD_SRC_LTRIGGER,       /* SPECIAL - recall disc */ \
+        PAD_SRC_B | PAD_BIND_HOLD, /* SPECIAL - recall disc: B Hold; B's Jump then fires on release */ \
         PAD_SRC_RSTICK,         /* FLARE slot - the cloak */ \
         PAD_SRC_DPAD_UP, PAD_SRC_DPAD_DOWN, \
         PAD_SRC_LSHOULDER,      /* GRAPPLE */ \
@@ -678,7 +678,7 @@ int VR_Reach(int range)
     /* [I_Predator] */ { \
         VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
         VR_SRC_A, VR_SRC_Y, VR_SRC_X, \
-        VR_SRC_L_TRIGGER,       /* SPECIAL - recall disc */ \
+        VR_SRC_B | VR_BIND_HOLD,/* SPECIAL - recall disc: B Hold; B's Jump then fires on release */ \
         VR_SRC_R_STICK_CLICK,   /* FLARE slot = the Predator's CLOAK (see usr_io.c) */ \
         VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN, \
         VR_SRC_A | VR_BIND_HOLD /* RELOAD - same as the Marine */ \

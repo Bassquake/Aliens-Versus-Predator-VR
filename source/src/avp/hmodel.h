@@ -249,6 +249,11 @@ typedef struct section_data {
 	int oneovertweeninglength;	
 	unsigned int Tweening:1;
 
+	/* The part of World_Offset that integer rounding dropped (true - stored), kept so the
+	   VR first-person rig can be DRAWN at sub-unit precision - see VR_RIG_SUBUNIT in
+	   opengl.h. Never read by gameplay; not saved. */
+	float World_Frac[3];
+
 } SECTION_DATA;
 
 

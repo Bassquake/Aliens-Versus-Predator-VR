@@ -26,6 +26,7 @@ void RestoreGameShaderState(void);
  * game vertex shader. Zero everywhere except the VR eye pass, which sets it per eye
  * so the headset frustum is rendered exactly as the runtime reports it. */
 void OGL_SetClipOffset(float x, float y);
+void OGL_SetRigPrecision(float k);
 void OGL_RegenerateMipmaps(void);
 
 /* Texture filtering settings, driven by the AV Options menu. All three are 0 by
@@ -309,6 +310,45 @@ extern float     vr_weapon_view_scale;
  * left/right by 0.01, up/down by 0.05. Logged as VRSIZE lines, persists nothing - bake
  * the final value into vr_rig_size's initialiser. */
 #define AVP_VR_SIZE_TUNER 0
+
+/* Predator hand ROTATION stabiliser (VR). The Predator rig's root sits ~900 units
+ * (~40 cm) back from the grip, so the controller's ordinary rotation noise - measured at
+ * ~0.02 deg/frame typical, ~0.1 deg in the noisier frames, with the controller held still
+ * - is swung through a long forearm right next to the eye and reads as the whole arm
+ * shaking. A hard rotation lock made it go away (2026-10-05), which is what identified it.
+ *
+ * Each hand's orientation is held while the controller stays within
+ * VR_HAND_ROT_DEADBAND_DEG of it, eased toward the controller over
+ * VR_HAND_ROT_SETTLE_SECS so no permanent offset builds up, and dragged along 1:1 by
+ * anything that leaves the band - so deliberate movement is never lagged by more than the
+ * band. Applied after two-handed aiming, so the line between the hands is stabilised
+ * too. Position is untouched. 0 = off. See VR_StabiliseHandRotation in avpview.c. */
+#define VR_PREDATOR_ROT_STABILISE   1
+
+/* VR first-person rig drawn with SUB-UNIT positions. Every HModel section stores its world
+ * position in whole game units (SECTION_DATA::World_Offset), recomputed from the root
+ * matrix each frame, so any change to that matrix - hand tremor, two-handed aim -
+ * re-rounds every section and each piece of the arm flips by up to a unit (~0.4 mm, about
+ * half a pixel at forearm range). Measured 2026-10-05: drawn hand 0.1-0.24 mm per-frame
+ * jitter in the world against ~0.01 mm controller noise. With this on, sections also keep
+ * the fraction the rounding drops (World_Frac) and the renderer adds it back, and the
+ * camera translation is rotated in float rather than whole units. Gameplay still uses the
+ * integer positions; only drawing changes. VR only; 0 = off. */
+#define VR_RIG_SUBUNIT 1
+
+/* The last rounding step of the same kind: each vertex of the rig is rounded to whole
+ * view-space units once transformed. With this it rounds to 1/VR_RIG_VIEW_PRECISION of a
+ * unit instead (OGL_SetRigPrecision in opengl.c). 1 = off. Kept modest because a few
+ * vision-mode effects fade on raw view-space Z past 5000. */
+#define VR_RIG_VIEW_PRECISION 4.0f
+#define VR_HAND_ROT_DEADBAND_DEG    0.35f
+/* 0 = PURE hold: inside the band the matrix is left bit-identical frame to frame. That
+ * matters more than it looks - every HModel section stores its world position in whole
+ * units, so ANY change to the root matrix, however tiny, re-rounds every section and
+ * each piece of the arm flips by up to a unit (~0.4 mm). A slow settle toward the
+ * controller kept doing exactly that, and the arms still shook (trace, 2026-10-05). The
+ * cost is a static offset of at most the band while the hand is still. */
+#define VR_HAND_ROT_SETTLE_SECS     0.0f
 
 #define AVP_VR_GRIP_TUNER 0
 

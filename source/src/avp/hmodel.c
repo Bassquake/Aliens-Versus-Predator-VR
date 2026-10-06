@@ -35,6 +35,10 @@
 #define UseLocalAssert Yes
 #include "ourasert.h"
 #include "particle.h"
+
+/* VR_RIG_SUBUNIT: sub-unit offset of the rig ROOT, added to every section when the VR
+   first-person rig is drawn. Set by the eye pass in avpview.c; zero otherwise. */
+float HModel_DrawRootFrac[3] = { 0.0f, 0.0f, 0.0f };
 #include "kshape.h"
 #include "sfx.h"
 #include "dxlog.h"
@@ -1324,6 +1328,25 @@ void Process_Section(HMODELCONTROLLER *controller,SECTION_DATA *this_section_dat
 		/* Create the absolute rotation matrix for this section. */
 		MatrixMultiply(parent_orientation,&(this_section_data->RelSecMat),&(this_section_data->SecMat));
 
+		/* The same placement in float, carrying the parent's dropped fraction down the
+		   chain, so World_Frac is what the rounding above lost (VR_RIG_SUBUNIT).
+		   RotateVector(v,M) is M^T * v. */
+		{
+			const MATRIXCH *pm = parent_orientation;
+			const VECTORCH *o = &this_section_data->Offset;
+			const float *pf = this_section_data->My_Parent
+			                ? this_section_data->My_Parent->World_Frac : NULL;
+			float fx = (pm->mat11 * (float)o->vx + pm->mat21 * (float)o->vy + pm->mat31 * (float)o->vz) / 65536.0f;
+			float fy = (pm->mat12 * (float)o->vx + pm->mat22 * (float)o->vy + pm->mat32 * (float)o->vz) / 65536.0f;
+			float fz = (pm->mat13 * (float)o->vx + pm->mat23 * (float)o->vy + pm->mat33 * (float)o->vz) / 65536.0f;
+			fx += (float)parent_position->vx + (pf ? pf[0] : 0.0f);
+			fy += (float)parent_position->vy + (pf ? pf[1] : 0.0f);
+			fz += (float)parent_position->vz + (pf ? pf[2] : 0.0f);
+			this_section_data->World_Frac[0] = fx - (float)this_section_data->World_Offset.vx;
+			this_section_data->World_Frac[1] = fy - (float)this_section_data->World_Offset.vy;
+			this_section_data->World_Frac[2] = fz - (float)this_section_data->World_Offset.vz;
+		}
+
 		/* Set the initialised flag... */
 		this_section_data->flags|=section_data_initialised;
 	}
@@ -1495,7 +1518,32 @@ void Process_Section(HMODELCONTROLLER *controller,SECTION_DATA *this_section_dat
 		}	
 		#endif
 		
-		RenderThisHierarchicalDisplayblock(&dummy_displayblock);						  
+#if defined(AVP_XR) && VR_RIG_SUBUNIT
+		{
+			/* Draw the VR first-person rig at its true, sub-unit position. */
+			extern float KShape_ObWorldFrac[3];
+			extern DISPLAYBLOCK PlayersWeapon;
+			extern int vr_is_rendering;
+			int sub = (vr_is_rendering && Global_HModel_DispPtr == &PlayersWeapon
+			           && AvP.PlayerType == I_Predator);
+			if (sub) {
+				/* The section's own dropped fraction, plus the rig ROOT's - which is
+				   placed off a whole-unit controller position (HModel_DrawRootFrac,
+				   set by the VR eye pass around each rig draw). A root translation
+				   moves every section equally, so adding it here at draw time is exact
+				   whichever solve produced the sections. */
+				KShape_ObWorldFrac[0] = this_section_data->World_Frac[0] + HModel_DrawRootFrac[0];
+				KShape_ObWorldFrac[1] = this_section_data->World_Frac[1] + HModel_DrawRootFrac[1];
+				KShape_ObWorldFrac[2] = this_section_data->World_Frac[2] + HModel_DrawRootFrac[2];
+			}
+			RenderThisHierarchicalDisplayblock(&dummy_displayblock);
+			if (sub) {
+				KShape_ObWorldFrac[0] = KShape_ObWorldFrac[1] = KShape_ObWorldFrac[2] = 0.0f;
+			}
+		}
+#else
+		RenderThisHierarchicalDisplayblock(&dummy_displayblock);
+#endif						  
 
 	} else if (controller->View_FrameStamp!=GlobalFrameCounter) {
 		this_section_data->flags&=(~section_data_view_init);

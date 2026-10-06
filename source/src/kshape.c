@@ -4403,6 +4403,17 @@ void AddHierarchicalShape(DISPLAYBLOCK *dptr, VIEWDESCRIPTORBLOCK *VDB_Ptr)
 
 float ViewMatrix[12];
 float ObjectViewMatrix[12];
+
+/* Sub-unit addition to the current object's ObWorld, for the VR first-person rig only -
+ * see VR_RIG_SUBUNIT in opengl.h. Set and cleared around each section's draw in hmodel.c;
+ * zero for everything else, so nothing else changes. */
+float KShape_ObWorldFrac[3] = { 0.0f, 0.0f, 0.0f };
+
+/* View-space precision multiplier for HModel vertices (TranslateShapeVertices). 1 = the
+ * engine's whole game units, as ever. The VR eye pass raises it around the first-person
+ * rig only - see OGL_SetRigPrecision in opengl.c, which owns it and corrects depth to
+ * match. The image is unchanged because the projection only ever uses X/Z and Y/Z. */
+float KShape_RigViewPrecision = 1.0f;
 float Source[3];
 float Dest[3];
 
@@ -4472,17 +4483,41 @@ extern void TranslationSetup(void)
 
 	RotateVector(&v,&Global_VDB_Ptr->VDB_Mat);
 
-	ViewMatrix[3+0*4] = ((float)-v.vx)*o;
+	{
+	float tvx = (float)v.vx, tvy = (float)v.vy, tvz = (float)v.vz;
+	#if defined(AVP_XR) && VR_RIG_SUBUNIT
+	extern int vr_rig_subunit_view;
+	/* VR: rotate the camera position in FLOAT. RotateVector works in whole units and this
+	   vector is tens of thousands of units long, so the slightest head rotation re-rounds
+	   it and everything drawn this view moves by up to half a unit - nothing on distant
+	   walls, about half a pixel on the arms. Flat stays bit-identical. */
+	if (vr_is_rendering && vr_rig_subunit_view) {
+		/* ...and from the eye's TRUE position: VDB_World is the headset pose truncated
+		   to whole units, and vr_eye_frac is what that dropped (avpview.c). Moving the
+		   whole view by it is right for the world too - it is where the eye really is. */
+		extern float vr_eye_frac[3];
+		const MATRIXCH *vm = &Global_VDB_Ptr->VDB_Mat;
+		float wx = (float)Global_VDB_Ptr->VDB_World.vx + vr_eye_frac[0];
+		float wy = (float)Global_VDB_Ptr->VDB_World.vy + vr_eye_frac[1];
+		float wz = (float)Global_VDB_Ptr->VDB_World.vz + vr_eye_frac[2];
+		tvx = ((float)vm->mat11 * wx + (float)vm->mat21 * wy + (float)vm->mat31 * wz) / 65536.0f;
+		tvy = ((float)vm->mat12 * wx + (float)vm->mat22 * wy + (float)vm->mat32 * wz) / 65536.0f;
+		tvz = ((float)vm->mat13 * wx + (float)vm->mat23 * wy + (float)vm->mat33 * wz) / 65536.0f;
+	}
+	#endif
+
+	ViewMatrix[3+0*4] = (-tvx)*o;
 	#ifdef AVP_XR
-		ViewMatrix[3+1*4] = ((float)-v.vy) * (vr_is_rendering ? 1.0f : (4.0f/3.0f)) * p;
+		ViewMatrix[3+1*4] = (-tvy) * (vr_is_rendering ? 1.0f : (4.0f/3.0f)) * p;
 	#else
 		/* Same ProjX/ProjY ratio as the Y rows above (this row is the translation,
 		   so it takes the un-divided form). The AVP_XR branch above still uses a
 		   flat 4/3 for its non-VR case, which the old live-aspect code silently
 		   disagreed with; both now land on 4/3 for the normal lens at any aspect. */
-		ViewMatrix[3 + 1 * 4] = ((float)-v.vy) * (vr_y_scale * 65536.0f) * p;
+		ViewMatrix[3 + 1 * 4] = (-tvy) * (vr_y_scale * 65536.0f) * p;
 	#endif
-	ViewMatrix[3+2*4] = ((float)-v.vz)*CameraZoomScale;
+	ViewMatrix[3+2*4] = (-tvz)*CameraZoomScale;
+	}
 
 	if (MIRROR_CHEATMODE)
 	{
@@ -4749,9 +4784,30 @@ void TranslateShapeVertices(SHAPEINSTR *shapeinstrptr)
 		ObjectViewMatrix[1+2*4] = (float)(Global_ODB_Ptr->ObMat.mat23)/65536.0f;
 		ObjectViewMatrix[2+2*4] = (float)(Global_ODB_Ptr->ObMat.mat33)/65536.0f;
 
-		ObjectViewMatrix[3+0*4] = Global_ODB_Ptr->ObWorld.vx;
-		ObjectViewMatrix[3+1*4] = Global_ODB_Ptr->ObWorld.vy;
-		ObjectViewMatrix[3+2*4] = Global_ODB_Ptr->ObWorld.vz;
+		ObjectViewMatrix[3+0*4] = Global_ODB_Ptr->ObWorld.vx + KShape_ObWorldFrac[0];
+		ObjectViewMatrix[3+1*4] = Global_ODB_Ptr->ObWorld.vy + KShape_ObWorldFrac[1];
+		ObjectViewMatrix[3+2*4] = Global_ODB_Ptr->ObWorld.vz + KShape_ObWorldFrac[2];
+		if (KShape_RigViewPrecision != 1.0f)
+		{
+			/* Kept in finer-than-unit steps; see KShape_RigViewPrecision. */
+			float k = KShape_RigViewPrecision;
+			for(i = shapeinstrptr->sh_numitems; i!=0; i--)
+			{
+				Source[0] = srcPtr->vx;
+				Source[1] = srcPtr->vy;
+				Source[2] = srcPtr->vz;
+
+				TranslatePoint(Source, Dest, ObjectViewMatrix);
+				TranslatePoint(Dest, Source, ViewMatrix);
+
+				f2i(destPtr->vx,Source[0]*k);
+				f2i(destPtr->vy,Source[1]*k);
+				f2i(destPtr->vz,Source[2]*k);
+				srcPtr++;
+				destPtr++;
+			}
+		}
+		else
 		for(i = shapeinstrptr->sh_numitems; i!=0; i--)
 		{
 			Source[0] = srcPtr->vx;
@@ -5733,9 +5789,18 @@ void AddToTranslucentPolyList(POLYHEADER *inputPolyPtr,RENDERVERTEX *renderVerti
 	
 	do
 	{
-		if (maxZ<renderVerticesPtr->Z)
-			maxZ = renderVerticesPtr->Z;
-		*vertexPtr++ = *renderVerticesPtr++;
+		*vertexPtr = *renderVerticesPtr++;
+		/* Drawn later, after the rig's finer precision and its depth correction have
+		   been switched off again - so store it in ordinary whole units. */
+		if (KShape_RigViewPrecision != 1.0f)
+		{
+			vertexPtr->X = (int)(vertexPtr->X / KShape_RigViewPrecision);
+			vertexPtr->Y = (int)(vertexPtr->Y / KShape_RigViewPrecision);
+			vertexPtr->Z = (int)(vertexPtr->Z / KShape_RigViewPrecision);
+		}
+		if (maxZ<vertexPtr->Z)
+			maxZ = vertexPtr->Z;
+		vertexPtr++;
 	}
 	while(--i);
 	TranslucentPolygons[CurrentNumberOfTranslucentPolygons].MaxZ = maxZ;

@@ -334,6 +334,22 @@ int      vr_left_sight_y = 0;
 int      vr_left_sight_valid = 0;
 
 VECTORCH vr_left_hand_world = {0, 0, 0};
+
+/* VR_RIG_SUBUNIT: what whole-unit truncation dropped from each hand and from the current
+ * eye, in world units (true - stored). The eye's is applied to the whole view in kshape.c;
+ * the hands' to the first-person rig's root via HModel_DrawRootFrac (hmodel.c). Zero while
+ * climbing (hands and eye are re-based there) and on the death clamp. */
+float vr_eye_frac[3];
+int   vr_rig_subunit_view = 0;   /* this eye uses the float camera + eye fraction (kshape.c) */
+static float vr_hand_frac_r[3], vr_hand_frac_l[3];
+extern float HModel_DrawRootFrac[3];
+
+static void VR_SetRigRootFrac(const float *f)
+{
+    HModel_DrawRootFrac[0] = f ? f[0] : 0.0f;
+    HModel_DrawRootFrac[1] = f ? f[1] : 0.0f;
+    HModel_DrawRootFrac[2] = f ? f[2] : 0.0f;
+}
 MATRIXCH  vr_left_hand_mat  = {ONE_FIXED,0,0, 0,ONE_FIXED,0, 0,0,ONE_FIXED};
 int       vr_left_hand_valid = 0;
 
@@ -1353,6 +1369,98 @@ static VECTORCH VR_LeftPalmTarget(int weaponID, float trim_scale)
     return target;
 }
 
+/* VR_PREDATOR_ROT_STABILISE (opengl.h): hold a hand's orientation against rotation
+   noise. `held` is the stabilised orientation as a unit quaternion, carried frame to
+   frame; *have is cleared to restart from the live pose. The matrix convention does not
+   matter here - it is converted to a quaternion and back with the same one. */
+static void VR_MatToQuatF(const MATRIXCH *mt, float q[4])
+{
+    float m[3][3], t, s;
+    int i, j;
+    const int *p = &mt->mat11;
+    for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) m[i][j] = p[i * 3 + j] / 65536.0f;
+    t = m[0][0] + m[1][1] + m[2][2];
+    if (t > 0.0f) {
+        s = SDL_sqrtf(t + 1.0f) * 2.0f;
+        q[3] = 0.25f * s;
+        q[0] = (m[2][1] - m[1][2]) / s; q[1] = (m[0][2] - m[2][0]) / s; q[2] = (m[1][0] - m[0][1]) / s;
+    } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+        s = SDL_sqrtf(1.0f + m[0][0] - m[1][1] - m[2][2]) * 2.0f;
+        q[3] = (m[2][1] - m[1][2]) / s;
+        q[0] = 0.25f * s; q[1] = (m[0][1] + m[1][0]) / s; q[2] = (m[0][2] + m[2][0]) / s;
+    } else if (m[1][1] > m[2][2]) {
+        s = SDL_sqrtf(1.0f + m[1][1] - m[0][0] - m[2][2]) * 2.0f;
+        q[3] = (m[0][2] - m[2][0]) / s;
+        q[0] = (m[0][1] + m[1][0]) / s; q[1] = 0.25f * s; q[2] = (m[1][2] + m[2][1]) / s;
+    } else {
+        s = SDL_sqrtf(1.0f + m[2][2] - m[0][0] - m[1][1]) * 2.0f;
+        q[3] = (m[1][0] - m[0][1]) / s;
+        q[0] = (m[0][2] + m[2][0]) / s; q[1] = (m[1][2] + m[2][1]) / s; q[2] = 0.25f * s;
+    }
+    s = SDL_sqrtf(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]);
+    if (s > 0.0f) for (i = 0; i < 4; i++) q[i] /= s;
+}
+
+static void VR_QuatFToMat(const float q[4], MATRIXCH *mt)
+{
+    float x = q[0], y = q[1], z = q[2], w = q[3];
+    float m[9];
+    int *p = &mt->mat11, i;
+    m[0] = 1 - 2*(y*y + z*z); m[1] = 2*(x*y - z*w);     m[2] = 2*(x*z + y*w);
+    m[3] = 2*(x*y + z*w);     m[4] = 1 - 2*(x*x + z*z); m[5] = 2*(y*z - x*w);
+    m[6] = 2*(x*z - y*w);     m[7] = 2*(y*z + x*w);     m[8] = 1 - 2*(x*x + y*y);
+    for (i = 0; i < 9; i++) p[i] = (int)(m[i] * 65536.0f);
+}
+
+/* Rotate `from` toward `to` by the fraction t of the angle between them (slerp). */
+static void VR_QuatTowards(float from[4], const float to_in[4], float t)
+{
+    float to[4], d, ang, sa, a, b;
+    int i;
+    d = from[0]*to_in[0] + from[1]*to_in[1] + from[2]*to_in[2] + from[3]*to_in[3];
+    for (i = 0; i < 4; i++) to[i] = (d < 0.0f) ? -to_in[i] : to_in[i];
+    if (d < 0.0f) d = -d;
+    if (d > 0.9999f) {               /* nearly equal: a plain lerp is exact enough */
+        for (i = 0; i < 4; i++) from[i] += (to[i] - from[i]) * t;
+    } else {
+        ang = SDL_acosf(d); sa = SDL_sinf(ang);
+        a = SDL_sinf((1.0f - t) * ang) / sa; b = SDL_sinf(t * ang) / sa;
+        for (i = 0; i < 4; i++) from[i] = from[i] * a + to[i] * b;
+    }
+    d = SDL_sqrtf(from[0]*from[0] + from[1]*from[1] + from[2]*from[2] + from[3]*from[3]);
+    if (d > 0.0f) for (i = 0; i < 4; i++) from[i] /= d;
+}
+
+static void VR_StabiliseHandRotation(MATRIXCH *mat, float held[4], int *have, float dt)
+{
+    float live[4], d, ang, band;
+    VR_MatToQuatF(mat, live);
+    if (!*have) {
+        int i;
+        for (i = 0; i < 4; i++) held[i] = live[i];
+        *have = 1;
+        return;
+    }
+    d = held[0]*live[0] + held[1]*live[1] + held[2]*live[2] + held[3]*live[3];
+    if (d < 0.0f) d = -d;
+    if (d > 1.0f) d = 1.0f;
+    ang  = 2.0f * SDL_acosf(d) * (180.0f / SDL_PI_F);      /* degrees between them */
+    band = VR_HAND_ROT_DEADBAND_DEG;
+
+    /* Anything past the band is followed at once, so real movement never lags by more
+       than the band... */
+    if (ang > band) VR_QuatTowards(held, live, (ang - band) / ang);
+
+    /* ...and inside it the held pose settles onto the controller slowly, so a hand left
+       still ends up exactly where the controller is rather than up to a band away. */
+    if (dt > 0.0f && VR_HAND_ROT_SETTLE_SECS > 0.0f) {
+        float k = dt / VR_HAND_ROT_SETTLE_SECS;
+        if (k > 1.0f) k = 1.0f;
+        VR_QuatTowards(held, live, k);
+    }
+    VR_QuatFToMat(held, mat);
+}
+
 /* Rotate vr_right_hand_mat for two-handed aiming. Once per frame, after the hand poses
    are final and before anything reads them for aiming - see the block comment above. */
 static void VR_ApplyTwoHandedAim(float unitsPerMetre)
@@ -1487,6 +1595,9 @@ void VR_BlendMatrixCH(MATRIXCH *out, const MATRIXCH *from, const MATRIXCH *to, f
 
 /* exceptName: a section inside the left subtree that should be drawn with the RIGHT
    hand anyway, or NULL. */
+/* Root fractions for the two split passes (VR_RIG_SUBUNIT); set by the caller / below. */
+static float vr_split_left_frac[3], vr_split_right_frac[3];
+
 static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID,
                                       int hideLeftArm, const char *exceptName)
 {
@@ -1762,6 +1873,14 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
             vr_two_hand_palm_local_ok[weaponID] = 1;
         }
 
+        {
+            /* Root fraction for the left pass: the left hand's, handed over to the right
+               rig's as the arm is blended onto the gun or the animation (VR_RIG_SUBUNIT). */
+            float t = (leftBlend > 0.0f) ? leftBlend : 0.0f;
+            int k;
+            for (k = 0; k < 3; k++)
+                vr_split_left_frac[k] = vr_hand_frac_l[k] * (1.0f - t) + vr_split_right_frac[k] * t;
+        }
         ObWorld_B.vx = target.vx + (target.vx - larmL->World_Offset.vx);
         ObWorld_B.vy = target.vy + (target.vy - larmL->World_Offset.vy);
         ObWorld_B.vz = target.vz + (target.vz - larmL->World_Offset.vz);
@@ -1776,6 +1895,7 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
                                                  (char *)exceptName) : NULL);
     PlayersWeapon.ObWorld = ObWorld_B;
     PlayersWeapon.ObMat   = ObMat_B;
+    VR_SetRigRootFrac(vr_split_left_frac);
     d.vx = ObWorld_B.vx - Global_VDB_Ptr->VDB_World.vx;
     d.vy = ObWorld_B.vy - Global_VDB_Ptr->VDB_World.vy;
     d.vz = ObWorld_B.vz - Global_VDB_Ptr->VDB_World.vz;
@@ -1797,6 +1917,7 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
                                                  (char *)exceptName) : NULL);
     PlayersWeapon.ObWorld = ObWorld_A;
     PlayersWeapon.ObMat   = ObMat_A;
+    VR_SetRigRootFrac(vr_split_right_frac);
     d.vx = ObWorld_A.vx - Global_VDB_Ptr->VDB_World.vx;
     d.vy = ObWorld_A.vy - Global_VDB_Ptr->VDB_World.vy;
     d.vz = ObWorld_A.vz - Global_VDB_Ptr->VDB_World.vz;
@@ -3475,7 +3596,7 @@ void AvpShowViewsVR(void)
     /* Convert a grip XrPosef to game world coordinates.
      * Same convention as eye poses: X=OpenXR X, Y=-OpenXR Y, Z=-OpenXR Z;
      * quatx negated for handedness; snap_yaw applied to X/Z delta. */
-    #define GRIP_TO_GAME(pose, valid_flag, out_world, out_mat) \
+    #define GRIP_TO_GAME(pose, valid_flag, out_world, out_mat, out_frac) \
     do { \
         float gdx = (pose).position.x - ref_head_x; \
         float gdz = (pose).position.z - ref_head_z; \
@@ -3490,6 +3611,11 @@ void AvpShowViewsVR(void)
         (out_world).vy = Player->ObWorld.vy - (int)(VR_STAGE_Y((pose).position.y) * vr_y_scale) \
                        + vr_crouch_drop + vr_headroom_drop; \
         (out_world).vz = base_world.vz - (int)(gdz * vr_y_scale); \
+        { float fx_ = gdx * vr_y_scale, fy_ = VR_STAGE_Y((pose).position.y) * vr_y_scale, \
+                fz_ = gdz * vr_y_scale; \
+          (out_frac)[0] =   fx_ - (float)(int)fx_; \
+          (out_frac)[1] = -(fy_ - (float)(int)fy_); \
+          (out_frac)[2] = -(fz_ - (float)(int)fz_); } \
         QUAT gq; \
         gq.quatw =  (int)((pose).orientation.w * ONE_FIXED); \
         gq.quatx = -(int)((pose).orientation.x * ONE_FIXED); \
@@ -3512,11 +3638,12 @@ void AvpShowViewsVR(void)
     } while(0)
 
     if (xr_grip_right_valid)
-        GRIP_TO_GAME(xr_grip_pose_right, vr_right_hand_valid, vr_right_hand_world, vr_right_hand_mat);
+        GRIP_TO_GAME(xr_grip_pose_right, vr_right_hand_valid, vr_right_hand_world, vr_right_hand_mat, vr_hand_frac_r);
     if (xr_grip_left_valid)
-        GRIP_TO_GAME(xr_grip_pose_left, vr_left_hand_valid, vr_left_hand_world, vr_left_hand_mat);
+        GRIP_TO_GAME(xr_grip_pose_left, vr_left_hand_valid, vr_left_hand_world, vr_left_hand_mat, vr_hand_frac_l);
 
     #undef GRIP_TO_GAME
+
 
     /* Hand placement across a recentre (-vrdiag).
      *
@@ -3791,6 +3918,22 @@ void AvpShowViewsVR(void)
         Global_VDB_Ptr->VDB_World.vy += vr_headroom_drop;
         Global_VDB_Ptr->VDB_World.vz = base_world.vz
             - (int)(phys_dz * vr_y_scale);
+        {
+            /* Same truncation as the hands; see vr_eye_frac. */
+            float fx = phys_dx * vr_y_scale;
+            float fy = VR_STAGE_Y(xr_views[eye].pose.position.y) * vr_y_scale;
+            float fz = phys_dz * vr_y_scale;
+            vr_eye_frac[0] =   fx - (float)(int)fx;
+            vr_eye_frac[1] = -(fy - (float)(int)fy);
+            vr_eye_frac[2] = -(fz - (float)(int)fz);
+            vr_rig_subunit_view = (VR_RIG_SUBUNIT && AvP.PlayerType == I_Predator
+                                   && !vr_view_is_dead && !vr_climb_tilt_active);
+            if (!vr_rig_subunit_view) {
+                int k;
+                for (k = 0; k < 3; k++)
+                    vr_eye_frac[k] = vr_hand_frac_r[k] = vr_hand_frac_l[k] = 0.0f;
+            }
+        }
 
         /* --- Climbing: place the eye in the SURFACE frame ---------------------
          * The assignments above put the eye at an ABSOLUTE stage height:
@@ -4124,6 +4267,27 @@ void AvpShowViewsVR(void)
            the left hand holds its grip. Here because the hand poses are final now and
            nothing has aimed with them yet - see VR_ApplyTwoHandedAim. Once a frame. */
         if (eye == 0) VR_ApplyTwoHandedAim(vr_y_scale);
+
+#if VR_PREDATOR_ROT_STABILISE
+        /* Hold the Predator's hands against rotation noise - see
+           VR_PREDATOR_ROT_STABILISE in opengl.h. After the two-handed aim, so the aim line
+           is stabilised too; once a frame, and both eyes then use the result. */
+        if (eye == 0) {
+            extern int NormalFrameTime;
+            static float held_r[4], held_l[4];
+            static int   have_r = 0, have_l = 0;
+            float dt = NormalFrameTime / 65536.0f;
+            int pred = (AvP.PlayerType == I_Predator);
+            if (pred && vr_right_hand_valid)
+                VR_StabiliseHandRotation(&vr_right_hand_mat, held_r, &have_r, dt);
+            else
+                have_r = 0;
+            if (pred && vr_left_hand_valid)
+                VR_StabiliseHandRotation(&vr_left_hand_mat, held_l, &have_l, dt);
+            else
+                have_l = 0;
+        }
+#endif
 
         /* The climbing view/hand/eye transforms above were settled on-device with
          * temporary particle markers and two logs (VRDBG, VRCEIL), removed
@@ -5467,6 +5631,22 @@ void AvpShowViewsVR(void)
                          && wpn->WeaponIDNumber == WEAPON_PRED_MEDICOMP
                          && wpn->CurrentState == WEAPONSTATE_IDLE) ? "right stabme" : NULL;
                     vr_two_hand_units_per_m = vr_y_scale;   /* physical grip distances */
+                    /* Predator only: the anti-jitter sub-unit drawing (VR_RIG_SUBUNIT,
+                       VR_RIG_VIEW_PRECISION in opengl.h). No other species' rig shows the
+                       problem, so none of them is drawn any differently. */
+                    int vr_rig_subunit = (VR_RIG_SUBUNIT && AvP.PlayerType == I_Predator);
+                    {
+                        /* Rig root's sub-unit position: it hangs off the right controller
+                           only while the gun is held; a released or authored-at-hand pose
+                           is placed by the animation instead. */
+                        int k, held = (vr_rig_subunit && vr_right_hand_valid
+                                       && !weapon_is_free && !authored_at_hand);
+                        for (k = 0; k < 3; k++)
+                            vr_split_right_frac[k] = held ? vr_hand_frac_r[k] : 0.0f;
+                        VR_SetRigRootFrac(vr_split_right_frac);
+                    }
+                    if (vr_rig_subunit) OGL_SetRigPrecision(VR_RIG_VIEW_PRECISION);
+
                     if (!weapon_is_free
                         && VR_LeftArmDescFor(wpn->WeaponIDNumber, &desc)
                         && PlayersWeapon.HModelControlBlock
@@ -5477,6 +5657,9 @@ void AvpShowViewsVR(void)
                         vr_left_rig_drawn = 0;
                         RenderThisDisplayblock(&PlayersWeapon);
                     }
+                    VR_SetRigRootFrac(NULL);
+                    OGL_SetRigPrecision(1.0f);
+
 
                 }
                 if (froze_ti && PlayersWeapon.HModelControlBlock)

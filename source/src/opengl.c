@@ -35,6 +35,7 @@ static GLuint g_prog = 0;
 static GLint  g_aPos, g_aUV, g_aColor;
 static GLint  g_uSpecularPass;
 static GLint  g_uClipOffset;
+static GLint  g_uRigZBias = -1;
 static GLint  g_uNoTex = -1;
 
 static const char *game_vs =
@@ -43,6 +44,7 @@ static const char *game_vs =
 		"attribute vec2 aUV;\n"
 		"attribute vec4 aColor;\n"
 		"uniform   vec2 uClipOffset;\n"   // off-axis (asymmetric) frustum shift; 0 = centred
+		"uniform   float uRigZBias;\n"    // depth fix for the finer-precision VR rig; 0 = none
 		"varying vec2  vUV;\n"
 		"varying vec4  vColor;\n"
 		"void main() {\n"
@@ -52,7 +54,8 @@ static const char *game_vs =
 		// real canted frustum without touching any of the ~20 per-vertex projection
 		// sites: those keep emitting a centred frustum and this moves the principal
 		// point. Zero on every other path, so flat rendering is bit-identical.
-		"    gl_Position = vec4(aPos.xy + uClipOffset * aPos.w, aPos.zw);\n"
+		// uRigZBias: see OGL_SetRigPrecision. Exactly 0 everywhere else.
+		"    gl_Position = vec4(aPos.xy + uClipOffset * aPos.w, aPos.z + uRigZBias, aPos.w);\n"
 		"    vUV    = aUV;\n"
 		"    vColor = aColor;\n"  // ubyte → float
 		"}\n";
@@ -119,6 +122,7 @@ void InitGameShader(void)
     g_aColor        = glGetAttribLocation(g_prog,  "aColor");
     g_uSpecularPass = glGetUniformLocation(g_prog, "uSpecularPass");
     g_uClipOffset   = glGetUniformLocation(g_prog, "uClipOffset");
+    g_uRigZBias     = glGetUniformLocation(g_prog, "uRigZBias");
     GLint uTex      = glGetUniformLocation(g_prog, "uTex");
     g_uNoTex        = glGetUniformLocation(g_prog, "uNoTexture");
     glUseProgram(g_prog);
@@ -126,6 +130,7 @@ void InitGameShader(void)
     glUniform1i(g_uNoTex,       0);
     glUniform1i(g_uSpecularPass,0);
     if (g_uClipOffset >= 0) glUniform2f(g_uClipOffset, 0.0f, 0.0f);
+    if (g_uRigZBias >= 0)   glUniform1f(g_uRigZBias, 0.0f);
 
 }
 
@@ -612,6 +617,49 @@ void OGL_SetClipOffset(float x, float y)
 		glUseProgram((GLuint)prev);
 }
 
+/* Finer view-space precision for the VR first-person rig (VR_RIG_VIEW_PRECISION).
+ *
+ * The engine keeps view-space vertices in whole game units, and the arms sit a forearm's
+ * length from the eye where one unit is about a pixel - so each vertex re-rounding as the
+ * head moves by a fraction of a millimetre makes the arm shimmer. k scales the rig's
+ * view-space vertices (KShape_RigViewPrecision, kshape.c) so they round to 1/k of a unit.
+ * x/y are unaffected, because the projection divides by Z. Depth is not: the emitted clip z
+ * is (k*Z - 2*ZNear) where the true one is k*(Z - 2*ZNear), so uRigZBias adds the
+ * difference, -2*ZNear*(k-1) - exact for every output path that builds z as
+ * (1 - 2*ZNear/Z)*w. Without it the arms would sink behind any wall nearer than k times
+ * their distance. Translucent polygons are deferred past the reset, so AddToTranslucentPolyList
+ * stores those back in whole units.
+ *
+ * Flushes for the same reason OGL_SetClipOffset does. Pass 1 to switch it off. */
+extern float KShape_RigViewPrecision;
+static float g_rig_z_bias = 0.0f;
+
+void OGL_SetRigPrecision(float k)
+{
+	float bias = 0.0f;
+	if (k < 1.0f) k = 1.0f;
+	if (k != 1.0f && Global_VDB_Ptr)
+		bias = -2.0f * (float)(Global_VDB_Ptr->VDB_ClipZ * GlobalScale) * (k - 1.0f);
+	if (k == KShape_RigViewPrecision && bias == g_rig_z_bias)
+		return;
+
+	GLint prev = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &prev);
+	if ((GLuint)prev != g_prog)
+		glUseProgram(g_prog);
+
+	/* Queued vertices were emitted at the OLD precision, so they draw under the old bias. */
+	FlushTriangleBuffers(1);
+
+	KShape_RigViewPrecision = k;
+	g_rig_z_bias = bias;
+	if (g_uRigZBias >= 0)
+		glUniform1f(g_uRigZBias, g_rig_z_bias);
+
+	if ((GLuint)prev != g_prog)
+		glUseProgram((GLuint)prev);
+}
+
 // In opengl.c — call this to re-bind game shader attribs after any external blit
 void RestoreGameShaderState(void)
 {
@@ -628,6 +676,8 @@ void RestoreGameShaderState(void)
 	glUniform1i(g_uNoTex, 0);
 	if (g_uClipOffset >= 0)
 		glUniform2f(g_uClipOffset, g_clip_off_x, g_clip_off_y);
+	if (g_uRigZBias >= 0)
+		glUniform1f(g_uRigZBias, g_rig_z_bias);
 	/* Reset texture filter cache — HUD text rendering leaves
 	   CurrentFilteringMode=BILINEAR_OFF, which causes eye 1's 3D scene
 	   to apply GL_NEAREST to world textures instead of GL_LINEAR. */

@@ -27,6 +27,9 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 - Reordered menus and wording slightly.
 - Fix done for Mad Max profile. Can be found [here](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/downloads/complete-profile).
 
+> [!TIP]
+> Re-center your view (hold Meta button) while standing before starting a level so things aren’t small!
+
 Here is list of compatible devices:
 
 | **VR**                                     | **Flat**                                        |

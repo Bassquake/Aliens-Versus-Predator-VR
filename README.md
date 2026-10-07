@@ -3,20 +3,29 @@
 This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below.
 
 > [!TIP]
-> Check the new 1.0 update on releases page. A 7 min YouTube video about it can be found [here](https://youtu.be/Qk7m4Clpcos).
+> Check the new 1.1 update on releases page. A 7 min YouTube video about it can be found [here](https://youtu.be/Qk7m4Clpcos).
 
-## What's new in 1.0?
-- Alien wall walking FINALLY working. Walk to wall and press B to climb. You do need a strong stomach though, you have been warned!! There are vignette options in Controls > General VR Configuration.
-- Arms are separated now except Alien as it's a single model and not separate like the others, there's nothing I can do about it without replacing the game asset and I want to keep original files intact.
-- You have the option to hide Marines left arm if its distracting because the scale is quite wonky due to the way they were modelled for flat screens. Setting is in Controls > General VR Configuration > Show Marine Left Arm.
-- There is now a World Scale option for VR version so you're not so small any more! It is set to 1.30 in Controls > General VR Configuration > Adjust World Scale. I don't recommend adjusting this to extreme as may break some things!
-- Gamepad controllers are now supported such as Xbox Series X on the flat versions. Also tested with Google Stadia.
-- Some buttons have changed for VR controllers so check the button mapping image further down this readme.
-- You can now customise buttons for VR controllers and gamepads. Go to Controls and choose which character you want to adjust.
-- Audio direction should be fixed now.
-- Pico support added.
-- Fix volume controls in menu.
-- Various fixes.
+## What's new in 1.1?
+- Fix Alien view getting stuck on zoomed in when eat heads.
+- Change Alien wall walking to be crouching instead. Its still walk to wall and press B to activate wall walking.
+- Add deadzones for joysticks on both VR controllers and gamepads.
+- Add option to enlarge Mission Objectives text. Go to Audio/Visual Options and turn on Enlarge Messages Text.
+- Have changed the background in menus to match Steam. You can turn it off and have the starry background back by going to Audio/Visual Options and change Use Video Background for Menu to Off.
+- Add joysticks and dpad and 'hold' options in the Controls configuration options.
+- Manual Reload is now Hold A button as removed the touch controllers.
+- Fix for Jetpack bug in movement stop working.
+- Stop head clipping through ceiling with Jetpack.
+- Adjusted sizes of hands/arms/weapons so they’re less comical in VR.
+- Reduce jittering on Predator arms in VR.
+- Changed Predator Recall Disc to Hold B button. NOTE: Its a good idea to Reset to Defaults the key mapping so any new changes gets updated in your profile. You will need to re-edit your mapping.
+- Left-Handed Mode added to Controls > General VR Configuration. Edit button mappings to adjust how you want.
+- Two-handed weapons is done by holding the opposing grip trigger. You can have it work if grip controller is close to the other controller or not. Set it in General VR Configuration at Opposing Grip Works Only If Controllers Are Close.
+- Use Left Grip (or right if you chose Left Handed Mode on) to hold two handed weapons.
+- NOTE: Two-handed weapons won't work if have Jetpack which is in Bonus Missions. Think of it as one of your hands occupied by controlling Jetpack!
+- You can now physically punch and attack using Predator Wristblades. Hold down secondary fire to power up your punch!
+- Can also physically scratch as Alien.
+- Reordered menus and wording slightly.
+- Fix done for Mad Max profile. Can be found [here](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/downloads/complete-profile).
 
 Here is list of compatible devices:
 
@@ -81,7 +90,7 @@ Copying the game assets. Its the same for all devices:
 
 7. On the headset, run the **Aliens Versus Predator: VR** in Unknown Sources first, this will crash out as the assets haven't been added yet, this is normal and this sets the folders and their permissions in place. 
 8. Now still in SideQuest, go to "Manage files on the headset".
-9. Navigate to "sdcard/Android/data/com.bassquake.quest.avpvr/files". If installing on phone or tv, use the folder "sdcard/Android/data/com.bassquake.android.avp/files". (On builds 0.6 to 1.0 the phone/tv path is sdcard/Android/data/com.bassquake.android.avpvr/files, and on 0.5 and older it was sdcard/Android/data/com.bassquake.avpvr/files).
+9. Navigate to "sdcard/Android/data/com.bassquake.quest.avpvr/files". If installing on phone or tv, use the folder "sdcard/Android/data/com.bassquake.android.avp/files". (On builds 0.6 to 1.1 the phone/tv path is sdcard/Android/data/com.bassquake.android.avpvr/files, and on 0.5 and older it was sdcard/Android/data/com.bassquake.avpvr/files).
 10. Copy all the game assets into that files folder. The layout should be like so on your device:
 
 ![Screenshot of assets location](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/sidequest_files.png)
@@ -112,7 +121,7 @@ Then name the shortcut seen here:
 
 ![Screenshot of Shortcut naming](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/steam-custom-name.png)
 
-To customise the images in Steam Library so it looks nicer like mine or use your own, download the extra zip file **steamvr-custom-images.zip** in Releases page for 1.0, unzip the images from steamvr-custom-images.zip somewhere. Then click the gear icon and select Properties:
+To customise the images in Steam Library so it looks nicer like mine or use your own, download the extra zip file **steamvr-custom-images.zip** in Releases page, unzip the images from steamvr-custom-images.zip somewhere. Then click the gear icon and select Properties:
 
 ![Screenshot of Steam options](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/steam-add-options.png)
 

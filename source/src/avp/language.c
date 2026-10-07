@@ -188,11 +188,11 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_VRVIGNETTE_ON:       return "On (Default)";
 			case TEXTSTRING_VRVIGNETTE_STRENGTH: return "Vignette strength";
 			case TEXTSTRING_VRVIGNETTE_STRENGTH_HELP:return "How much the peripheral vision closes in while smooth turning.";
-			case TEXTSTRING_VRCLIMBVIGNETTE:     return "Comfort vignette on Alien climbing";
+			case TEXTSTRING_VRCLIMBVIGNETTE:     return "Comfort Vignette On Alien Climbing";
 			case TEXTSTRING_VRCLIMBVIGNETTE_HELP:return "Darkens your peripheral vision while the view swings onto a wall or ceiling. Clears once you are on the surface.";
 			case TEXTSTRING_VRCLIMBVIGNETTE_OFF: return "Off";
 			case TEXTSTRING_VRCLIMBVIGNETTE_ON:  return "On (Default)";
-			case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH: return "Alien climbing vignette strength";
+			case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH: return "Alien Climbing Vignette Strength";
 			case TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH_HELP:return "How much the peripheral vision closes in while the view swings onto a wall or ceiling.";
 			case TEXTSTRING_MARINELEFTARM:      return "Show Marine Left Arm";
 			case TEXTSTRING_MARINELEFTARM_HELP: return "Off hides the Marine's left arm on every weapon except the dual pistols, where it holds the second gun.";
@@ -306,10 +306,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_USERPROFILE_HELP_VR: return "Press X or A button to auto-select a name and again to Continue.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_CONTINUE: return "Press A to select a profile, or B to delete a profile.";
 			case TEXTSTRING_USERPROFILE_HELP_VR_NEW: return "Create a New Profile.";
-			case TEXTSTRING_SAVEPROGRESS_TITLE: return "Save progress?";
+			case TEXTSTRING_SAVEPROGRESS_TITLE: return "Save Progress?";
 			case TEXTSTRING_MAINMENU_CHEATS: return "Extra Cheats";
 			case TEXTSTRING_MAINMENU_CHEATS_HELP: return "Cheat options for single-player (not Skirmish or Multiplayer).";
-			case TEXTSTRING_CHEATS_GIVEALLWEAPONS: return "Give all weapons";
+			case TEXTSTRING_CHEATS_GIVEALLWEAPONS: return "Give All Weapons";
 			case TEXTSTRING_CHEATS_GIVEALLWEAPONS_HELP: return "Start each Single Player level with every weapon for your species.";
 			case TEXTSTRING_CHEATS_GIVEALLWEAPONS_OFF: return "Off (Default)";
 			case TEXTSTRING_CHEATS_GIVEALLWEAPONS_ON:  return "On";
@@ -321,9 +321,9 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CHEATS_DISABLEJETPACK_HELP: return "Start each Single Player level without the Marine's jetpack, even where the level or Give all weapons would provide one. Frees the left grip for two-handed weapons in VR.";
 			case TEXTSTRING_CHEATS_DISABLEJETPACK_NO:  return "No (Default)";
 			case TEXTSTRING_CHEATS_DISABLEJETPACK_YES: return "Yes";
-			case TEXTSTRING_CHEATS_ENEMYSPEED_ALIEN:    return "Alien speed";
-			case TEXTSTRING_CHEATS_ENEMYSPEED_MARINE:   return "Marine speed";
-			case TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR: return "Predator speed";
+			case TEXTSTRING_CHEATS_ENEMYSPEED_ALIEN:    return "Alien Speed";
+			case TEXTSTRING_CHEATS_ENEMYSPEED_MARINE:   return "Marine Speed";
+			case TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR: return "Predator Speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_HELP: return "Slow this enemy type down in Single Player. Full is normal speed, empty stops them (not Skirmish or Multiplayer).";
 			case TEXTSTRING_HUDADJUST: return "Adjust HUD Elements";
 			case TEXTSTRING_HUDADJUST_HELP: return "Moves HUD elements toward the centre of view. 1 is furthest out, 3 is closer to center of view.";
@@ -358,8 +358,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AUTOTWOHANDED_HELP: return "Bring your left hand to the front of the Pulse Rifle, Smart Gun, Grenade Launcher, Flamethrower or Predator Rifle and it takes hold of the weapon. Move it away to let go.";
 			case TEXTSTRING_AUTOTWOHANDED_OFF:  return "Off";
 			case TEXTSTRING_AUTOTWOHANDED_ON:   return "On (Default)";
-			case TEXTSTRING_TWOHANDPROXIMITY:      return "Hold Weapon with Left Grip if close to it";
-			case TEXTSTRING_TWOHANDPROXIMITY_HELP: return "No: hold the left grip to take hold of a two-handed weapon wherever your left hand is. Yes: your left hand must also be near the front of the weapon.";
+			case TEXTSTRING_TWOHANDPROXIMITY:      return "Hold Weapon If Controllers Are Close";
+			case TEXTSTRING_TWOHANDPROXIMITY_HELP: return "Yes: hold the grip on your other controller with it near the front of a two-handed weapon to take hold of it. No: holding that grip takes hold wherever the controller is.";
 			case TEXTSTRING_TWOHANDPROXIMITY_NO:   return "No";
 			case TEXTSTRING_TWOHANDPROXIMITY_YES:  return "Yes (Default)";
 			case TEXTSTRING_LEFTHANDED:      return "Left-Handed Mode";
@@ -377,7 +377,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 	   which should read the same as the flat desktop build. */
 	if (stringID == TEXTSTRING_MAINMENU_SUBTITLE)
 #ifdef AVP_MENU_VR
-		return "Classic 2000 VR";
+		return "Classic 2000 VR Edition";
 #else
 		return "Classic 2000";
 #endif

@@ -1643,6 +1643,103 @@ static void VR_StabiliseHandRotation(MATRIXCH *mat, float held[4], int *have, fl
     VR_QuatFToMat(held, mat);
 }
 
+/* VR wristblade PUNCH (Predator). Punching with the weapon hand while the wristblades
+ * are out strikes with them - no attack animation, since the arm is already where your
+ * hand is; the hit itself is VR_WristbladePunchHit (weapons.c).
+ *
+ * A punch is the hand moving FAST and FORWARD: faster than VR_PUNCH_SPEED_MPS, along
+ * the way the controller points (within acos(VR_PUNCH_ALONG) of it). The speed is taken
+ * relative to the player's body, so walking or being knocked about never throws one,
+ * and a frame with a snap turn is skipped (it rotates that relative position). One
+ * strike per punch: the hand must slow below VR_PUNCH_REARM_MPS before the next, and
+ * VR_PUNCH_COOLDOWN_SECS caps the rate.
+ *
+ * Runs in the eye pass's gameplay block, so the poses are REAL even when left-handed. */
+#define VR_PUNCH_SPEED_MPS      2.0f
+#define VR_PUNCH_REARM_MPS      1.0f
+#define VR_PUNCH_ALONG          0.4f    /* cos of the cone about the controller's forward */
+#define VR_PUNCH_COOLDOWN_SECS  0.30f
+#define VR_PUNCH_TIP_M          0.35f   /* blade tip, ahead of the grip */
+#define VR_PUNCH_REACH_M        1.00f   /* how far from the tip a target still counts */
+static void VR_WristbladePunchUpdate(float unitsPerMetre)
+{
+    extern int NormalFrameTime;
+    extern int xr_snap_yaw;
+    extern int VR_WristbladePunchHit(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFILE *damage);
+    extern int VR_WristbladePunchSecondary(VECTORCH *tip, VECTORCH *dir, int range, PLAYER_WEAPON_DATA *wp);
+    static int   have_prev = 0, armed = 1, prev_snap = 0;
+    static float prev_rel[3];
+    static float cooldown = 0.0f;
+    PLAYER_STATUS *ps;
+    PLAYER_WEAPON_DATA *wp;
+    float rel[3], v[3], fwd[3], dt, speed, flen, along;
+
+    dt = NormalFrameTime / 65536.0f;
+    if (cooldown > 0.0f) cooldown -= dt;
+
+    if (AvP.PlayerType != I_Predator || !vr_right_hand_valid || !Player
+        || !Player->ObStrategyBlock || unitsPerMetre <= 0.0f || dt <= 0.0f) {
+        have_prev = 0;
+        return;
+    }
+    ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+    if (!ps || !ps->IsAlive) { have_prev = 0; return; }
+    wp = &ps->WeaponSlot[ps->SelectedWeaponSlot];
+
+    /* The hand relative to the body, in metres. */
+    rel[0] = (vr_right_hand_world.vx - Player->ObWorld.vx) / unitsPerMetre;
+    rel[1] = (vr_right_hand_world.vy - Player->ObWorld.vy) / unitsPerMetre;
+    rel[2] = (vr_right_hand_world.vz - Player->ObWorld.vz) / unitsPerMetre;
+    if (!have_prev || xr_snap_yaw != prev_snap) {
+        prev_rel[0] = rel[0]; prev_rel[1] = rel[1]; prev_rel[2] = rel[2];
+        prev_snap = xr_snap_yaw;
+        have_prev = 1;
+        return;
+    }
+    v[0] = (rel[0] - prev_rel[0]) / dt;
+    v[1] = (rel[1] - prev_rel[1]) / dt;
+    v[2] = (rel[2] - prev_rel[2]) / dt;
+    prev_rel[0] = rel[0]; prev_rel[1] = rel[1]; prev_rel[2] = rel[2];
+    speed = SDL_sqrtf(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+
+    if (speed < VR_PUNCH_REARM_MPS) armed = 1;
+    if (!armed || cooldown > 0.0f || speed < VR_PUNCH_SPEED_MPS) return;
+
+    /* Wristblades out: idle = the primary strike; secondary held (winding up) = the
+       charged heavy strike. Any other state is an animated attack with its own hits. */
+    if (wp->WeaponIDNumber != WEAPON_PRED_WRISTBLADE
+        || (wp->CurrentState != WEAPONSTATE_IDLE && wp->CurrentState != WEAPONSTATE_FIRING_SECONDARY))
+        return;
+
+    /* Forward along the controller (row 2 - the same axis the aim uses). */
+    fwd[0] = (float)vr_right_hand_mat.mat21;
+    fwd[1] = (float)vr_right_hand_mat.mat22;
+    fwd[2] = (float)vr_right_hand_mat.mat23;
+    flen = SDL_sqrtf(fwd[0]*fwd[0] + fwd[1]*fwd[1] + fwd[2]*fwd[2]);
+    if (flen < 1.0f) return;
+    fwd[0] /= flen; fwd[1] /= flen; fwd[2] /= flen;
+    along = (v[0]*fwd[0] + v[1]*fwd[1] + v[2]*fwd[2]) / speed;
+    if (along < VR_PUNCH_ALONG) return;
+
+    armed = 0;
+    cooldown = VR_PUNCH_COOLDOWN_SECS;
+    {
+        VECTORCH tip, dir;
+        float tipu = VR_PUNCH_TIP_M * unitsPerMetre;
+        tip.vx = vr_right_hand_world.vx + (int)(fwd[0] * tipu);
+        tip.vy = vr_right_hand_world.vy + (int)(fwd[1] * tipu);
+        tip.vz = vr_right_hand_world.vz + (int)(fwd[2] * tipu);
+        dir.vx = (int)(fwd[0] * 65536.0f);
+        dir.vy = (int)(fwd[1] * 65536.0f);
+        dir.vz = (int)(fwd[2] * 65536.0f);
+        int reach = (int)(VR_PUNCH_REACH_M * unitsPerMetre);
+        int hit = (wp->CurrentState == WEAPONSTATE_FIRING_SECONDARY)
+                ? VR_WristbladePunchSecondary(&tip, &dir, reach, wp)
+                : VR_WristbladePunchHit(&tip, &dir, reach, NULL);
+        if (hit) XR_Haptic_Right(1.0f, 80.0f);
+    }
+}
+
 /* Rotate vr_right_hand_mat for two-handed aiming. Once per frame, after the hand poses
    are final and before anything reads them for aiming - see the block comment above. */
 static void VR_ApplyTwoHandedAim(float unitsPerMetre)
@@ -4669,6 +4766,7 @@ void AvpShowViewsVR(void)
                machine - so it must see the real controller poses, not the mirrored ones
                the rig is drawn from. Back to virtual at the end of the block. */
             VR_LH_HandsToReal();
+            VR_WristbladePunchUpdate(vr_y_scale);
             /* Inject right-trigger primary fire before the weapon state machine reads it. */
             {
                 if (VR_Action(VR_ACT_FIRE_PRIMARY)) {

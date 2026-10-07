@@ -394,6 +394,138 @@ void VR_LH_FireSpaceBegin(void)
 	}
 	vr_lh_fire_saved = 1;
 }
+/* VR wristblade PUNCH: a real punch with the weapon hand strikes with the blade, with no
+   attack animation - the arm is already where your hand is. Called by the eye pass
+   (avpview.c, VR_WristbladePunchUpdate) with the blade tip and the punch direction in
+   the world.
+
+   The flat-game strike (MeleeWeapon_90Degree_Front_Core) picks targets in a cone from
+   the CAMERA; this one picks from the TIP of the blade, within `range` of it and ahead
+   of the punch, so what you hit is what your fist reached. Same damage profile as the
+   wristblade's primary, the same one-person-per-strike rule, and the same knockback,
+   pushed along the punch rather than the view. Returns the number of things hit.
+   `damage` NULL = the primary strike's profile. */
+int VR_WristbladePunchHit(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFILE *damage)
+{
+	if (!damage) damage = &TemplateAmmo[AMMO_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty];
+	int numberOfObjects = NumOnScreenBlocks;
+	int hits = 0, hurt_people = 1;
+
+	while (numberOfObjects) {
+		DISPLAYBLOCK *objectPtr = OnScreenBlockList[--numberOfObjects];
+		STRATEGYBLOCK *sbPtr = objectPtr ? objectPtr->ObStrategyBlock : NULL;
+		VECTORCH targetpos, to;
+		DYNAMICSBLOCK *dynPtr;
+		int dist;
+
+		if (!sbPtr || !sbPtr->DynPtr || objectPtr == Player) continue;
+		dynPtr = sbPtr->DynPtr;
+
+		GetTargetingPointOfObject(objectPtr, &targetpos);
+		to.vx = targetpos.vx - tip->vx;
+		to.vy = targetpos.vy - tip->vy;
+		to.vz = targetpos.vz - tip->vz;
+		dist = Approximate3dMagnitude(&to);
+		if (objectPtr->HModelControlBlock == NULL && objectPtr->ObShapeData)
+			dist -= (objectPtr->ObShapeData->shaperadius) >> 1;
+		if (dist >= range) continue;
+
+		/* Ahead of the fist, unless it is right on top of it. */
+		if (dist > (range >> 2)) {
+			int along = MUL_FIXED(to.vx, dir->vx) + MUL_FIXED(to.vy, dir->vy) + MUL_FIXED(to.vz, dir->vz);
+			if (along <= 0) continue;
+		}
+		if (!IsThisObjectVisibleFromThisPosition_WithIgnore(objectPtr, Player, tip, range)) continue;
+
+		{
+			int magnitudeOfForce = (5000 * damage->Cutting) / dynPtr->Mass;
+			VECTORCH attack_dir, displacement;
+			int real_multiple = ONE_FIXED, do_attack = 1;
+
+			dynPtr->LinImpulse.vx += MUL_FIXED(dir->vx, magnitudeOfForce);
+			dynPtr->LinImpulse.vy += MUL_FIXED(dir->vy, magnitudeOfForce);
+			dynPtr->LinImpulse.vz += MUL_FIXED(dir->vz, magnitudeOfForce);
+
+			displacement.vx = dynPtr->Position.vx - Player->ObStrategyBlock->DynPtr->Position.vx;
+			displacement.vy = dynPtr->Position.vy - Player->ObStrategyBlock->DynPtr->Position.vy;
+			displacement.vz = dynPtr->Position.vz - Player->ObStrategyBlock->DynPtr->Position.vz;
+			GetDirectionOfAttack(sbPtr, &displacement, &attack_dir);
+			if (attack_dir.vz > 0) real_multiple <<= 1;   /* from behind: double, as flat */
+
+			switch (sbPtr->I_SBtype) {
+				case I_BehaviourMarine:
+				case I_BehaviourMarinePlayer:
+				case I_BehaviourPredator:
+				case I_BehaviourAutoGun:
+				case I_BehaviourAlien:
+					do_attack = hurt_people;
+					hurt_people = 0;
+					break;
+				default:
+					break;
+			}
+			if (do_attack) {
+				if (sbPtr->SBdptr && sbPtr->SBdptr->HModelControlBlock)
+					HtoHDamageToHModel(sbPtr, damage, real_multiple, NULL, &attack_dir);
+				else
+					CauseDamageToObject(sbPtr, damage, real_multiple, &attack_dir);
+			}
+			hits++;
+		}
+	}
+	if (hits) {
+		PlayPredSlashSound();
+		HtoHStrikes++;
+	}
+	return hits;
+}
+
+/* The same punch while the SECONDARY is held (the wristblade wind-up): it releases the
+   heavy strike the wind-up has charged, as letting go of the trigger would, with no
+   animation. Fully wound (the held pose) = the full heavy strike; still pulling back =
+   half of it, the same two strengths WristBlade_WindUpStrike throws. The trophy grab is
+   left out - that is a head-taking animation, not a hit. Then the wind-up starts again,
+   so holding the trigger charges the next punch. */
+/* VR wind-up: in VR the held secondary does NOT animate - the arm stays still and the
+   weapon hand rumbles low instead (WristBlade_WindUp). The charge is timed rather than
+   read off the pull-back animation: fully wound after the same PRED_WRISTBLADE_WINDUP_TIME
+   the animation took. WristBlade_WindUpStrike reads it on release, and a punch reads it
+   via VR_WristbladeWindupCharged. */
+static int vr_windup_active = 0;   /* a VR (still-arm) wind-up is in progress */
+static int vr_windup_clock  = 0;   /* how long it has charged, 16.16 seconds */
+/* Release only strikes after a TAP: a hold is for punching (VR_WristbladePunchSecondary),
+   so letting go of a hold - or of any press that punched - does nothing. The hold clock
+   runs from the PRESS, and a punch's re-wind (vr_windup_rewind) keeps it running. */
+#define VR_WINDUP_TAP_MAX (ONE_FIXED * 3 / 10)   /* 0.3s: shorter than this is a tap */
+static int vr_windup_hold_clock = 0;
+static int vr_windup_punched    = 0;
+static int vr_windup_rewind     = 0;
+static int VR_WristbladeWindupCharged(void)
+{
+	return vr_windup_clock >= (ONE_FIXED / 2);   /* = PRED_WRISTBLADE_WINDUP_TIME in VR */
+}
+
+int VR_WristbladePunchSecondary(VECTORCH *tip, VECTORCH *dir, int range, PLAYER_WEAPON_DATA *wp)
+{
+	DAMAGE_PROFILE d = TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty];
+	int hits;
+	if (!VR_WristbladeWindupCharged()) {
+		int m = ONE_FIXED >> 1;
+		d.Impact      = MUL_FIXED(d.Impact, m);
+		d.Cutting     = MUL_FIXED(d.Cutting, m);
+		d.Penetrative = MUL_FIXED(d.Penetrative, m);
+		d.Fire        = MUL_FIXED(d.Fire, m);
+		d.Electrical  = MUL_FIXED(d.Electrical, m);
+		d.Acid        = MUL_FIXED(d.Acid, m);
+	}
+	d.Special = 0;
+	hits = VR_WristbladePunchHit(tip, dir, range, &d);
+	vr_windup_punched = 1;
+	vr_windup_rewind  = 1;
+	wp->StateTimeOutCounter = WEAPONSTATE_INITIALTIMEOUTCOUNT;   /* wind up again */
+	return hits;
+}
+
 void VR_LH_FireSpaceEnd(void)
 {
 	if (vr_lh_fire_depth > 0 && --vr_lh_fire_depth > 0) return;
@@ -7562,6 +7694,52 @@ void AlienStrikeTime(int time) {
 
 void WristBlade_WindUp(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) {
 
+#ifdef AVP_XR
+	/* VR: the arm stays still while the secondary is held - no pull-back animation, a
+	   low rumble in the weapon hand instead - and the charge is timed (see
+	   vr_windup_active). Release still throws the animated heavy strike
+	   (WristBlade_WindUpStrike), and a punch throws it without one (avpview.c). */
+	if (VR_IsIn3DMode()) {
+		extern void XR_Haptic_Right(float amplitude, float duration_ms);
+		/* A new vibration REPLACES the running one, so the low rumble is held off while
+		   the full-charge pulse plays out, or the next frame would cut it short. */
+		static int pulse_left = 0;
+		if (pulse_left > 0) pulse_left -= NormalFrameTime;
+		if (weaponPtr->StateTimeOutCounter == WEAPONSTATE_INITIALTIMEOUTCOUNT) {
+			Player_Weapon_Damage=TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty];
+			Player_Weapon_Damage.Special=0;
+			Wristblade_StrikeType=0;
+			TemplateWeapon[WEAPON_PRED_WRISTBLADE].SecondaryIsAutomatic=1;
+			vr_windup_active = 1;
+			vr_windup_clock  = 0;
+			if (vr_windup_rewind) {
+				vr_windup_rewind = 0;           /* re-wind after a punch: same press */
+			} else {
+				vr_windup_hold_clock = 0;       /* a fresh press */
+				vr_windup_punched    = 0;
+			}
+		} else {
+			int was_charged = VR_WristbladeWindupCharged();
+			vr_windup_clock += NormalFrameTime;
+			vr_windup_hold_clock += NormalFrameTime;
+			if (!was_charged && VR_WristbladeWindupCharged()) {
+				/* Fully wound: one strong pulse so you can feel the heavy strike is ready. */
+				XR_Haptic_Right(1.0f, 120.0f);
+				pulse_left = (ONE_FIXED * 120) / 1000;
+				return;
+			}
+		}
+		if (pulse_left <= 0) {
+			/* Barely there as the wind-up starts, ramping to its strength as the charge
+			   fills, then steady while it is held full. */
+			float f = (float)vr_windup_clock / (float)(ONE_FIXED / 2);
+			if (f > 1.0f) f = 1.0f;
+			XR_Haptic_Right(0.01f + 0.18f * f, 40.0f);
+		}
+		return;
+	}
+#endif
+
 	if (weaponPtr->StateTimeOutCounter == WEAPONSTATE_INITIALTIMEOUTCOUNT) {
 		/* Direct sequence (not a tween) so the wind-up plays at its own duration -
 		   see PlayWristbladeAttack for the tween-handoff bug this avoids. */
@@ -7734,6 +7912,41 @@ void WristBlade_WindUpStrike(void *playerStatus, PLAYER_WEAPON_DATA *weaponPtr) 
 	/* Eek!  Well, fire must have been released at this stage. */
 
 	GLOBALASSERT(PlayersWeaponHModelController.Sequence_Type==HMSQT_PredatorHUD);
+
+#ifdef AVP_XR
+	/* Released after a VR (still-arm) wind-up: throw the strike its timed charge earned,
+	   exactly as the pull-back branches below do - fully wound = the strong strike at full
+	   heavy damage, otherwise the weak one at half - then let the attack branch below run
+	   it, animated, on the following frames. */
+	if (vr_windup_active) {
+		int multiplyer;
+		vr_windup_active = 0;
+		vr_windup_rewind = 0;
+		if (vr_windup_punched || vr_windup_hold_clock >= VR_WINDUP_TAP_MAX) {
+			/* Let go of a hold (or a press that punched): no strike - end quietly. */
+			weaponPtr->StateTimeOutCounter = 0;
+			StaffAttack = -1;
+			return;
+		}
+		if (VR_WristbladeWindupCharged()) {
+			multiplyer = ONE_FIXED;
+			ThrowSecondaryStrongStrike();
+			Player_Weapon_Damage.Special = 1;
+		} else {
+			multiplyer = (ONE_FIXED >> 1);
+			ThrowSecondaryWeakStrike();
+			Player_Weapon_Damage.Special = 0;
+		}
+		Player_Weapon_Damage.Impact      = MUL_FIXED(TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty].Impact,      multiplyer);
+		Player_Weapon_Damage.Cutting     = MUL_FIXED(TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty].Cutting,     multiplyer);
+		Player_Weapon_Damage.Penetrative = MUL_FIXED(TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty].Penetrative, multiplyer);
+		Player_Weapon_Damage.Fire        = MUL_FIXED(TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty].Fire,        multiplyer);
+		Player_Weapon_Damage.Electrical  = MUL_FIXED(TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty].Electrical,  multiplyer);
+		Player_Weapon_Damage.Acid        = MUL_FIXED(TemplateAmmo[AMMO_HEAVY_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty].Acid,        multiplyer);
+		weaponPtr->StateTimeOutCounter = (WEAPONSTATE_INITIALTIMEOUTCOUNT>>1);
+		return;
+	}
+#endif
 
 	if (PlayersWeaponHModelController.Tweening!=Controller_NoTweening) {
 		/* I don't wanna know right now... */

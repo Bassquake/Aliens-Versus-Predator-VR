@@ -236,6 +236,36 @@ static int ProfileIsMoreRecent(AVP_USER_PROFILE *profilePtr, AVP_USER_PROFILE *p
 	}
 }
 
+/* The original Windows game's profile header: char Name[16], then a Win32 SYSTEMTIME
+   (8 WORDs, 16 bytes) and a FILETIME (8 bytes), so its level data starts at byte 40.
+   This port (from the icculus Linux port) replaced those with a 32-bit time and six
+   unused ints - 28 bytes - so its level data starts at byte 44, and a retail .prf read
+   as-is is short by 4 bytes and has every field 4 bytes out of place. It used to be
+   skipped silently: it fell below the minimum-size check.
+
+   Recognised by its SYSTEMTIME, which a profile of this port cannot imitate: there those
+   bytes are a time_t (whose high half is never a month) followed by zeros (never a day). */
+#define RETAIL_PROFILE_HEADER 40
+static int ProfileWasRetail = 0;
+static int ProfileIsRetailFormat(const unsigned char *raw, size_t got)
+{
+	const unsigned char *st = raw + (MAX_SIZE_OF_USERS_NAME + 1);
+	int year, month, day, hour, minute, second;
+	ProfileWasRetail = 0;
+	if (got <= RETAIL_PROFILE_HEADER) return 0;
+	year   = st[0]  | (st[1]  << 8);
+	month  = st[2]  | (st[3]  << 8);
+	day    = st[6]  | (st[7]  << 8);
+	hour   = st[8]  | (st[9]  << 8);
+	minute = st[10] | (st[11] << 8);
+	second = st[12] | (st[13] << 8);
+	if (year < 1998 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31
+	    || hour > 23 || minute > 59 || second > 59)
+		return 0;
+	ProfileWasRetail = 1;
+	return 1;
+}
+
 static int LoadUserProfiles(void)
 {
 	void *gd;
@@ -289,16 +319,40 @@ static int LoadUserProfiles(void)
 		memset(profilePtr, 0, sizeof(AVP_USER_PROFILE));
 		{
 			const size_t minimumSize = offsetof(AVP_USER_PROFILE, PadBindingPlus1);
-			size_t got = fread(profilePtr, 1, sizeof(AVP_USER_PROFILE), rif_file);
+			unsigned char *raw = new unsigned char[sizeof(AVP_USER_PROFILE)];
+			size_t got = fread(raw, 1, sizeof(AVP_USER_PROFILE), rif_file);
 
-			if (got < minimumSize)
+			if (ProfileIsRetailFormat(raw, got))
+			{
+				/* A profile from the original Windows game (AvP Gold / Classic). Its
+				   header is 4 bytes shorter than this port's - see
+				   ProfileIsRetailFormat - so everything after it is shifted into place.
+				   The rest of the layout is the same; the fields this port added since
+				   live in what was zero padding, so they decode to their defaults. It
+				   is saved in this port's layout from then on. */
+				size_t body = got - RETAIL_PROFILE_HEADER;
+				size_t room = sizeof(AVP_USER_PROFILE) - offsetof(AVP_USER_PROFILE, LevelCompleted);
+				memcpy(profilePtr->Name, raw, MAX_SIZE_OF_USERS_NAME + 1);
+				profilePtr->Name[MAX_SIZE_OF_USERS_NAME] = 0;
+				memcpy((char *)profilePtr + offsetof(AVP_USER_PROFILE, LevelCompleted),
+				       raw + RETAIL_PROFILE_HEADER, (body < room) ? body : room);
+				SDL_Log("PROFILE: '%s' is from the original game - converted", pszFullPath);
+				delete[] raw;
+			}
+			else
+			{
+				memcpy(profilePtr, raw, got);
+				delete[] raw;
+			}
+
+			if (!ProfileWasRetail && got < minimumSize)
 			{
 				fclose(rif_file);
 				delete[] pszFullPath;
 				delete profilePtr;
 				continue;
 			}
-			if (got < sizeof(AVP_USER_PROFILE))
+			if (!ProfileWasRetail && got < sizeof(AVP_USER_PROFILE))
 				SDL_Log("PROFILE: '%s' is from an older build (%u of %u bytes) - "
 				        "loaded, newer settings defaulted",
 				        pszFullPath, (unsigned)got, (unsigned)sizeof(AVP_USER_PROFILE));

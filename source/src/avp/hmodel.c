@@ -39,6 +39,11 @@
 /* VR_RIG_SUBUNIT: sub-unit offset of the rig ROOT, added to every section when the VR
    first-person rig is drawn. Set by the eye pass in avpview.c; zero otherwise. */
 float HModel_DrawRootFrac[3] = { 0.0f, 0.0f, 0.0f };
+
+/* Left Handed: set per section in the render branch of Process_Section, read a few lines
+   later at the draw - nothing between the two recurses. */
+static int   hm_lh_mirror = 0;
+static float hm_lh_rem[3];
 #include "kshape.h"
 #include "sfx.h"
 #include "dxlog.h"
@@ -1445,6 +1450,34 @@ void Process_Section(HMODELCONTROLLER *controller,SECTION_DATA *this_section_dat
 		dummy_displayblock.ObEuler.EulerY=0;
 		dummy_displayblock.ObEuler.EulerZ=0;
 		dummy_displayblock.ObMat=this_section_data->SecMat;
+#ifdef AVP_XR
+		/* Left Handed (VR): the first-person rig was solved from mirrored "virtual" hand
+		   poses, so draw each section reflected back into the real left hand - see
+		   VR_LH_HandsSwapped in avpview.c. The fraction the rounding drops is kept for the
+		   sub-unit drawing below. */
+		hm_lh_mirror = 0;
+		{
+			extern int  VR_LH_RenderMirrorActive(void);
+			extern void VR_LH_ReflectPointF(float p[3]);
+			extern void VR_LH_ReflectRows(MATRIXCH *m);
+			extern DISPLAYBLOCK PlayersWeapon;
+			if (Global_HModel_DispPtr == &PlayersWeapon && VR_LH_RenderMirrorActive()) {
+				float p[3];
+				p[0] = (float)this_section_data->World_Offset.vx;
+				p[1] = (float)this_section_data->World_Offset.vy;
+				p[2] = (float)this_section_data->World_Offset.vz;
+				VR_LH_ReflectPointF(p);
+				dummy_displayblock.ObWorld.vx = (int)floor(p[0] + 0.5);
+				dummy_displayblock.ObWorld.vy = (int)floor(p[1] + 0.5);
+				dummy_displayblock.ObWorld.vz = (int)floor(p[2] + 0.5);
+				hm_lh_rem[0] = p[0] - (float)dummy_displayblock.ObWorld.vx;
+				hm_lh_rem[1] = p[1] - (float)dummy_displayblock.ObWorld.vy;
+				hm_lh_rem[2] = p[2] - (float)dummy_displayblock.ObWorld.vz;
+				VR_LH_ReflectRows(&dummy_displayblock.ObMat);
+				hm_lh_mirror = 1;
+			}
+		}
+#endif
 		dummy_displayblock.ObFlags=ObFlag_VertexHazing|ObFlag_MultLSrc;
 		dummy_displayblock.ObFlags2=Global_HModel_DispPtr->ObFlags2;
 		dummy_displayblock.ObFlags3=0;
@@ -1526,18 +1559,30 @@ void Process_Section(HMODELCONTROLLER *controller,SECTION_DATA *this_section_dat
 			extern int vr_is_rendering;
 			int sub = (vr_is_rendering && Global_HModel_DispPtr == &PlayersWeapon
 			           && AvP.PlayerType == I_Predator);
-			if (sub) {
+			if (sub || hm_lh_mirror) {
 				/* The section's own dropped fraction, plus the rig ROOT's - which is
 				   placed off a whole-unit controller position (HModel_DrawRootFrac,
 				   set by the VR eye pass around each rig draw). A root translation
 				   moves every section equally, so adding it here at draw time is exact
-				   whichever solve produced the sections. */
-				KShape_ObWorldFrac[0] = this_section_data->World_Frac[0] + HModel_DrawRootFrac[0];
-				KShape_ObWorldFrac[1] = this_section_data->World_Frac[1] + HModel_DrawRootFrac[1];
-				KShape_ObWorldFrac[2] = this_section_data->World_Frac[2] + HModel_DrawRootFrac[2];
+				   whichever solve produced the sections. Left Handed reflects it, and
+				   adds what rounding the reflected position dropped. */
+				extern void VR_LH_ReflectDirF(float v[3]);
+				float f[3] = { 0.0f, 0.0f, 0.0f };
+				if (sub) {
+					f[0] = this_section_data->World_Frac[0] + HModel_DrawRootFrac[0];
+					f[1] = this_section_data->World_Frac[1] + HModel_DrawRootFrac[1];
+					f[2] = this_section_data->World_Frac[2] + HModel_DrawRootFrac[2];
+				}
+				if (hm_lh_mirror) {
+					VR_LH_ReflectDirF(f);
+					f[0] += hm_lh_rem[0]; f[1] += hm_lh_rem[1]; f[2] += hm_lh_rem[2];
+				}
+				KShape_ObWorldFrac[0] = f[0];
+				KShape_ObWorldFrac[1] = f[1];
+				KShape_ObWorldFrac[2] = f[2];
 			}
 			RenderThisHierarchicalDisplayblock(&dummy_displayblock);
-			if (sub) {
+			if (sub || hm_lh_mirror) {
 				KShape_ObWorldFrac[0] = KShape_ObWorldFrac[1] = KShape_ObWorldFrac[2] = 0.0f;
 			}
 		}

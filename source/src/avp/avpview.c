@@ -376,6 +376,113 @@ static void VR_SetRigRootFrac(const float *f)
     HModel_DrawRootFrac[1] = f ? f[1] : 0.0f;
     HModel_DrawRootFrac[2] = f ? f[2] : 0.0f;
 }
+
+/* ---- Left Hand (VR Configuration "Left Handed") --------------------------------------
+ *
+ * The first-person rigs are right-handed models and everything about holding them - the
+ * per-weapon offsets, the support-arm split, two-handed grip and aim, the tuner tables -
+ * was tuned for a right hand. Rather than mirror all of that, left-handed play works by
+ * REFLECTION, twice:
+ *
+ *   1. The controllers are swapped (the LEFT controller drives vr_right_hand_*, the
+ *      weapon hand) and, for the eye pass only, reflected across the head's centre
+ *      plane. That turns the real left hand into a "virtual" right hand, so all the
+ *      existing rig code runs unchanged and in its own terms.
+ *   2. The finished rig is DRAWN reflected back across the same plane (hmodel.c, per
+ *      section, VR_LH_RenderMirrorActive), which puts its mirror image in the real left
+ *      hand. Reflecting a hierarchy gives a negative-determinant matrix; the back-face
+ *      test still works because it goes through the matrix transpose, which is the exact
+ *      inverse of a reflection, and GL face culling is off.
+ *
+ * Gameplay never sees the virtual poses: the eye pass converts them back before it
+ * returns (AvpShowViewsVR), so aiming, grenades, the disc and the hook read the REAL
+ * controller - and any two-handed aim worked out in virtual space comes back with them.
+ * Things that read the solved rig for gameplay (the flamethrower / flechette nozzle) or
+ * draw from it outside the rig (muzzle flash, the Predator's wrist display, the hook
+ * cable) reflect what they read. The plane is the eyes' midpoint and the line between
+ * them, so a reflection maps one eye exactly onto the other.
+ *
+ * Marine and Predator only: the Alien's claws are a single model, and its wall climbing
+ * re-bases the hands every eye. Triggers and grips swap sides in main.c (the input poll)
+ * and the haptics follow them. */
+int VRLeftHanded = 0;                     /* the option; 0 = No (default) */
+extern MATRIXCH vr_left_hand_mat;         /* defined just below */
+extern int      vr_left_hand_valid;
+static float vr_lh_c[3], vr_lh_n[3] = { 1.0f, 0.0f, 0.0f };
+static int   vr_lh_plane_ok = 0;
+static int   vr_lh_virtual  = 0;          /* hand vars currently hold the virtual poses */
+
+/* Hands swapped and mirrored for the species being played (the option alone). */
+int VR_LH_HandsSwapped(void)
+{
+    return VRLeftHanded && (AvP.PlayerType == I_Marine || AvP.PlayerType == I_Predator);
+}
+static int VR_LH_Enabled(void) { return VR_LH_HandsSwapped() && vr_lh_plane_ok; }
+
+void VR_LH_ReflectDirF(float v[3])
+{
+    float d = v[0]*vr_lh_n[0] + v[1]*vr_lh_n[1] + v[2]*vr_lh_n[2];
+    v[0] -= 2.0f * d * vr_lh_n[0]; v[1] -= 2.0f * d * vr_lh_n[1]; v[2] -= 2.0f * d * vr_lh_n[2];
+}
+void VR_LH_ReflectPointF(float p[3])
+{
+    float q[3] = { p[0] - vr_lh_c[0], p[1] - vr_lh_c[1], p[2] - vr_lh_c[2] };
+    VR_LH_ReflectDirF(q);
+    p[0] = q[0] + vr_lh_c[0]; p[1] = q[1] + vr_lh_c[1]; p[2] = q[2] + vr_lh_c[2];
+}
+void VR_LH_ReflectPointV(VECTORCH *v)
+{
+    float p[3] = { (float)v->vx, (float)v->vy, (float)v->vz };
+    VR_LH_ReflectPointF(p);
+    v->vx = (int)SDL_floorf(p[0] + 0.5f); v->vy = (int)SDL_floorf(p[1] + 0.5f); v->vz = (int)SDL_floorf(p[2] + 0.5f);
+}
+/* Reflect a pose matrix in the WORLD: every row is an axis expressed in the world, so
+   each row is reflected as a direction. Leaves a mirror-image (det -1) frame. */
+void VR_LH_ReflectRows(MATRIXCH *m)
+{
+    int *r = &m->mat11, i;
+    for (i = 0; i < 3; i++) {
+        float v[3] = { (float)r[i*3], (float)r[i*3+1], (float)r[i*3+2] };
+        VR_LH_ReflectDirF(v);
+        r[i*3] = (int)v[0]; r[i*3+1] = (int)v[1]; r[i*3+2] = (int)v[2];
+    }
+}
+/* A hand pose to/from its virtual twin: position reflected (keeping the sub-unit
+   fraction exact), rows reflected, then the controller's own X axis flipped so the
+   result is a proper rotation again - the mirror of a left grip is a right grip. Its
+   own inverse, so the same call goes both ways. */
+static void VR_LH_MirrorHand(VECTORCH *w, MATRIXCH *m, float frac[3])
+{
+    float p[3] = { (float)w->vx + frac[0], (float)w->vy + frac[1], (float)w->vz + frac[2] };
+    VR_LH_ReflectPointF(p);
+    w->vx = (int)SDL_floorf(p[0] + 0.5f); w->vy = (int)SDL_floorf(p[1] + 0.5f); w->vz = (int)SDL_floorf(p[2] + 0.5f);
+    frac[0] = p[0] - (float)w->vx; frac[1] = p[1] - (float)w->vy; frac[2] = p[2] - (float)w->vz;
+    VR_LH_ReflectRows(m);
+    m->mat11 = -m->mat11; m->mat12 = -m->mat12; m->mat13 = -m->mat13;
+}
+static void VR_LH_MirrorHands(void)
+{
+    if (vr_right_hand_valid) VR_LH_MirrorHand(&vr_right_hand_world, &vr_right_hand_mat, vr_hand_frac_r);
+    if (vr_left_hand_valid)  VR_LH_MirrorHand(&vr_left_hand_world,  &vr_left_hand_mat,  vr_hand_frac_l);
+}
+/* Into virtual space; returns 1 if it converted (so the caller knows to convert back). */
+int VR_LH_HandsToVirtual(void)
+{
+    if (vr_lh_virtual || !VR_LH_Enabled()) return 0;
+    VR_LH_MirrorHands();
+    vr_lh_virtual = 1;
+    return 1;
+}
+void VR_LH_HandsToReal(void)
+{
+    if (!vr_lh_virtual) return;
+    VR_LH_MirrorHands();
+    vr_lh_virtual = 0;
+}
+/* The rig is being drawn from virtual poses, so draw it reflected (hmodel.c, avpview.c). */
+int VR_LH_RenderMirrorActive(void) { return vr_lh_virtual; }
+/* A point taken from a hand pose while the poses are virtual, back to the real world. */
+void VR_LH_ToRealPoint(VECTORCH *v) { if (vr_lh_virtual) VR_LH_ReflectPointV(v); }
 MATRIXCH  vr_left_hand_mat  = {ONE_FIXED,0,0, 0,ONE_FIXED,0, 0,0,ONE_FIXED};
 int       vr_left_hand_valid = 0;
 
@@ -3739,10 +3846,46 @@ void AvpShowViewsVR(void)
         (valid_flag) = 1; \
     } while(0)
 
-    if (xr_grip_right_valid)
-        GRIP_TO_GAME(xr_grip_pose_right, vr_right_hand_valid, vr_right_hand_world, vr_right_hand_mat, vr_hand_frac_r);
-    if (xr_grip_left_valid)
-        GRIP_TO_GAME(xr_grip_pose_left, vr_left_hand_valid, vr_left_hand_world, vr_left_hand_mat, vr_hand_frac_l);
+    {
+        /* Left Handed: the LEFT controller is the weapon hand (see VR_LH_HandsSwapped). */
+        const int lh = VR_LH_HandsSwapped();
+        if (lh ? xr_grip_left_valid : xr_grip_right_valid)
+            GRIP_TO_GAME((lh ? xr_grip_pose_left : xr_grip_pose_right), vr_right_hand_valid, vr_right_hand_world, vr_right_hand_mat, vr_hand_frac_r);
+        if (lh ? xr_grip_right_valid : xr_grip_left_valid)
+            GRIP_TO_GAME((lh ? xr_grip_pose_right : xr_grip_pose_left), vr_left_hand_valid, vr_left_hand_world, vr_left_hand_mat, vr_hand_frac_l);
+    }
+
+    /* Left Handed: the mirror plane for this frame - the eyes' midpoint, normal along the
+       line between them - placed with the same mapping GRIP_TO_GAME uses, then the hands
+       go into virtual (right-handed) space for the eye pass. See VR_LH_HandsSwapped. */
+    vr_lh_plane_ok = 0;
+    if (VR_LH_HandsSwapped() && view_count >= 2) {
+        float e[2][3], len;
+        int i;
+        for (i = 0; i < 2; i++) {
+            float gdx = xr_views[i].pose.position.x - ref_head_x;
+            float gdz = xr_views[i].pose.position.z - ref_head_z;
+            if (xr_snap_yaw != 0) {
+                float snap_rad = (float)xr_snap_yaw * SDL_PI_F / 2048.0f;
+                float snap_s = SDL_sinf(snap_rad), snap_c = SDL_cosf(snap_rad);
+                float rdx = gdx * snap_c - gdz * snap_s;
+                float rdz = gdx * snap_s + gdz * snap_c;
+                gdx = rdx; gdz = rdz;
+            }
+            e[i][0] = (float)base_world.vx + gdx * vr_y_scale;
+            e[i][1] = (float)Player->ObWorld.vy - VR_STAGE_Y(xr_views[i].pose.position.y) * vr_y_scale
+                    + (float)vr_crouch_drop + (float)vr_headroom_drop;
+            e[i][2] = (float)base_world.vz - gdz * vr_y_scale;
+        }
+        vr_lh_n[0] = e[1][0] - e[0][0]; vr_lh_n[1] = e[1][1] - e[0][1]; vr_lh_n[2] = e[1][2] - e[0][2];
+        len = SDL_sqrtf(vr_lh_n[0]*vr_lh_n[0] + vr_lh_n[1]*vr_lh_n[1] + vr_lh_n[2]*vr_lh_n[2]);
+        if (len > 1.0f) {
+            vr_lh_n[0] /= len; vr_lh_n[1] /= len; vr_lh_n[2] /= len;
+            for (i = 0; i < 3; i++) vr_lh_c[i] = 0.5f * (e[0][i] + e[1][i]);
+            vr_lh_plane_ok = 1;
+        }
+    }
+    VR_LH_HandsToVirtual();
 
     #undef GRIP_TO_GAME
 
@@ -4522,6 +4665,10 @@ void AvpShowViewsVR(void)
         }
         AVPGetInViewVolumeList(Global_VDB_Ptr);
         if (eye == 0) {
+            /* Left Handed: this block is GAMEPLAY - firing, aiming and the weapon state
+               machine - so it must see the real controller poses, not the mirrored ones
+               the rig is drawn from. Back to virtual at the end of the block. */
+            VR_LH_HandsToReal();
             /* Inject right-trigger primary fire before the weapon state machine reads it. */
             {
                 if (VR_Action(VR_ACT_FIRE_PRIMARY)) {
@@ -4964,6 +5111,7 @@ void AvpShowViewsVR(void)
                     }
                 }
             }
+            VR_LH_HandsToVirtual();   /* Left Handed: back to the rig's space */
         }
         UpdateObjectLights(Player);
         if (NumOnScreenBlocks) KRenderItems(Global_VDB_Ptr);
@@ -5798,6 +5946,18 @@ void AvpShowViewsVR(void)
                        transparent effects). Queued after the light halos and
                        flushed here, so it still layers on top of them. */
                     PositionPlayersWeaponMuzzleFlash();
+                    if (VR_LH_RenderMirrorActive()) {
+                        /* Left Handed: the barrel bone is in virtual space - reflect the
+                           flash into the real (left) hand like the rig itself. */
+                        VECTORCH ov;
+                        VR_LH_ReflectPointV(&PlayersWeaponMuzzleFlash.ObWorld);
+                        VR_LH_ReflectRows(&PlayersWeaponMuzzleFlash.ObMat);
+                        ov.vx = PlayersWeaponMuzzleFlash.ObWorld.vx - Global_VDB_Ptr->VDB_World.vx;
+                        ov.vy = PlayersWeaponMuzzleFlash.ObWorld.vy - Global_VDB_Ptr->VDB_World.vy;
+                        ov.vz = PlayersWeaponMuzzleFlash.ObWorld.vz - Global_VDB_Ptr->VDB_World.vz;
+                        RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
+                        PlayersWeaponMuzzleFlash.ObView = ov;
+                    }
                     if (AvP.PlayerType == I_Marine) {
                         enum MUZZLE_FLASH_ID fid =
                             (wpn->WeaponIDNumber == WEAPON_SMARTGUN)
@@ -5824,10 +5984,17 @@ void AvpShowViewsVR(void)
                             if (!lf) lf = VR_LeftRigSection("Dum flash L");
                             if (!lf) lf = VR_LeftRigSection("dum flash L");
                             if (lf) {
+                                VECTORCH lpos = lf->World_Offset;
                                 VECTORCH ldir = { lf->SecMat.mat31,
                                                   lf->SecMat.mat32,
                                                   lf->SecMat.mat33 };
-                                DrawMuzzleFlash(&lf->World_Offset, &ldir, fid);
+                                if (VR_LH_RenderMirrorActive()) {
+                                    float d[3] = { (float)ldir.vx, (float)ldir.vy, (float)ldir.vz };
+                                    VR_LH_ReflectPointV(&lpos);
+                                    VR_LH_ReflectDirF(d);
+                                    ldir.vx = (int)d[0]; ldir.vy = (int)d[1]; ldir.vz = (int)d[2];
+                                }
+                                DrawMuzzleFlash(&lpos, &ldir, fid);
                             }
                         }
                     } else if (firing) {
@@ -5921,6 +6088,13 @@ void AvpShowViewsVR(void)
             aim_vs.vx = vr_right_hand_mat.mat21;
             aim_vs.vy = vr_right_hand_mat.mat22;
             aim_vs.vz = vr_right_hand_mat.mat23;
+            if (VR_LH_RenderMirrorActive()) {
+                /* Left Handed: the hand poses are mirrored during the eye pass - aim
+                   along the REAL controller, where the shot goes. */
+                float d[3] = { (float)aim_vs.vx, (float)aim_vs.vy, (float)aim_vs.vz };
+                VR_LH_ReflectDirF(d);
+                aim_vs.vx = (int)d[0]; aim_vs.vy = (int)d[1]; aim_vs.vz = (int)d[2];
+            }
             RotateVector(&aim_vs, &Global_VDB_Ptr->VDB_Mat);   /* world → view */
             if (aim_vs.vz > 0) {
                 /* Raw, with NO off-axis shift: the HUD carries the same shift (see
@@ -5962,6 +6136,11 @@ void AvpShowViewsVR(void)
             aim_vs.vx = vr_left_hand_mat.mat21;
             aim_vs.vy = vr_left_hand_mat.mat22;
             aim_vs.vz = vr_left_hand_mat.mat23;
+            if (VR_LH_RenderMirrorActive()) {   /* Left Handed: the real hand */
+                float d[3] = { (float)aim_vs.vx, (float)aim_vs.vy, (float)aim_vs.vz };
+                VR_LH_ReflectDirF(d);
+                aim_vs.vx = (int)d[0]; aim_vs.vy = (int)d[1]; aim_vs.vz = (int)d[2];
+            }
             RotateVector(&aim_vs, &Global_VDB_Ptr->VDB_Mat);   /* world -> view */
             if (aim_vs.vz > 0) {
                 /* Raw, with NO off-axis shift: the HUD carries the same shift (see
@@ -6164,6 +6343,9 @@ void AvpShowViewsVR(void)
             vr_score_quad_ready = 1;
         }
     }
+
+    /* Left Handed: gameplay reads the REAL controller poses - see VR_LH_HandsSwapped. */
+    VR_LH_HandsToReal();
 
     vr_is_rendering = 0;
     SetFrustrumType(saved_frustrum);

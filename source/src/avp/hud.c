@@ -2137,7 +2137,24 @@ void DrawWristDisplay(void)
 		sectionPtr=GetThisSectionData(PlayersWeaponHModelController.section_data,sectionName[0]);
 	if (!sectionPtr) return;
 	
-	RenderPredatorPlasmaCasterCharge(PlayerStatusPtr->PlasmaCasterCharge, &sectionPtr->World_Offset, &sectionPtr->SecMat);
+	{
+		VECTORCH wo = sectionPtr->World_Offset;
+		MATRIXCH wm = sectionPtr->SecMat;
+		#ifdef AVP_XR
+		{
+			/* Left Handed: the arm was solved in mirrored space - reflect the display
+			   back with it (VR_LH_HandsSwapped, avpview.c). */
+			extern int  VR_LH_RenderMirrorActive(void);
+			extern void VR_LH_ReflectPointV(VECTORCH *v);
+			extern void VR_LH_ReflectRows(MATRIXCH *m);
+			if (VR_LH_RenderMirrorActive()) {
+				VR_LH_ReflectPointV(&wo);
+				VR_LH_ReflectRows(&wm);
+			}
+		}
+		#endif
+		RenderPredatorPlasmaCasterCharge(PlayerStatusPtr->PlasmaCasterCharge, &wo, &wm);
+	}
 	#if 0
    	for (int i=0; i<5; i++)
    	{

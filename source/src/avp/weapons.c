@@ -322,9 +322,20 @@ static int Melee_CameraCanSee(DISPLAYBLOCK *objectPtr, VECTORCH *positionPtr)
    game-logic pose. Uses the shared VR_ComputeWeaponAnchor() so it can never
    drift from the rendered weapon. Call right before ProveHModel in a player
    fire function. No-op outside VR 3D mode. */
+extern int  VR_LH_HandsToVirtual(void);
+extern void VR_LH_HandsToReal(void);
+extern int  VR_LH_RenderMirrorActive(void);
+extern void VR_LH_ReflectPointV(VECTORCH *v);
+extern void VR_LH_ReflectRows(MATRIXCH *m);
+
 static void VR_PositionPlayerWeaponAtController(int weaponID)
 {
+	int lh_converted;
 	if (!VR_IsIn3DMode() || !vr_right_hand_valid) return;
+	/* Left Handed: pose the rig from the same mirrored "virtual" hand the eye pass draws
+	   it from, so this solve matches the one on screen (VR_LH_HandsSwapped, avpview.c).
+	   The fire code then reads it through VR_LH_FireSpaceBegin. */
+	lh_converted = VR_LH_HandsToVirtual();
 	VR_ComputeWeaponAnchor(weaponID, &PlayersWeapon.ObWorld, &PlayersWeapon.ObMat);
 
 	/* Apply the rig's view scale exactly as the eye pass does, because the caller
@@ -350,6 +361,50 @@ static void VR_PositionPlayerWeaponAtController(int weaponID)
 		m->mat21 = (int)(m->mat21 * ws); m->mat22 = (int)(m->mat22 * ws); m->mat23 = (int)(m->mat23 * ws);
 		m->mat31 = (int)(m->mat31 * ws); m->mat32 = (int)(m->mat32 * ws); m->mat33 = (int)(m->mat33 * ws);
 	}
+	if (lh_converted) VR_LH_HandsToReal();
+}
+
+/* Left Handed: a fire function has just solved the rig in mirrored space (above), and
+   reads its pose and nozzle to place the shot. Reflect those into the real world for the
+   duration of the fire code, then put them back - the eye pass draws this same solve
+   and reflects it itself. No-op unless left-handed. */
+/* Also used around FireProjectileAmmo (bh_weap.c) - grenades, rockets, the Skeeter's
+   discs and the Predator pistol's bolts all spawn from PlayersWeapon's pose, which in
+   left-handed play is the mirrored one the eye pass drew. Nests: only the outermost
+   Begin/End pair does anything. */
+static int      vr_lh_fire_saved = 0;
+static int      vr_lh_fire_depth = 0;
+static VECTORCH vr_lh_fire_obw, vr_lh_fire_mw;
+static MATRIXCH vr_lh_fire_obm, vr_lh_fire_mm;
+void VR_LH_FireSpaceBegin(void)
+{
+	extern int VR_LH_HandsSwapped(void);
+	if (vr_lh_fire_depth++ > 0) return;
+	vr_lh_fire_saved = 0;
+	if (!VR_IsIn3DMode() || !VR_LH_HandsSwapped() || VR_LH_RenderMirrorActive()) return;
+	vr_lh_fire_obw = PlayersWeapon.ObWorld;
+	vr_lh_fire_obm = PlayersWeapon.ObMat;
+	VR_LH_ReflectPointV(&PlayersWeapon.ObWorld);
+	VR_LH_ReflectRows(&PlayersWeapon.ObMat);
+	if (PWMFSDP) {
+		vr_lh_fire_mw = PWMFSDP->World_Offset;
+		vr_lh_fire_mm = PWMFSDP->SecMat;
+		VR_LH_ReflectPointV(&PWMFSDP->World_Offset);
+		VR_LH_ReflectRows(&PWMFSDP->SecMat);
+	}
+	vr_lh_fire_saved = 1;
+}
+void VR_LH_FireSpaceEnd(void)
+{
+	if (vr_lh_fire_depth > 0 && --vr_lh_fire_depth > 0) return;
+	if (!vr_lh_fire_saved) return;
+	PlayersWeapon.ObWorld = vr_lh_fire_obw;
+	PlayersWeapon.ObMat   = vr_lh_fire_obm;
+	if (PWMFSDP) {
+		PWMFSDP->World_Offset = vr_lh_fire_mw;
+		PWMFSDP->SecMat       = vr_lh_fire_mm;
+	}
+	vr_lh_fire_saved = 0;
 }
 #endif
 
@@ -6603,6 +6658,9 @@ int PlayerFireFlameThrower(PLAYER_WEAPON_DATA *weaponPtr) {
 #endif
 
 	ProveHModel(&PlayersWeaponHModelController,&PlayersWeapon);
+#ifdef AVP_XR
+	VR_LH_FireSpaceBegin();
+#endif
     {
     	oldAmmoCount=weaponPtr->PrimaryRoundsRemaining>>16;
 		/* ammo is in 16.16. we want the integer part, rounded up */
@@ -6693,6 +6751,9 @@ int PlayerFireFlameThrower(PLAYER_WEAPON_DATA *weaponPtr) {
 	}
 
 
+#ifdef AVP_XR
+	VR_LH_FireSpaceEnd();
+#endif
 	return(1);
 
 }
@@ -11269,6 +11330,9 @@ int PlayerFirePredPistolFlechettes(PLAYER_WEAPON_DATA *weaponPtr) {
 		return(0);
 	}
 
+#ifdef AVP_XR
+	VR_LH_FireSpaceBegin();
+#endif
 	if (PWMFSDP) {
 		/* Spawn straight from the muzzle bone (no near-weapon "crunch"): the crunch
 		   pulls the origin 1/4 of the way to the camera, putting it far behind the
@@ -11291,6 +11355,9 @@ int PlayerFirePredPistolFlechettes(PLAYER_WEAPON_DATA *weaponPtr) {
 	}
 
 
+#ifdef AVP_XR
+	VR_LH_FireSpaceEnd();
+#endif
 	return(1);
 
 }

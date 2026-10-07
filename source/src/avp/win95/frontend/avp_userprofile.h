@@ -260,7 +260,9 @@ typedef struct
 	/* VR Configuration "Hold Weapon with Left Grip if close to it". Stored INVERTED - it
 	   defaults to Yes, and a zero byte must decode to the default. 0 = Yes, 1 = No. */
 	unsigned char TwoHandProximityOff;
-	unsigned char ExtReserved[13];
+	/* VR Configuration "Left Handed". 0 = No (default), 1 = Yes. */
+	unsigned char LeftHanded;
+	unsigned char ExtReserved[12];
 
 } AVP_USER_PROFILE;
 

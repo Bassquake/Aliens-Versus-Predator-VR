@@ -65,6 +65,7 @@ extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int AutoTwoHandedWeapons;
 extern int TwoHandProximityGrip;
+extern int VRLeftHanded;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
 extern int LeftStickDeadzone;
 extern int RightStickDeadzone;
@@ -352,6 +353,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
 	AutoTwoHandedWeapons = 1; /* left hand takes the grip when brought to it */
 	TwoHandProximityGrip = 1; /* the left hand must be near the weapon to take hold */
+	VRLeftHanded = 0;         /* right-handed */
 	LeftStickDeadzone = 2;
 	RightStickDeadzone = 2;
 	PadVertSensitivity = 10;
@@ -501,6 +503,7 @@ extern void GetSettingsFromUserProfile(void)
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
 	AutoTwoHandedWeapons =			!UserProfilePtr->AutoTwoHandedDisabled;
 	TwoHandProximityGrip =			UserProfilePtr->TwoHandProximityOff ? 0 : 1;
+	VRLeftHanded =					UserProfilePtr->LeftHanded ? 1 : 0;
 	LeftStickDeadzone =			UserProfilePtr->LeftStickDeadzonePlus1
 					? UserProfilePtr->LeftStickDeadzonePlus1 - 1 : 2;
 	RightStickDeadzone =			UserProfilePtr->RightStickDeadzonePlus1
@@ -685,6 +688,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
 	profilePtr->AutoTwoHandedDisabled =	(unsigned char)(AutoTwoHandedWeapons ? 0 : 1);
 	profilePtr->TwoHandProximityOff =	(unsigned char)(TwoHandProximityGrip ? 0 : 1);
+	profilePtr->LeftHanded =		(unsigned char)(VRLeftHanded ? 1 : 0);
 	profilePtr->LeftStickDeadzonePlus1 =	(unsigned char)(LeftStickDeadzone + 1);
 	profilePtr->RightStickDeadzonePlus1 =	(unsigned char)(RightStickDeadzone + 1);
 	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);

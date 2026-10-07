@@ -344,8 +344,11 @@ extern void RenderGrapplingHook(void)
 			 * as a real line: fixed at the hook, following the hand that holds it, and
 			 * completely indifferent to where the head is pointed. Falls back to the
 			 * camera-relative point above when that hand is not tracked. */
-			if (VR_SessionActive() && vr_left_hand_valid)
+			if (VR_SessionActive() && vr_left_hand_valid) {
+				extern void VR_LH_ToRealPoint(VECTORCH *v);
 				cable[0] = vr_left_hand_world;
+				VR_LH_ToRealPoint(&cable[0]);   /* Left Handed: real hand, not its mirror */
+			}
 			#endif
 		}
 //		cable[0].vx = Global_VDB_Ptr->VDB_World.vx;

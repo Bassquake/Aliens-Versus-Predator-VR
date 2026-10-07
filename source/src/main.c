@@ -720,6 +720,7 @@ int VRClimbVignetteStrength = 5;
 int MarineLeftArmVisible = 1;
 int AutoTwoHandedWeapons = 1;   /* defined in avpview.c on VR builds; inert here */
 int TwoHandProximityGrip = 1;   /* defined in avpview.c on VR builds; inert here */
+int VRLeftHanded = 0;           /* defined in avpview.c on VR builds; inert here */
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;
 int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
@@ -4855,6 +4856,28 @@ int axes, balls, hats;
             }
         }
 
+        /* Left Handed (VR Configuration): the weapon is in the LEFT hand, so its trigger
+         * and grip are the left controller's - swap the two hands' trigger and grip
+         * states here, once, and every binding, the two-handed hold and the hook follow.
+         * The hook's press edge is re-derived from the swapped (now right-controller)
+         * trigger. Face buttons and sticks stay where they are. Gameplay only, and only
+         * for the species that mirror (see VR_LH_HandsSwapped in avpview.c). */
+        if (!xr_2d_mode) {
+            extern int VR_LH_HandsSwapped(void);
+            static int lh_lt_prev = 0;
+            if (VR_LH_HandsSwapped()) {
+                int t;
+                t = xr_trigger_right_pressed;
+                xr_trigger_right_pressed = xr_left_trigger_gameplay_pressed;
+                xr_left_trigger_gameplay_pressed = t;
+                t = xr_grip_right_squeeze_pressed;
+                xr_grip_right_squeeze_pressed = xr_left_squeeze_gameplay_pressed;
+                xr_left_squeeze_gameplay_pressed = t;
+                xr_left_trigger_gameplay_edge = (xr_left_trigger_gameplay_pressed && !lh_lt_prev);
+            }
+            lh_lt_prev = xr_left_trigger_gameplay_pressed;
+        }
+
         /* Left menu button. In the 2D menus it's immediate ESC/back. In gameplay a
          * short tap opens the pause menu (fired on release so a hold can be told apart),
          * while holding it past 0.5s instead shows the message history (like F1 in the
@@ -5189,10 +5212,13 @@ int axes, balls, hats;
 void XR_Haptic_Right(float amplitude, float duration_ms)
 {
 #ifdef AVP_XR
-    if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_right_haptic_action) return;
+    extern int VR_LH_HandsSwapped(void);
+    /* Left Handed: the weapon hand is the left controller - see VR_LH_HandsSwapped. */
+    XrAction act = VR_LH_HandsSwapped() ? xr_left_haptic_action : xr_right_haptic_action;
+    if (!pfn_xrApplyHapticFeedback || !xr_session || !act) return;
     {
     XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
-    info.action = xr_right_haptic_action;
+    info.action = act;
     XrHapticVibration vib = { XR_TYPE_HAPTIC_VIBRATION };
     vib.duration  = (XrDuration)(duration_ms * 1000000.0f); /* ms → ns */
     vib.frequency = XR_FREQUENCY_UNSPECIFIED;
@@ -5207,10 +5233,12 @@ void XR_Haptic_Right(float amplitude, float duration_ms)
 void XR_Haptic_Left(float amplitude, float duration_ms)
 {
 #ifdef AVP_XR
-    if (!pfn_xrApplyHapticFeedback || !xr_session || !xr_left_haptic_action) return;
+    extern int VR_LH_HandsSwapped(void);
+    XrAction act = VR_LH_HandsSwapped() ? xr_right_haptic_action : xr_left_haptic_action;
+    if (!pfn_xrApplyHapticFeedback || !xr_session || !act) return;
     {
     XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
-    info.action = xr_left_haptic_action;
+    info.action = act;
     XrHapticVibration vib = { XR_TYPE_HAPTIC_VIBRATION };
     vib.duration  = (XrDuration)(duration_ms * 1000000.0f); /* ms → ns */
     vib.frequency = XR_FREQUENCY_UNSPECIFIED;

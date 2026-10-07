@@ -362,6 +362,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_TWOHANDPROXIMITY_HELP: return "No: hold the left grip to take hold of a two-handed weapon wherever your left hand is. Yes: your left hand must also be near the front of the weapon.";
 			case TEXTSTRING_TWOHANDPROXIMITY_NO:   return "No";
 			case TEXTSTRING_TWOHANDPROXIMITY_YES:  return "Yes (Default)";
+			case TEXTSTRING_LEFTHANDED:      return "Left Handed";
+			case TEXTSTRING_LEFTHANDED_HELP: return "Hold the weapon in your left hand. The arms and weapon are mirrored, and the triggers and grips swap sides. Marine and Predator only.";
+			case TEXTSTRING_LEFTHANDED_NO:   return "No (Default)";
+			case TEXTSTRING_LEFTHANDED_YES:  return "Yes";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_OFF:  return "Off";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_ON:   return "On (Default)";
 			case TEXTSTRING_RIGHTSTICKDEADZONE_HELP: return "How far the right stick must be pushed before it registers. Applies to VR controllers and to a gamepad, and stays with the right stick if the sticks are swapped.";

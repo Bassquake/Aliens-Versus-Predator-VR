@@ -125,6 +125,14 @@ SOUND3DDATA PredPistolExplosion_SoundData={
 										   
 void FireProjectileAmmo(enum AMMO_ID AmmoID)
 {
+#ifdef AVP_XR
+	/* Left Handed (VR): every projectile below spawns from PlayersWeapon's pose, which
+	   is mirrored in left-handed play - read it in the real world instead (weapons.c,
+	   VR_LH_FireSpaceBegin). No-op otherwise. */
+	extern void VR_LH_FireSpaceBegin(void);
+	extern void VR_LH_FireSpaceEnd(void);
+	VR_LH_FireSpaceBegin();
+#endif
 	switch (AmmoID)
 	{
 		case AMMO_GRENADE:
@@ -213,6 +221,9 @@ void FireProjectileAmmo(enum AMMO_ID AmmoID)
 		default:
 			break;
 	}
+#ifdef AVP_XR
+	VR_LH_FireSpaceEnd();
+#endif
 }
 
 /* CDF 12/7/99 Smart Frisbee for expansion pack? */

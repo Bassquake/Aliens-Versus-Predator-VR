@@ -363,7 +363,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_TWOHANDPROXIMITY_NO:   return "No";
 			case TEXTSTRING_TWOHANDPROXIMITY_YES:  return "Yes (Default)";
 			case TEXTSTRING_LEFTHANDED:      return "Left Handed";
-			case TEXTSTRING_LEFTHANDED_HELP: return "Hold the weapon in your left hand. The arms and weapon are mirrored, and the triggers and grips swap sides. Marine and Predator only.";
+			case TEXTSTRING_LEFTHANDED_HELP: return "Hold the weapon in your left hand. The arms and weapon are mirrored, and the triggers and grips swap sides.";
 			case TEXTSTRING_LEFTHANDED_NO:   return "No (Default)";
 			case TEXTSTRING_LEFTHANDED_YES:  return "Yes";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_OFF:  return "Off";

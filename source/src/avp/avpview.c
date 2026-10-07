@@ -402,9 +402,10 @@ static void VR_SetRigRootFrac(const float *f)
  * cable) reflect what they read. The plane is the eyes' midpoint and the line between
  * them, so a reflection maps one eye exactly onto the other.
  *
- * Marine and Predator only: the Alien's claws are a single model, and its wall climbing
- * re-bases the hands every eye. Triggers and grips swap sides in main.c (the input poll)
- * and the haptics follow them. */
+ * All three species. The Alien's wall climbing re-bases the hands into the climbed view
+ * (a rigid move, at eye 0), so that is done on the REAL poses and the mirror plane is
+ * carried through the same move - see VR_LH_ClimbPlane. Triggers and grips swap sides in
+ * main.c (the input poll) and the haptics follow them. */
 int VRLeftHanded = 0;                     /* the option; 0 = No (default) */
 extern MATRIXCH vr_left_hand_mat;         /* defined just below */
 extern int      vr_left_hand_valid;
@@ -415,7 +416,7 @@ static int   vr_lh_virtual  = 0;          /* hand vars currently hold the virtua
 /* Hands swapped and mirrored for the species being played (the option alone). */
 int VR_LH_HandsSwapped(void)
 {
-    return VRLeftHanded && (AvP.PlayerType == I_Marine || AvP.PlayerType == I_Predator);
+    return VRLeftHanded;
 }
 static int VR_LH_Enabled(void) { return VR_LH_HandsSwapped() && vr_lh_plane_ok; }
 
@@ -479,6 +480,36 @@ void VR_LH_HandsToReal(void)
     VR_LH_MirrorHands();
     vr_lh_virtual = 0;
 }
+/* Carry the mirror plane through the climbing re-base (the Alien on a wall). That move
+   takes a point p to  eye_final + VDB_final^T * VDB_off * (p - eye_unclimbed)  - the same
+   two RotateVector calls the re-base makes (RotateVector(v,M) = M^T v, and vdb_offT is
+   VDB_off's transpose) - and a direction by the rotation alone. Reflecting across the
+   moved plane after the move is the same as moving the reflected poses, so the hands and
+   the drawn rig stay consistent with the climbed view. */
+static void VR_LH_ClimbPlane(MATRIXCH *vdb_offT, MATRIXCH *vdb_final,
+                             const VECTORCH *eye_unclimbed, const VECTORCH *eye_final)
+{
+    VECTORCH c, n;
+    c.vx = (int)vr_lh_c[0] - eye_unclimbed->vx;
+    c.vy = (int)vr_lh_c[1] - eye_unclimbed->vy;
+    c.vz = (int)vr_lh_c[2] - eye_unclimbed->vz;
+    RotateVector(&c, vdb_offT);
+    RotateVector(&c, vdb_final);
+    vr_lh_c[0] = (float)(eye_final->vx + c.vx);
+    vr_lh_c[1] = (float)(eye_final->vy + c.vy);
+    vr_lh_c[2] = (float)(eye_final->vz + c.vz);
+    n.vx = (int)(vr_lh_n[0] * 65536.0f);
+    n.vy = (int)(vr_lh_n[1] * 65536.0f);
+    n.vz = (int)(vr_lh_n[2] * 65536.0f);
+    RotateVector(&n, vdb_offT);
+    RotateVector(&n, vdb_final);
+    {
+        float x = (float)n.vx, y = (float)n.vy, z = (float)n.vz;
+        float l = SDL_sqrtf(x*x + y*y + z*z);
+        if (l > 1.0f) { vr_lh_n[0] = x / l; vr_lh_n[1] = y / l; vr_lh_n[2] = z / l; }
+    }
+}
+
 /* The rig is being drawn from virtual poses, so draw it reflected (hmodel.c, avpview.c). */
 int VR_LH_RenderMirrorActive(void) { return vr_lh_virtual; }
 /* A point taken from a hand pose while the poses are virtual, back to the real world. */
@@ -4575,6 +4606,11 @@ void AvpShowViewsVR(void)
             MATRIXCH vr_view_change;
             MatrixMultiply(&Global_VDB_Ptr->VDB_Mat, &vdb_offT, &vr_view_change); /* VDB_off^T * VDB_final */
 
+            /* Left Handed: re-base the REAL poses, then move the mirror plane the same
+               way and mirror again (VR_LH_ClimbPlane). */
+            int lh_was_virtual = VR_LH_RenderMirrorActive();
+            if (lh_was_virtual) VR_LH_HandsToReal();
+
             if (vr_right_hand_valid) {
                 VECTORCH off;
                 off.vx = vr_right_hand_world.vx - vr_eye_unclimbed.vx;
@@ -4602,6 +4638,12 @@ void AvpShowViewsVR(void)
                 MATRIXCH hm;
                 MatrixMultiply(&vr_view_change, &vr_left_hand_mat, &hm);  /* hm = hand_mat * (VDB_off^T * VDB_final) */
                 vr_left_hand_mat = hm;
+            }
+
+            if (lh_was_virtual) {
+                VR_LH_ClimbPlane(&vdb_offT, &Global_VDB_Ptr->VDB_Mat,
+                                 &vr_eye_unclimbed, &Global_VDB_Ptr->VDB_World);
+                VR_LH_HandsToVirtual();
             }
         }
 

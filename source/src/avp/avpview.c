@@ -566,7 +566,7 @@ static VR_WEAPON_OFFSET vr_weapon_offset[MAX_NO_OF_WEAPON_TEMPLATES] = {
        The pitch is -45 where the old macro said +45: the hand-written rotation it
        replaced turned the opposite way to VR_RotateAboutAxis, and matching the shared
        helper keeps "positive pitch tips the fingers up" true here too. */
-    [WEAPON_ALIEN_CLAW]          = { -1220,  -260,    -210,  -29,    0,    0 },
+    [WEAPON_ALIEN_CLAW]          = { -980,  -240,    -200,  -32,    0,    58 },
     /* --- Misc / non-gun (unused by this path, kept at default for safety) --- */
     [WEAPON_CUDGEL]              = VR_WPN_DEFAULT,
 };
@@ -678,9 +678,13 @@ void VR_ComputeWeaponAnchor(int weaponID, VECTORCH *out_world, MATRIXCH *out_mat
  *     with bicep, elbow, palm and per-finger joints.
  *   - Marine (marwep.rif): per weapon. "Two pistol" has "L Pistol arm"/"R Pistol arm",
  *     each with its own thumb and four fingers.
- *   - Alien (alien_hud.rif): NOT POSSIBLE. Both arms live inside a single "claws"
- *     section; left/right exist there only as sequence names. Separating them needs
- *     the model re-authoring, so the Alien can never appear in the table below.
+ *   - Alien (alien_hud.rif): the claws rig IS split - dumped live 2026-10-07 (CLAWSPLIT):
+ *         Root -> rh (right hand) -> ra (right arm)
+ *              -> lh (left hand)  -> la (left arm)
+ *              -> Camera Root
+ *     An earlier note here said both arms were one "claws" section; that was wrong. It
+ *     is placed by its own anchoring rather than this table - see
+ *     VR_RenderAlienSplitClaws.
  *
  * Why two passes rather than moving the solved transforms: the solve and the draw are
  * the same traversal (DoHModel always calls Process_Section with render=1), so there
@@ -768,6 +772,13 @@ static VR_HAND_TRIM vr_left_hand_trim[MAX_NO_OF_WEAPON_TEMPLATES] = {
 	//[WEAPON_PRED_MEDICOMP]       = {-100, 0, -90, -26, 13, -103}, Before needle position
     [WEAPON_PRED_STAFF]          = {0, 0, 0, 0, 0, 0},
     [WEAPON_TWO_PISTOLS]         = { 260, 0, 60, 0, 0, 0},
+    /* --- Alien ---
+       The left claw (VR_RenderAlienSplitClaws). Unlike the rows above it is NOT a palm
+       target: the left claw is placed as the right one mirrored, and this trims that
+       mirrored pose - right/forward/up in the left controller's own frame, then the
+       three angles, with the same signs as vr_weapon_offset. All zero = an exact
+       mirror of the right claw. */
+    [WEAPON_ALIEN_CLAW]          = { -130, 0, 140, 0, 0, 0},
 };
 
 /* Rotate m about its own axes by the trim's pitch/yaw/roll. Rows of a MATRIXCH are
@@ -2262,6 +2273,278 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
     PlayersWeapon.ObView = d;
     RenderThisDisplayblock(&PlayersWeapon);
     VR_SplitRestoreFlags();
+}
+/* ---- Alien: split claws (VR_ALIEN_SPLIT_CLAWS) -------------------------------------
+ *
+ * The claws rig has a left-hand branch of its own (lh -> la; see the dump at the top of
+ * this section), so it splits the way the other species do: draw the rig on the right
+ * controller with that branch hidden, then draw a second copy of the rig (vr_left_hmc,
+ * mirroring the primary's animation) on the left controller showing ONLY that branch.
+ *
+ * The left copy is posed as the right one MIRRORED: the claws are placed on the right
+ * hand by an offset and three angles (vr_weapon_offset[WEAPON_ALIEN_CLAW]), and the
+ * left arm is the mirror image of the right about the model's X = 0 plane, so the same
+ * offset with its sideways part negated - and the roll and yaw negated - puts the left
+ * hand in the left controller. The animations were authored for both arms together, so
+ * they still move as a pair, each relative to its own hand. */
+#define VR_ALIEN_SPLIT_CLAWS 1
+extern int Alien_Visible_Weapon;   /* weapons.c: 1 = the tail is out rather than the claws */
+
+/* The Alien's TAIL rides the same rig as its claws (Alien_Visible_Weapon swaps which
+   is shown), so it used to share vr_weapon_offset[WEAPON_ALIEN_CLAW]. Tuning the claws
+   for the split hands (yaw 58) swung the tail with them, so the tail keeps the values
+   the claws had before that tuning. */
+static VR_WEAPON_OFFSET vr_alien_tail_offset = { -1220, -260, -210, -29, 0, 0 };
+
+/* VR_ALIEN_SINGLE_POSE: in VR the claws are DRAWN in one fixed pose - the resting one,
+ * the first frame of AHSS_LeftSwipeDown that AlienClaw_SwapIn sets up and that the claw
+ * placement was tuned in. The attack animations (swipes, pounces, both-claws) each move
+ * the arms to a different place and leave them on their last frame, which pulled the
+ * claws off the controllers. The REAL rig still plays them, unseen, every frame: the
+ * claw hits come from their keyframe flags and the attack states wait on them, so they
+ * cannot simply be stopped. Same draw-only idea as the Predator pose rig tried for the
+ * arm jitter. 0 = draw the real animation. */
+#define VR_ALIEN_SINGLE_POSE 1
+static HMODELCONTROLLER vr_alien_pose_hmc;
+static int vr_alien_pose_valid = 0;
+
+static HMODELCONTROLLER *VR_AlienPoseRigFor(SECTION *root)
+{
+    if (!root) return NULL;
+    if (!vr_alien_pose_valid || vr_alien_pose_hmc.Root_Section != root) {
+        if (vr_alien_pose_valid) Dispel_HModel(&vr_alien_pose_hmc);
+        Create_HModel(&vr_alien_pose_hmc, root);
+        InitHModelSequence(&vr_alien_pose_hmc, HMSQT_AlienHUD, (int)AHSS_Both_In, ONE_FIXED/3);
+        vr_alien_pose_valid = 1;
+    }
+    /* Re-asserted every frame: nothing may move this rig. The pose is the LAST frame of
+       AHSS_Both_In - where the claws rest after a standing attack, which is the pose
+       that reads correctly in VR. NOT the first frame of AHSS_LeftSwipeDown that the
+       weapon starts on: that is the "claws splayed until the first attack" pose (see
+       the vr-alien-claw-start-pose notes). And it is held PLAYING with a zero rate, not
+       stopped - a controller that is not playing was measured to leave the sections
+       unposed, which is what put the claws behind the player. */
+    vr_alien_pose_hmc.sequence_timer  = ONE_FIXED - 1;
+    vr_alien_pose_hmc.timer_increment = 0;
+    vr_alien_pose_hmc.Playing         = 1;
+    vr_alien_pose_hmc.Looped          = 0;
+    vr_alien_pose_hmc.Tweening        = Controller_NoTweening;
+    return &vr_alien_pose_hmc;
+}
+static HMODELCONTROLLER *VR_AlienPoseRig(HMODELCONTROLLER *primary)
+{
+    return (primary && primary->Root_Section) ? VR_AlienPoseRigFor(primary->Root_Section) : NULL;
+}
+
+/* Set by VR_DrawAlienClawsBeside: the claws are being drawn NEXT TO another Alien rig
+   (the tail or the bite), so VR_RenderAlienSplitClaws draws the rig it is given as it
+   stands - no attack/pose selection - and mirrors from the claws' own camera offset
+   rather than PlayersWeaponCameraOffset, which belongs to whichever rig is loaded. */
+static int       vr_claws_beside = 0;
+static VECTORCH *vr_claws_camoff = NULL;
+
+static void VR_RenderAlienSplitClaws(PLAYER_WEAPON_DATA *wpn, TEMPLATE_WEAPON_DATA *tw, float wscale)
+{
+    extern DISPLAYBLOCK PlayersWeapon;
+    extern void RenderThisDisplayblock(DISPLAYBLOCK *dbPtr);
+    extern VECTORCH PlayersWeaponCameraOffset;
+    HMODELCONTROLLER *real = PlayersWeapon.HModelControlBlock;
+    HMODELCONTROLLER *hmc  = real;
+    SECTION_DATA *lhR;
+
+    /* While an attack is actually PLAYING, show it - the swipe, pounce or both-claws
+       animation, each arm on its own controller. Only the rest of the time is the
+       still pose drawn, so the claws go back to where they were tuned the moment the
+       attack ends instead of staying on its last frame. */
+    int attacking = real && real->Playing && real->Tweening == Controller_NoTweening
+                    && !HModelAnimation_IsFinished(real);
+    if (real && real->Tweening != Controller_NoTweening && real->Playing)
+        attacking = 1;   /* the short tween into an attack is part of it */
+    if (vr_claws_beside) attacking = 1;   /* draw the given (still) rig as it stands */
+
+    /* When an attack ENDS, blend the real rig back into the resting pose (the last frame
+       of AHSS_Both_In, the same pose the still rig holds) over VR_CLAW_RETURN_SECS and
+       keep drawing it until the blend completes - then the switch to the still rig is
+       seamless instead of a snap. Nothing in the claw's idle handling reads the
+       sequence, and the next attack's own tween now starts from the resting pose too.
+       Once a frame (this runs per eye). */
+    #define VR_CLAW_RETURN_SECS (ONE_FIXED / 5)   /* 0.2 s */
+    {
+        extern int GlobalFrameCounter;
+        static int prev_attacking = 0, returning = 0, last_frame = -1;
+        if (vr_claws_beside) {
+            /* nothing to track: not the claws rig */
+        } else if (real && VR_ALIEN_SINGLE_POSE && Alien_Visible_Weapon == 0) {
+            if (GlobalFrameCounter != last_frame) {
+                last_frame = GlobalFrameCounter;
+                if (returning) {
+                    if (real->Tweening == Controller_NoTweening) returning = 0;   /* done */
+                } else if (prev_attacking && !attacking) {
+                    InitHModelTweening_ToTheMiddle(real, VR_CLAW_RETURN_SECS, HMSQT_AlienHUD,
+                                                   (int)AHSS_Both_In, ONE_FIXED / 3,
+                                                   ONE_FIXED - 1, 0);
+                    returning = 1;
+                }
+                prev_attacking = attacking && !returning;
+            }
+            if (returning) attacking = 1;   /* draw the real rig through the blend */
+        } else {
+            prev_attacking = 0;
+            returning = 0;
+        }
+    }
+
+    if (VR_ALIEN_SINGLE_POSE && Alien_Visible_Weapon == 0 && !attacking) {
+        HMODELCONTROLLER *pose = VR_AlienPoseRig(real);
+        if (pose) {
+            /* Run the real rig first (clock, keyframe flags, attack completion), then
+               draw everything from the still pose. */
+            ProveHModel(real, &PlayersWeapon);
+            hmc = pose;
+            PlayersWeapon.HModelControlBlock = pose;
+        }
+    }
+    lhR = GetThisSectionData(hmc->section_data, "lh");
+    SECTION_DATA *lhL;
+    VECTORCH saveWorld = PlayersWeapon.ObWorld, saveView = PlayersWeapon.ObView;
+    MATRIXCH saveMat = PlayersWeapon.ObMat;
+
+    if (!lhR) {
+        RenderThisDisplayblock(&PlayersWeapon);
+        PlayersWeapon.HModelControlBlock = real;
+        return;
+    }
+
+    /* Right controller: everything but the left hand and arm. */
+    vr_split_saved_count = 0;
+    VR_SplitSaveFlags(hmc->section_data);
+    VR_SplitMark(hmc->section_data, lhR, 1, 0, NULL);
+    RenderThisDisplayblock(&PlayersWeapon);
+    VR_SplitRestoreFlags();
+
+    /* Left controller: the mirrored copy, showing only the left hand and arm. */
+    lhL = VR_EnsureLeftRig(hmc, "lh");
+    if (lhL) {
+        VR_WEAPON_OFFSET claw = vr_weapon_offset[WEAPON_ALIEN_CLAW];
+        VECTORCH off = vr_claws_camoff ? *vr_claws_camoff : PlayersWeaponCameraOffset, rootw, ov;
+        MATRIXCH m = vr_left_hand_mat;
+        int *mm = &m.mat11, i;
+
+        off.vx += tw->RestPosition.vx + wpn->PositionOffset.vx + claw.right;
+        off.vy += tw->RestPosition.vy + wpn->PositionOffset.vy + claw.forward;
+        off.vz += tw->RestPosition.vz + wpn->PositionOffset.vz + claw.up;
+        off.vx = -off.vx;                                   /* mirror: the other arm */
+        {
+            /* Then the left claw's own trim (vr_left_hand_trim, the hand tuner's
+               L.* fields), NOT mirrored - it is tuned as seen on the left hand. */
+            const VR_HAND_TRIM *lt = &vr_left_hand_trim[WEAPON_ALIEN_CLAW];
+            off.vx += lt->right;
+            off.vy += lt->forward;
+            off.vz += lt->up;
+        }
+        rootw = off;
+        RotateVector(&rootw, &vr_left_hand_mat);
+        /* Scaled about the hand exactly as the right pass is (the eye pass pulls
+           ObWorld toward the grip by wscale and bakes wscale into ObMat). */
+        rootw.vx = vr_left_hand_world.vx + (int)(rootw.vx * wscale);
+        rootw.vy = vr_left_hand_world.vy + (int)(rootw.vy * wscale);
+        rootw.vz = vr_left_hand_world.vz + (int)(rootw.vz * wscale);
+
+        VR_RotateAboutAxis(&m, 0,  claw.pitch_deg);
+        VR_RotateAboutAxis(&m, 2,  claw.roll_deg);          /* mirrored: -(-roll) */
+        VR_RotateAboutAxis(&m, 1, -claw.yaw_deg);           /* mirrored */
+        VR_RotateAboutAxis(&m, 0,  vr_left_hand_trim[WEAPON_ALIEN_CLAW].pitch_deg);
+        VR_RotateAboutAxis(&m, 2, -vr_left_hand_trim[WEAPON_ALIEN_CLAW].roll_deg);
+        VR_RotateAboutAxis(&m, 1,  vr_left_hand_trim[WEAPON_ALIEN_CLAW].yaw_deg);
+        for (i = 0; i < 9; i++) mm[i] = (int)(mm[i] * wscale);
+
+        PlayersWeapon.HModelControlBlock = &vr_left_hmc;
+        PlayersWeapon.ObWorld = rootw;
+        PlayersWeapon.ObMat   = m;
+        ov.vx = rootw.vx - Global_VDB_Ptr->VDB_World.vx;
+        ov.vy = rootw.vy - Global_VDB_Ptr->VDB_World.vy;
+        ov.vz = rootw.vz - Global_VDB_Ptr->VDB_World.vz;
+        RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
+        PlayersWeapon.ObView = ov;
+        ProveHModel(&vr_left_hmc, &PlayersWeapon);
+
+        vr_split_saved_count = 0;
+        VR_SplitSaveFlags(vr_left_hmc.section_data);
+        VR_SplitMark(vr_left_hmc.section_data, lhL, 0, 0, NULL);
+        RenderThisDisplayblock(&PlayersWeapon);
+        VR_SplitRestoreFlags();
+        vr_left_rig_drawn = 1;
+
+        PlayersWeapon.ObWorld = saveWorld;
+        PlayersWeapon.ObMat   = saveMat;
+        PlayersWeapon.ObView  = saveView;
+    }
+    PlayersWeapon.HModelControlBlock = real;
+}
+
+/* While the TAIL or the BITE is out, keep the claws on the controllers too. The game
+   swaps the whole first-person rig for those (GetHierarchicalWeapon), so the claws used
+   to vanish until the next claw attack loaded them back. This draws the claws from their
+   own copy of the "claws" hierarchy, still in the resting pose, placed exactly as the
+   claws normally are - their own Camera Root offset, the same claw offsets, the same
+   scaling - and split across both hands. The tail or bite rig is drawn as usual. */
+static void VR_DrawAlienClawsBeside(PLAYER_WEAPON_DATA *wpn, TEMPLATE_WEAPON_DATA *tw, float wscale)
+{
+    extern SECTION *GetNamedHierarchyFromLibrary(const char *rif_name, const char *hier_name);
+    extern DISPLAYBLOCK PlayersWeapon;
+    static SECTION *claws_root = NULL;
+    HMODELCONTROLLER *saveHmc = PlayersWeapon.HModelControlBlock, *pose;
+    VECTORCH saveWorld = PlayersWeapon.ObWorld, saveView = PlayersWeapon.ObView;
+    MATRIXCH saveMat = PlayersWeapon.ObMat, m;
+    VR_WEAPON_OFFSET claw = vr_weapon_offset[WEAPON_ALIEN_CLAW];
+    VECTORCH cam, rootw, ov;
+    SECTION_DATA *cs;
+    int *mm, i;
+
+    if (!claws_root) claws_root = GetNamedHierarchyFromLibrary("alien_HUD", "claws");
+    pose = VR_AlienPoseRigFor(claws_root);
+    if (!pose) return;
+    cs = GetThisSectionData(pose->section_data, "Camera Root");
+    if (!cs || !cs->sempai || !cs->sempai->sequence_array) return;
+    GetKeyFrameOffset(cs->sempai->sequence_array->first_frame, &cam);
+    cam.vx = -cam.vx; cam.vy = -cam.vy; cam.vz = -cam.vz;
+
+    /* The right claw, placed as the eye pass places the claws (the is_alien branch,
+       then the wscale pull toward the hand and the wscale bake). */
+    rootw.vx = cam.vx + tw->RestPosition.vx + wpn->PositionOffset.vx + claw.right;
+    rootw.vy = cam.vy + tw->RestPosition.vy + wpn->PositionOffset.vy + claw.forward;
+    rootw.vz = cam.vz + tw->RestPosition.vz + wpn->PositionOffset.vz + claw.up;
+    RotateVector(&rootw, &vr_right_hand_mat);
+    rootw.vx = vr_right_hand_world.vx + (int)(rootw.vx * wscale);
+    rootw.vy = vr_right_hand_world.vy + (int)(rootw.vy * wscale);
+    rootw.vz = vr_right_hand_world.vz + (int)(rootw.vz * wscale);
+    m = vr_right_hand_mat;
+    VR_RotateAboutAxis(&m, 0,  claw.pitch_deg);
+    VR_RotateAboutAxis(&m, 2, -claw.roll_deg);
+    VR_RotateAboutAxis(&m, 1,  claw.yaw_deg);
+    mm = &m.mat11;
+    for (i = 0; i < 9; i++) mm[i] = (int)(mm[i] * wscale);
+
+    PlayersWeapon.HModelControlBlock = pose;
+    PlayersWeapon.ObWorld = rootw;
+    PlayersWeapon.ObMat   = m;
+    ov.vx = rootw.vx - Global_VDB_Ptr->VDB_World.vx;
+    ov.vy = rootw.vy - Global_VDB_Ptr->VDB_World.vy;
+    ov.vz = rootw.vz - Global_VDB_Ptr->VDB_World.vz;
+    RotateVector(&ov, &Global_VDB_Ptr->VDB_Mat);
+    PlayersWeapon.ObView = ov;
+    ProveHModel(pose, &PlayersWeapon);
+
+    vr_claws_beside = 1;
+    vr_claws_camoff = &cam;
+    VR_RenderAlienSplitClaws(wpn, tw, wscale);
+    vr_claws_beside = 0;
+    vr_claws_camoff = NULL;
+
+    PlayersWeapon.HModelControlBlock = saveHmc;
+    PlayersWeapon.ObWorld = saveWorld;
+    PlayersWeapon.ObMat   = saveMat;
+    PlayersWeapon.ObView  = saveView;
 }
 /* ========================= end split VR hands =============================== */
 
@@ -5483,7 +5766,9 @@ void AvpShowViewsVR(void)
                          * nudges the claws in the controller local frame (X=right,
                          * Y=forward, Z=up), and comes from the shared per-weapon table so
                          * the in-world hand tuner reaches it. */
-                        VR_WEAPON_OFFSET claw = vr_weapon_offset[WEAPON_ALIEN_CLAW];
+                        VR_WEAPON_OFFSET claw = (Alien_Visible_Weapon == 1)
+                                              ? vr_alien_tail_offset   /* the tail: its own row */
+                                              : vr_weapon_offset[WEAPON_ALIEN_CLAW];
                         VECTORCH rootw = off;
                         rootw.vx += claw.right;
                         rootw.vy += claw.forward;
@@ -6044,6 +6329,18 @@ void AvpShowViewsVR(void)
                         && (hideLeftArm || (vr_left_hand_valid && vr_right_hand_valid))) {
                         VR_RenderWeaponSplitHands(&desc, wpn->WeaponIDNumber, hideLeftArm,
                                                   splitExcept);
+                    } else if (VR_ALIEN_SPLIT_CLAWS && is_alien
+                               && PlayersWeapon.HModelControlBlock
+                               && vr_left_hand_valid && vr_right_hand_valid) {
+                        vr_left_rig_drawn = 0;
+                        if (Alien_Visible_Weapon == 0) {
+                            /* Alien claws: each arm on its own controller. */
+                            VR_RenderAlienSplitClaws(wpn, tw, wscale);
+                        } else {
+                            /* The tail or the bite as usual - and the claws stay out. */
+                            RenderThisDisplayblock(&PlayersWeapon);
+                            VR_DrawAlienClawsBeside(wpn, tw, wscale);
+                        }
                     } else {
                         vr_left_rig_drawn = 0;
                         RenderThisDisplayblock(&PlayersWeapon);

@@ -167,7 +167,7 @@ Flat versions uses standard keyboard and mouse or joystick (Gamepads). They can 
 > [!NOTE]
 > You may have to add WASD yourself as the game originally uses arrow keys.
 
-Gamepad controllers use the following by default:
+### Gamepad controllers use the following by default
 ![Gamepad controller layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers-gamepad.jpg)
 
 ## Extra features
@@ -177,8 +177,10 @@ Gamepad controllers use the following by default:
 - Frame rate counter can be toggled in Audio/Video Options.
 - Antialiasing options added for MSAA in Audio/Video Options.
 - Texture Filtering options added in Audio/Video Options.
-- Works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack! Edit 1: Seems there’s an issue with the HUD and crosshair for Marine with the Redux Mod. Edit 2: Fixed in 0.7. Note: Some 3D objects have missing shapes. This is not the games fault, it seems the HD Redux is incomplete!
+- Works with the [HD AvP Redux Mod](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/news/avp-classic-redux-20-released) pack! Edit 1: Seems there’s an issue with the HUD and crosshair for Marine with the Redux Mod. Edit 2: Fixed in 0.7 and up. Note: Some 3D objects have missing shapes. This is not the games fault, it seems the HD Redux is incomplete!
 - Cheat modes can be toggled for those faint of heart!
+- Left-Handed Mode.
+- Can punch/scratch enemies as Predator/Alien in VR.
 
 ## To do
 - ~~Fix Battery Saver crash.~~ Fixed.
@@ -196,6 +198,6 @@ Gamepad controllers use the following by default:
 - ~~Add PCVR.~~ Added.
 - ~~To add correct wall walking for Aliens on Quest.~~ Fixed.
 - ~~Add ability to customise controller key mapping.~~ Added.
-- Add option for left handed users? Not sure if possible as cant flip 3d objects.
+- ~~Add option for left handed users~~ Added.
 - Add shadow/fog effects?
 - Do an RTX Remix version?

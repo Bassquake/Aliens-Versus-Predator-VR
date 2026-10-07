@@ -1782,6 +1782,95 @@ static void VR_WristbladePunchUpdate(float unitsPerMetre)
     }
 }
 
+/* VR Alien SWIPES - the claws' answer to the wristblade punch above. Either hand, moving
+ * fast in ANY direction, strikes with its claws: a scratch is a swipe across or down at
+ * least as often as a jab forward, so unlike the punch there is no direction test. The
+ * strike goes the way the hand moved - that is what "ahead" means for the hit and which
+ * way the target is knocked. Each hand has its own arm/re-arm and cooldown, so a
+ * left-right flurry lands both. Measured relative to the body like the punch, so running
+ * or jumping never throws one; a snap-turn frame is skipped. Claws out and the weapon
+ * idle - the animated claw attacks keep their own hits. Real poses (gameplay block). */
+#define VR_SWIPE_SPEED_MPS     2.0f
+#define VR_SWIPE_REARM_MPS     1.0f
+#define VR_SWIPE_COOLDOWN_SECS 0.25f
+#define VR_SWIPE_TIP_M         0.25f   /* claw tips, ahead of the grip */
+#define VR_SWIPE_REACH_M       0.60f   /* how far from the tips a target still counts */
+static void VR_AlienSwipeUpdate(float unitsPerMetre)
+{
+    extern int NormalFrameTime;
+    extern int xr_snap_yaw;
+    extern int VR_AlienSwipeHit(VECTORCH *tip, VECTORCH *dir, int range);
+    extern void XR_Haptic_Left(float amplitude, float duration_ms);
+    static int   have_prev[2], armed[2] = { 1, 1 }, prev_snap = 0;
+    static float prev_rel[2][3], cooldown[2];
+    PLAYER_STATUS *ps;
+    PLAYER_WEAPON_DATA *wp;
+    float dt = NormalFrameTime / 65536.0f;
+    int h, snapped;
+
+    if (AvP.PlayerType != I_Alien || !Player || !Player->ObStrategyBlock
+        || unitsPerMetre <= 0.0f || dt <= 0.0f) {
+        have_prev[0] = have_prev[1] = 0;
+        return;
+    }
+    ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
+    if (!ps || !ps->IsAlive) { have_prev[0] = have_prev[1] = 0; return; }
+    wp = &ps->WeaponSlot[ps->SelectedWeaponSlot];
+    snapped = (xr_snap_yaw != prev_snap);
+    prev_snap = xr_snap_yaw;
+
+    for (h = 0; h < 2; h++) {
+        int valid = h ? vr_left_hand_valid : vr_right_hand_valid;
+        const VECTORCH *hw = h ? &vr_left_hand_world : &vr_right_hand_world;
+        const MATRIXCH *hm = h ? &vr_left_hand_mat : &vr_right_hand_mat;
+        float rel[3], v[3], speed, fwd[3], flen;
+
+        if (cooldown[h] > 0.0f) cooldown[h] -= dt;
+        if (!valid) { have_prev[h] = 0; continue; }
+
+        rel[0] = (hw->vx - Player->ObWorld.vx) / unitsPerMetre;
+        rel[1] = (hw->vy - Player->ObWorld.vy) / unitsPerMetre;
+        rel[2] = (hw->vz - Player->ObWorld.vz) / unitsPerMetre;
+        if (!have_prev[h] || snapped) {
+            prev_rel[h][0] = rel[0]; prev_rel[h][1] = rel[1]; prev_rel[h][2] = rel[2];
+            have_prev[h] = 1;
+            continue;
+        }
+        v[0] = (rel[0] - prev_rel[h][0]) / dt;
+        v[1] = (rel[1] - prev_rel[h][1]) / dt;
+        v[2] = (rel[2] - prev_rel[h][2]) / dt;
+        prev_rel[h][0] = rel[0]; prev_rel[h][1] = rel[1]; prev_rel[h][2] = rel[2];
+        speed = SDL_sqrtf(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+
+        if (speed < VR_SWIPE_REARM_MPS) armed[h] = 1;
+        if (!armed[h] || cooldown[h] > 0.0f || speed < VR_SWIPE_SPEED_MPS) continue;
+        if (wp->WeaponIDNumber != WEAPON_ALIEN_CLAW || wp->CurrentState != WEAPONSTATE_IDLE)
+            continue;
+
+        armed[h] = 0;
+        cooldown[h] = VR_SWIPE_COOLDOWN_SECS;
+
+        /* Claw tips: ahead of the grip along the controller (row 2, as the aim uses). */
+        fwd[0] = (float)hm->mat21; fwd[1] = (float)hm->mat22; fwd[2] = (float)hm->mat23;
+        flen = SDL_sqrtf(fwd[0]*fwd[0] + fwd[1]*fwd[1] + fwd[2]*fwd[2]);
+        if (flen < 1.0f) continue;
+        {
+            VECTORCH tip, dir;
+            float tipu = VR_SWIPE_TIP_M * unitsPerMetre / flen;
+            tip.vx = hw->vx + (int)(fwd[0] * tipu);
+            tip.vy = hw->vy + (int)(fwd[1] * tipu);
+            tip.vz = hw->vz + (int)(fwd[2] * tipu);
+            dir.vx = (int)(v[0] / speed * 65536.0f);
+            dir.vy = (int)(v[1] / speed * 65536.0f);
+            dir.vz = (int)(v[2] / speed * 65536.0f);
+            if (VR_AlienSwipeHit(&tip, &dir, (int)(VR_SWIPE_REACH_M * unitsPerMetre))) {
+                if (h) XR_Haptic_Left(1.0f, 80.0f);
+                else   XR_Haptic_Right(1.0f, 80.0f);
+            }
+        }
+    }
+}
+
 /* Rotate vr_right_hand_mat for two-handed aiming. Once per frame, after the hand poses
    are final and before anything reads them for aiming - see the block comment above. */
 static void VR_ApplyTwoHandedAim(float unitsPerMetre)
@@ -5092,6 +5181,7 @@ void AvpShowViewsVR(void)
                the rig is drawn from. Back to virtual at the end of the block. */
             VR_LH_HandsToReal();
             VR_WristbladePunchUpdate(vr_y_scale);
+            VR_AlienSwipeUpdate(vr_y_scale);
             /* Inject right-trigger primary fire before the weapon state machine reads it. */
             {
                 if (VR_Action(VR_ACT_FIRE_PRIMARY)) {

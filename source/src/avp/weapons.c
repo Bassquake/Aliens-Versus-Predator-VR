@@ -405,9 +405,8 @@ void VR_LH_FireSpaceBegin(void)
    wristblade's primary, the same one-person-per-strike rule, and the same knockback,
    pushed along the punch rather than the view. Returns the number of things hit.
    `damage` NULL = the primary strike's profile. */
-int VR_WristbladePunchHit(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFILE *damage)
+static int VR_MeleeHitCore(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFILE *damage)
 {
-	if (!damage) damage = &TemplateAmmo[AMMO_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty];
 	int numberOfObjects = NumOnScreenBlocks;
 	int hits = 0, hurt_people = 1;
 
@@ -473,11 +472,29 @@ int VR_WristbladePunchHit(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFIL
 			hits++;
 		}
 	}
-	if (hits) {
-		PlayPredSlashSound();
-		HtoHStrikes++;
-	}
+	if (hits) HtoHStrikes++;
 	return hits;
+}
+
+int VR_WristbladePunchHit(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFILE *damage)
+{
+	int hits;
+	if (!damage) damage = &TemplateAmmo[AMMO_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty];
+	hits = VR_MeleeHitCore(tip, dir, range, damage);
+	if (hits) PlayPredSlashSound();
+	return hits;
+}
+
+/* VR Alien SWIPE: a fast swipe of either hand while the claws are out strikes with that
+   hand's claws - no animation, the arm is where your hand is. Same hit rules as the
+   wristblade punch (VR_MeleeHitCore: from the claw tips, ahead of the swipe, one person
+   per strike, doubled from behind), with the claws' own damage. The swipe sound plays
+   on every swipe, hit or miss, as the animated attack's does. Called by the eye pass
+   (avpview.c, VR_AlienSwipeUpdate). */
+int VR_AlienSwipeHit(VECTORCH *tip, VECTORCH *dir, int range)
+{
+	PlayAlienSwipeSound();
+	return VR_MeleeHitCore(tip, dir, range, &TemplateAmmo[AMMO_ALIEN_CLAW].MaxDamage[AvP.Difficulty]);
 }
 
 /* The same punch while the SECONDARY is held (the wristblade wind-up): it releases the

@@ -152,7 +152,7 @@ PS: Be aware I may rename the folder **cd_tracks** to **music** at some point.
 
 ### For VR
 
-![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers.jpg)
+![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers-v1.1.jpg)
 
 > [!NOTE]
 > Manual reload is **hold A** (Marine and Predator). A quick press of A still uses switches and doors. It can be rebound in the Controller Configuration for each species.

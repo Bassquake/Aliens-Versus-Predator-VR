@@ -3,7 +3,7 @@
 This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below.
 
 > [!TIP]
-> Check the new 1.1 update on releases page. A 7 min YouTube video about it can be found [here](https://youtu.be/Qk7m4Clpcos).
+> Check the new 1.1 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
 
 ## What's new in 1.1?
 - Fix Alien view getting stuck on zoomed in when eat heads.

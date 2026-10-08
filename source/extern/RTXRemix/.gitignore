@@ -1,0 +1,5 @@
+# The RTX Remix runtime must be committed whole. The repo-wide rules in source/.gitignore
+# (*.exe, *.json, *.pdb, ...) would otherwise silently drop NvRemixBridge.exe and the USD
+# plugInfo.json files, and a clone would get a runtime that cannot start.
+!*
+!*/

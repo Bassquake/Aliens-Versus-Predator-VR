@@ -79,6 +79,9 @@
 #include "cdtrackselection.h"
 #include "gammacontrol.h"
 #include "opengl.h"
+#ifdef AVP_RTX_REMIX
+#include "d3d9_backend.h"
+#endif
 #include "avp_menus.h"
 #include "avp_mp_config.h"
 #include "npcsetup.h"
@@ -5898,10 +5901,10 @@ int InitSDL()
 #endif
 
 #ifdef AVP_RTX_REMIX
-    /* RTX Remix target (CMake AVP_ENABLE_RTX_REMIX, Windows x86 only): scaffolding. The
-       renderer is still OpenGL, so Remix has nothing to hook yet. See "RTX Remix" in
-       CLAUDE.md for what a D3D9 backend needs. */
-    SDL_Log("AVP: RTX Remix build - renderer is OpenGL (D3D9 backend not implemented yet)");
+    /* RTX Remix target (CMake AVP_ENABLE_RTX_REMIX, Windows x86 only): renders through
+       Direct3D 9 (d3d9_backend.c). Geometry is still pre-transformed, so Remix sees it as
+       2D - see "RTX Remix" in CLAUDE.md. */
+    SDL_Log("AVP: RTX Remix build - Direct3D 9 renderer (pre-transformed geometry)");
 #endif
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -6344,7 +6347,11 @@ static int SetOGLVideoMode(int Width, int Height)
     if (window == NULL) {
         load_ogl_functions(0);
         
+#ifdef AVP_RTX_REMIX
+        flags = 0;   /* D3D9 owns this window (d3d9_backend.c) - no GL context at all */
+#else
         flags = SDL_WINDOW_OPENGL;
+#endif
 
 #if defined(FIXED_WINDOW_SIZE)
         flags |= SDL_WINDOW_BORDERLESS;
@@ -6477,6 +6484,15 @@ static int SetOGLVideoMode(int Width, int Height)
             }
         }
 #endif
+#ifdef AVP_RTX_REMIX
+        /* RTX Remix build: Direct3D 9 instead of a GL context. Vsync is the device's
+           presentation interval, so the GL swap-interval request below is skipped too. */
+        if (!R9_Init(window)) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Aliens Versus Predator",
+                                     "Could not create a Direct3D 9 device.", window);
+            exit(EXIT_FAILURE);
+        }
+#else
         context = SDL_GL_CreateContext(window);
         if (context == NULL) {
             fprintf(stderr, "(OpenGL) SDL SDL_GL_CreateContext failed: %s\n", SDL_GetError());
@@ -6546,6 +6562,7 @@ static int SetOGLVideoMode(int Width, int Height)
         } else {
             SDL_Log("vsync enabled (swap interval 1)");
         }
+#endif /* AVP_RTX_REMIX */
         /* The window was created SDL_WINDOW_FULLSCREEN with no mode set, which
            SDL3 resolves to borderless desktop. Apply the saved selection now. */
         ApplySelectedVideoMode();
@@ -6718,6 +6735,9 @@ int ExitWindowsSystem()
         SDL_GL_DestroyContext(context);
     }
     context = NULL;
+#ifdef AVP_RTX_REMIX
+    R9_Shutdown();
+#endif
     
     if (window != NULL) {
         SDL_DestroyWindow(window);
@@ -7543,6 +7563,11 @@ static void PresentSoftwareSurface(void)
 {
     if (surface == NULL) return;
 
+#ifdef AVP_RTX_REMIX
+    R9_PresentSurface565(surface->pixels, surface->pitch, ViewportWidth, ViewportHeight);
+    return;
+#endif
+
 #ifdef AVP_PCVR
     /* Turn sRGB write conversion off for the whole present. vr_sc_release()
        ENABLES GL_FRAMEBUFFER_SRGB on its way out of render_frame(), so on the VR
@@ -7751,7 +7776,11 @@ void InGameFlipBuffers(void)
     MSAA_Resolve();
 #endif
 
+#ifdef AVP_RTX_REMIX
+    R9_Present();
+#else
     SDL_GL_SwapWindow(window);
+#endif
 }
 
 void FlipBuffers()
@@ -8526,6 +8555,13 @@ int main(int argc, char *argv[])
 
     CDDA_End();
     ClearMemoryPool();
+
+#ifdef AVP_RTX_REMIX
+    /* Release the D3D9 device. ExitWindowsSystem only runs on a window change, so the
+       normal quit would otherwise leave it for process exit - which the Remix bridge
+       reports as undisposed device objects. */
+    R9_Shutdown();
+#endif
 
 #ifdef AVP_XR
     /* End the OpenXR session and destroy all XR/GLES resources so the Quest

@@ -10,6 +10,10 @@ extern void D3D_DrawWaterTest(MODULE *testModulePtr);
 
 extern void D3D_ZBufferedCloakedPolygon_Output(POLYHEADER *inputPolyPtr,RENDERVERTEX *renderVerticesPtr);
 extern void D3D_ZBufferedGouraudTexturedPolygon_Output(POLYHEADER *inputPolyPtr,RENDERVERTEX *renderVerticesPtr);
+#ifdef AVP_RTX_REMIX
+extern void D3D_ZBufferedGouraudTexturedPolygon_OutputWorld(POLYHEADER *inputPolyPtr, RENDERVERTEX *renderVerticesPtr,
+                                                            const float (*worldPts)[3]);
+#endif
 extern void D3D_ZBufferedGouraudPolygon_Output(POLYHEADER *inputPolyPtr,RENDERVERTEX *renderVerticesPtr);
 extern void D3D_ZBufferedTexturedPolygon_Output(POLYHEADER *inputPolyPtr,RENDERVERTEX *renderVerticesPtr);
 extern void D3D_PredatorThermalVisionPolygon_Output(POLYHEADER *inputPolyPtr,RENDERVERTEX *renderVerticesPtr);

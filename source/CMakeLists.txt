@@ -879,6 +879,10 @@ LIST(APPEND source src/win95/wpchunk.cpp)
 LIST(APPEND source src/win95/zsp.cpp)
 LIST(APPEND source src/opengl.c)
 LIST(APPEND source src/oglfunc.c)
+if (AVP_ENABLE_RTX_REMIX)
+    # Direct3D 9 renderer for the Remix build; replaces the GL context (d3d9_backend.h).
+    LIST(APPEND source src/d3d9_backend.c)
+endif()
 LIST(APPEND source src/fmv.c)
 LIST(APPEND source src/openal.c)
 LIST(APPEND source src/cdplayer.c)
@@ -982,6 +986,9 @@ endif ()
 #WINDOWS LIBRARIES
 if (WIN32)
     target_link_libraries(avp shlwapi.lib winmm.lib ws2_32.lib)
+    if (AVP_ENABLE_RTX_REMIX)
+        target_link_libraries(avp d3d9.lib)
+    endif()
 
     # FFmpeg: fmv.c's desktop FMV path (PlayBinkedFMV / PlayMenuMusic /
     # InitialiseTriggeredFMVs) links against these import libs. Wired in here so a

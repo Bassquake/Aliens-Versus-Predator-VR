@@ -23,6 +23,9 @@
 #include "avp_userprofile.h"
 #include "aw.h"
 #include "opengl.h"
+#ifdef AVP_RTX_REMIX
+#include "d3d9_backend.h"
+#endif
 
 #include "SDL3/SDL_log.h"
 
@@ -531,6 +534,15 @@ static ALIGN16 TriangleArray starr[TA_MAXTRIANGLES];
 static TriangleArray *starrp = starr;
 static int starrc;
 
+#ifdef AVP_RTX_REMIX
+/* Which space the queued vertices are in: 0 = clip space (every emitter but one), 1 =
+   world space (D3D_ZBufferedGouraudTexturedPolygon_OutputWorld; v[0..2] hold the world
+   position). One batch holds one space; CheckTriangleBuffer flushes on a change, exactly
+   as it does on a texture change, so draw order is preserved across the two. */
+static int batch_world = 0;
+static int want_world_batch = 0;
+#endif
+
 void OGL_RegenerateMipmaps(void)
 {
 	glGenerateMipmap(GL_TEXTURE_2D);
@@ -802,6 +814,28 @@ void InitOpenGL()
 
 static void FlushTriangleBuffers(int backup)
 {
+#ifdef AVP_RTX_REMIX
+	/* D3D9 (RTX Remix build): the same two passes, drawn by the backend. The vertex
+	   count is captured first because the first pass resets varrc while the specular
+	   pass still indexes the same vertices. */
+	{
+		int nverts = varrc;
+		SDL_COMPILE_TIME_ASSERT(r9_vertex_layout, sizeof(VertexArray) == sizeof(R9GameVertex));
+		(void)backup;
+		if (tarrc) {
+			R9_DrawBatch((const R9GameVertex *)varr, nverts, &tarr[0].a, tarrc, 0, batch_world);
+			tarrc = 0; tarrp = tarr;
+			varrc = 0; varrp = varr;
+		}
+		if (starrc) {
+			SetSecondPassTranslucencyMode(CurrentTranslucencyMode);
+			R9_DrawBatch((const R9GameVertex *)varr, nverts, &starr[0].a, starrc, 1, batch_world);
+			SetTranslucencyMode(CurrentTranslucencyMode);
+			starrc = 0; starrp = starr;
+		}
+		return;
+	}
+#endif
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -909,6 +943,13 @@ static void CheckTranslucencyModeIsCorrect(enum TRANSLUCENCY_TYPE mode)
 
 static void CheckTriangleBuffer(int rver, int sver, int rtri, int stri, D3DTexture *tex, enum TRANSLUCENCY_TYPE mode, enum FILTERING_MODE_ID filter)
 {
+#ifdef AVP_RTX_REMIX
+	if (want_world_batch != batch_world) {
+		FlushTriangleBuffers(0);
+		batch_world = want_world_batch;
+	}
+	want_world_batch = 0;   /* only the caller that asked gets a world batch */
+#endif
 	if ((rver+varrc) >= TA_MAXVERTICES) {
 		FlushTriangleBuffers(0);
 	} else if (rtri == 0 && ((rver-2+tarrc) >= TA_MAXTRIANGLES)) {
@@ -1405,6 +1446,72 @@ void D3D_ZBufferedGouraudTexturedPolygon_Output(POLYHEADER *inputPolyPtr, RENDER
 		varrc++;
 	}
 }
+
+#ifdef AVP_RTX_REMIX
+/* RTX Remix stage 2a: D3D_ZBufferedGouraudTexturedPolygon_Output with WORLD positions.
+   Texture, UVs and colours are produced exactly as there; only the position differs - the
+   world-space point (KShape_WorldPts, indexed by the polygon's own vertex numbers) instead
+   of a clip-space one, transformed on the GPU by the camera kshape.c hands the backend.
+   The polygon is unclipped, so it is emitted at its original vertex count. */
+void D3D_ZBufferedGouraudTexturedPolygon_OutputWorld(POLYHEADER *inputPolyPtr, RENDERVERTEX *renderVerticesPtr,
+                                                     const float (*worldPts)[3])
+{
+	int texoffset;
+	D3DTexture *TextureHandle;
+	int i, n = RenderPolygon.NumberOfVertices;
+	const int *vertexNumbers = &inputPolyPtr->Poly1stPt;
+	float RecipW, RecipH;
+
+	texoffset = inputPolyPtr->PolyColour & ClrTxDefn;
+	if (texoffset) {
+		TextureHandle = (void *)ImageHeaderArray[texoffset].D3DTexture;
+		CurrTextureHandle = TextureHandle;
+	} else {
+		TextureHandle = CurrTextureHandle;
+	}
+
+	int isFMV = (texoffset && strstr(ImageHeaderArray[texoffset].ImageName, "FMVs") != NULL);
+
+	RecipW = TextureHandle->RecipW / 65536.0f;
+	RecipH = TextureHandle->RecipH / 65536.0f;
+
+	want_world_batch = 1;
+	CheckTriangleBuffer(n, n, 0, 0, TextureHandle, RenderPolygon.TranslucencyMode, -1);
+
+	for (i = 0; i < n; i++) {
+		RENDERVERTEX *vertices = &renderVerticesPtr[i];
+		const float *wp = worldPts[vertexNumbers[i]];
+
+		varrp->v[0] = wp[0];
+		varrp->v[1] = wp[1];
+		varrp->v[2] = wp[2];
+		varrp->v[3] = 1.0f;
+
+		varrp->t[0] = TEXCOORD_FIXED(vertices->U, RecipW);
+		varrp->t[1] = TEXCOORD_FIXED(vertices->V, RecipH);
+
+		if (isFMV) {
+			varrp->c[0] = 255;
+			varrp->c[1] = 255;
+			varrp->c[2] = 255;
+			varrp->c[3] = 255;
+		} else {
+			varrp->c[0] = GammaValues[vertices->R];
+			varrp->c[1] = GammaValues[vertices->G];
+			varrp->c[2] = GammaValues[vertices->B];
+			varrp->c[3] = vertices->A;
+		}
+
+		varrp->s[0] = GammaValues[vertices->SpecularR];
+		varrp->s[1] = GammaValues[vertices->SpecularG];
+		varrp->s[2] = GammaValues[vertices->SpecularB];
+		varrp->s[3] = vertices->A;
+
+		varrp++;
+		varrc++;
+	}
+}
+#endif
 
 void D3D_SkyPolygon_Output(POLYHEADER *inputPolyPtr, RENDERVERTEX *renderVerticesPtr)
 {

@@ -5,6 +5,9 @@
 #include <SDL3/SDL.h>
 
 #include "oglfunc.h"
+#ifdef AVP_RTX_REMIX
+#include "d3d9_backend.h"
+#endif
 
 PFNGLALPHAFUNCPROC		pglAlphaFunc;
 PFNGLBINDTEXTUREPROC		pglBindTexture;
@@ -146,6 +149,15 @@ void load_ogl_functions(int mode)
 {
 	const char* ogl_missing_func;
 	const char* ext;
+
+#ifdef AVP_RTX_REMIX
+	/* RTX Remix build: there is no GL context. Every pointer goes to the D3D9 backend
+	   (real implementations for the fixed-function calls, harmless stubs for the shader
+	   path) - see d3d9_backend.h. */
+	(void)mode; (void)ext; (void)ogl_missing_func;
+	R9_InstallGLShim();
+	return;
+#endif
 
 	ogl_missing_func = NULL;
 	

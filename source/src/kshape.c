@@ -35,6 +35,9 @@
 #include "avp_userprofile.h"
 #include "hud.h"
 #include "weapons.h"
+#ifdef AVP_RTX_REMIX
+#include "d3d9_backend.h"
+#endif
 
 #define ALIENS_LIFEFORCE_GLOW_COLOUR 0x20ff8080
 #define MARINES_LIFEFORCE_GLOW_COLOUR 0x208080ff
@@ -403,6 +406,30 @@ void ChooseLightingModel(DISPLAYBLOCK *dispPtr)
 * ShapePipeline() - this function processes a shape for rendering by considering each *
 * polygon (item) in turn.                                                             *
 **********************************************************************************KJL*/
+#ifdef AVP_RTX_REMIX
+extern float KShape_WorldPts[][3];
+extern int   KShape_WorldPtsValid;
+extern float KShape_RigViewPrecision;
+
+/* Whether this shape's standard polygons go out in WORLD space (RTX Remix stage 2a).
+   Everything listed here keeps the pre-transformed path on purpose: the first-person rig
+   (its HeadUpDisplayZOffset depth cannot be expressed with w = Z, and drawn as UI it sits
+   on top, which is right for a view model), mirrors (reflected by flipping view-space
+   coordinates), and the cheats that warp view-space positions.
+
+   R9_WORLD_MODULES_ONLY is the bring-up switch: level geometry only, to verify the camera,
+   depth and UVs against the old path before characters and objects follow. */
+#define R9_WORLD_MODULES_ONLY 1
+static int KShape_UseWorldPath(void)
+{
+	return R9_WorldEnabled() && KShape_WorldPtsValid
+	    && (!R9_WORLD_MODULES_ONLY || Global_ODB_Ptr->ObMyModule)
+	    && HeadUpDisplayZOffset == 0 && !MirroringActive
+	    && !TRIPTASTIC_CHEATMODE && !UNDERWATER_CHEATMODE
+	    && KShape_RigViewPrecision == 1.0f;
+}
+#endif
+
 void ShapePipeline(SHAPEHEADER *shapePtr)
 {
 	int numitems= shapePtr->numitems;
@@ -812,6 +839,10 @@ void ShapePipeline(SHAPEHEADER *shapePtr)
 		return;
 	}
 	#endif
+#ifdef AVP_RTX_REMIX
+	{
+	int r9World = KShape_UseWorldPath();
+#endif
 	do
 	{
 		POLYHEADER *polyPtr = (POLYHEADER*) (*itemArrayPtr++);
@@ -881,6 +912,19 @@ void ShapePipeline(SHAPEHEADER *shapePtr)
 				case I_ZB_Gouraud2dTexturedPolygon:
 				{
 					GouraudTexturedPolygon_Construct(polyPtr);
+#ifdef AVP_RTX_REMIX
+					/* World space: the constructed vertices (UVs, texture animation,
+					   software lighting) are used as they are, but positioned from
+					   KShape_WorldPts and NOT clipped - the GPU clips against the near
+					   plane itself. Translucent polygons still go through the sorted list
+					   on the old path for now. */
+					if (r9World && !(polyPtr->PolyFlags & iflag_transparent))
+					{
+						D3D_ZBufferedGouraudTexturedPolygon_OutputWorld(polyPtr, VerticesBuffer,
+						                                                (const float (*)[3])KShape_WorldPts);
+						break;
+					}
+#endif
 				   	if (pif!=2)
 					{
 						/* if this polygon is a quad, split it into two */
@@ -959,6 +1003,9 @@ void ShapePipeline(SHAPEHEADER *shapePtr)
  		}
 	}
 	while(--numitems);
+#ifdef AVP_RTX_REMIX
+	}
+#endif
 }
 
 void PredatorThermalVision_ShapePipeline(SHAPEHEADER *shapePtr)
@@ -4404,6 +4451,18 @@ void AddHierarchicalShape(DISPLAYBLOCK *dptr, VIEWDESCRIPTORBLOCK *VDB_Ptr)
 float ViewMatrix[12];
 float ObjectViewMatrix[12];
 
+#ifdef AVP_RTX_REMIX
+/* RTX Remix world-space path (stage 2a; see "RTX Remix" in CLAUDE.md). Every shape's
+   vertices in WORLD space, beside their view-space RotatedPts and with the same indexing,
+   so the polygon pipeline can hand the GPU world positions plus a camera instead of
+   positions it has already projected. Written by whichever routine fills RotatedPts;
+   KShape_WorldPtsValid says whether the current shape's set is usable. */
+float KShape_WorldPts[maxrotpts][3];
+int   KShape_WorldPtsValid = 0;
+#define KSHAPE_STORE_WORLD(i, src) \
+	(KShape_WorldPts[i][0] = (src)[0], KShape_WorldPts[i][1] = (src)[1], KShape_WorldPts[i][2] = (src)[2])
+#endif
+
 /* Sub-unit addition to the current object's ObWorld, for the VR first-person rig only -
  * see VR_RIG_SUBUNIT in opengl.h. Set and cleared around each section's draw in hmodel.c;
  * zero for everything else, so nothing else changes. */
@@ -4524,9 +4583,52 @@ extern void TranslationSetup(void)
 		ViewMatrix[0+0*4] = -ViewMatrix[0+0*4];
 		ViewMatrix[1+0*4] =	-ViewMatrix[1+0*4];
 		ViewMatrix[2+0*4] =	-ViewMatrix[2+0*4];
-		
+
 		ViewMatrix[3+0*4] =	-ViewMatrix[3+0*4];
 	}
+
+#ifdef AVP_RTX_REMIX
+	/* The same camera as D3D9 VIEW and PROJECTION matrices, for geometry drawn in world
+	   space (stage 2a). ViewMatrix above folds several non-rigid terms into the view: the
+	   Y aspect k (= ProjX/ProjY), the Predator vision zoom p, the nausea wobble o and
+	   CameraZoomScale on Z. Remix reads the CAMERA from VIEW, so VIEW is kept a pure
+	   rotation + translation and every one of those terms moves into PROJECTION instead.
+	   VIEW also flips the engine's y-down view space to D3D's y-up.
+
+	   PROJECTION reproduces D3D_ZBufferedGouraudTexturedPolygon_Output exactly:
+	     x = X*(ProjX+1)/(Z*CentreX), y = -Y*(ProjY+1)/(Z*CentreY), depth 1 - ZNear/Z
+	   which is a linear perspective with an infinite far plane (z' = Z - ZNear, w' = Z) -
+	   so world-path geometry depth-tests exactly against everything still drawn
+	   pre-transformed. The backend adds D3D9's half-pixel offset. */
+	{
+		extern SCREENDESCRIPTORBLOCK ScreenDescriptorBlock;
+		const MATRIXCH *vm = &Global_VDB_Ptr->VDB_Mat;
+		float view[16], proj[16];
+		int pi;
+		float k = (float)Global_VDB_Ptr->VDB_ProjX / (float)(Global_VDB_Ptr->VDB_ProjY ? Global_VDB_Ptr->VDB_ProjY : 1);
+		float czs = (float)CameraZoomScale;
+		float a = ((float)Global_VDB_Ptr->VDB_ProjX + 1.0f) / (float)ScreenDescriptorBlock.SDB_CentreX;
+		float b = ((float)Global_VDB_Ptr->VDB_ProjY + 1.0f) / (float)ScreenDescriptorBlock.SDB_CentreY;
+		float zn = (float)(Global_VDB_Ptr->VDB_ClipZ * GlobalScale);
+		float tvx = (float)v.vx, tvy = (float)v.vy, tvz = (float)v.vz;
+
+		/* rows of VDB_Mat as D3D row-vector columns: out = (r0.P - tx, -(r1.P - ty), r2.P - tz) */
+		view[0]  = vm->mat11 / 65536.0f; view[1]  = -vm->mat12 / 65536.0f; view[2]  = vm->mat13 / 65536.0f; view[3]  = 0.0f;
+		view[4]  = vm->mat21 / 65536.0f; view[5]  = -vm->mat22 / 65536.0f; view[6]  = vm->mat23 / 65536.0f; view[7]  = 0.0f;
+		view[8]  = vm->mat31 / 65536.0f; view[9]  = -vm->mat32 / 65536.0f; view[10] = vm->mat33 / 65536.0f; view[11] = 0.0f;
+		view[12] = -tvx;                 view[13] = tvy;                   view[14] = -tvz;                 view[15] = 1.0f;
+
+		for (pi = 0; pi < 16; pi++) proj[pi] = 0.0f;
+		proj[0]  = (MIRROR_CHEATMODE ? -o : o) * a;
+		proj[5]  = k * p * b;
+		proj[10] = czs;
+		proj[11] = czs;
+		proj[14] = -zn;
+
+		FlushRenderBuffer();   /* queued world geometry belongs to the previous camera */
+		R9_SetCamera(view, proj);
+	}
+#endif
 }
 
 
@@ -4631,7 +4733,10 @@ void SquishPoints(SHAPEINSTR *shapeinstrptr)
 	{
 		int i;
 		int scale = Global_ODB_Ptr->ObFlags2;
-		
+#ifdef AVP_RTX_REMIX
+		KShape_WorldPtsValid = 1;
+#endif
+
 		for (i=0; i<Global_ShapeHeaderPtr->numpoints; i++)
 		{
 			VECTORCH point = shapePts[i];
@@ -4650,6 +4755,9 @@ void SquishPoints(SHAPEINSTR *shapeinstrptr)
 			Source[0] = point.vx;
 			Source[1] = point.vy;
 			Source[2] = point.vz;
+#ifdef AVP_RTX_REMIX
+			KSHAPE_STORE_WORLD(i, Source);
+#endif
 
 			TranslatePoint(Source, Dest, ViewMatrix);
 
@@ -4730,11 +4838,17 @@ void MorphPoints(SHAPEINSTR *shapeinstrptr)
 	{
 		VECTORCH *destPtr = RotatedPts;
 		int i;
+#ifdef AVP_RTX_REMIX
+		KShape_WorldPtsValid = 1;
+#endif
 		for(i = shapeinstrptr->sh_numitems; i!=0; i--)
 		{
 			Source[0] = srcPtr->vx+Global_ODB_Ptr->ObWorld.vx;
 			Source[1] = srcPtr->vy+Global_ODB_Ptr->ObWorld.vy;
 			Source[2] = srcPtr->vz+Global_ODB_Ptr->ObWorld.vz;
+#ifdef AVP_RTX_REMIX
+			KSHAPE_STORE_WORLD(destPtr - RotatedPts, Source);
+#endif
 
 			TranslatePoint(Source, Dest, ViewMatrix);
 			
@@ -4759,6 +4873,9 @@ void TranslateShapeVertices(SHAPEINSTR *shapeinstrptr)
 	srcPtr = (VECTORCH*)*shapeitemarrayptr;
 	if (Global_ODB_Ptr->ObFlags & ObFlag_ArbRot)
 	{
+#ifdef AVP_RTX_REMIX
+		KShape_WorldPtsValid = 0;   /* positions come pre-offset into view space */
+#endif
 		for(i = shapeinstrptr->sh_numitems; i!=0; i--)
 		{
 			destPtr->vx = (srcPtr->vx+Global_ODB_Ptr->ObView.vx);
@@ -4787,6 +4904,9 @@ void TranslateShapeVertices(SHAPEINSTR *shapeinstrptr)
 		ObjectViewMatrix[3+0*4] = Global_ODB_Ptr->ObWorld.vx + KShape_ObWorldFrac[0];
 		ObjectViewMatrix[3+1*4] = Global_ODB_Ptr->ObWorld.vy + KShape_ObWorldFrac[1];
 		ObjectViewMatrix[3+2*4] = Global_ODB_Ptr->ObWorld.vz + KShape_ObWorldFrac[2];
+#ifdef AVP_RTX_REMIX
+		KShape_WorldPtsValid = 1;
+#endif
 		if (KShape_RigViewPrecision != 1.0f)
 		{
 			/* Kept in finer-than-unit steps; see KShape_RigViewPrecision. */
@@ -4798,6 +4918,9 @@ void TranslateShapeVertices(SHAPEINSTR *shapeinstrptr)
 				Source[2] = srcPtr->vz;
 
 				TranslatePoint(Source, Dest, ObjectViewMatrix);
+#ifdef AVP_RTX_REMIX
+				KSHAPE_STORE_WORLD(destPtr - RotatedPts, Dest);
+#endif
 				TranslatePoint(Dest, Source, ViewMatrix);
 
 				f2i(destPtr->vx,Source[0]*k);
@@ -4815,6 +4938,9 @@ void TranslateShapeVertices(SHAPEINSTR *shapeinstrptr)
 			Source[2] = srcPtr->vz;
 
 			TranslatePoint(Source, Dest, ObjectViewMatrix);
+#ifdef AVP_RTX_REMIX
+			KSHAPE_STORE_WORLD(destPtr - RotatedPts, Dest);
+#endif
 			TranslatePoint(Dest, Source, ViewMatrix);
 			
 			f2i(destPtr->vx,Source[0]);

@@ -20,12 +20,11 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 - Changed Predator Recall Disc to Hold B button. NOTE: Its a good idea to Reset to Defaults the key mapping so any new changes gets updated in your profile. You will need to re-edit your mapping.
 - Left-Handed Mode added to Controls > General VR Configuration. Edit button mappings to adjust how you want.
 - Two-handed weapons is done by holding the opposing grip trigger. You can have it work if grip controller is close to the other controller or not. Set it in General VR Configuration at Opposing Grip Works Only If Controllers Are Close.
-- Use Left Grip (or right if you chose Left Handed Mode on) to hold two handed weapons.
 - NOTE: Two-handed weapons won't work if have Jetpack which is in Bonus Missions. Think of it as one of your hands occupied by controlling Jetpack!
 - You can now physically punch and attack using Predator Wristblades. Hold down secondary fire to power up your punch!
 - Can also physically scratch as Alien.
 - Reordered menus and wording slightly.
-- Fix done for Mad Max profile. Can be found [here](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/downloads/complete-profile).
+- Fix to read Mad Max profile. Can be found [here](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/downloads/complete-profile).
 
 > [!TIP]
 > Re-center your view (hold Meta button) while standing before starting a level so things aren’t small!

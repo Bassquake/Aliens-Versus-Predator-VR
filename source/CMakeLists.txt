@@ -90,6 +90,27 @@ endif()
 # ---------------------------------------------------------------------------
 option(AVP_ENABLE_PCVR "Build the OpenXR (SteamVR) PCVR target — Windows or Linux" OFF)
 
+# ---------------------------------------------------------------------------
+# RTX Remix target (Windows x86 only) — SCAFFOLDING
+#
+# NVIDIA RTX Remix hooks Direct3D 9 games, and its bridge is built for 32-bit hosts,
+# which is why this hangs off the x86 build only. Configure a SEPARATE binary dir
+# (platform/windows/x86remix) with -A Win32 -DAVP_ENABLE_RTX_REMIX=ON. It produces
+# avpremix_x86.exe in its own folder, build/windows/x86remix/, so it never shares
+# config.cfg / user_profiles with the flat x86 build. The binary defines AVP_RTX_REMIX.
+#
+# The renderer is STILL OpenGL. Remix needs a D3D9 backend that sends WORLD-SPACE
+# geometry with SetTransform matrices. This engine transforms and projects every
+# vertex on the CPU (kshape.c / frustum.c / opengl.c), and Remix treats such
+# pre-transformed vertices as 2D UI, so a D3D9 backend alone would not be path-traced.
+# See "RTX Remix" in CLAUDE.md. This target exists so that work has a home.
+#
+# The Remix runtime (d3d9.dll plus the .trex/ folder from an RTX Remix runtime
+# release) is optional. When it is present in extern/RTXRemix/windows/x86/, it is
+# staged next to the exe.
+# ---------------------------------------------------------------------------
+option(AVP_ENABLE_RTX_REMIX "Build the RTX Remix target (Windows x86 only; scaffolding, still renders via OpenGL)" OFF)
+
 if (ANDROID)
     PROJECT(avpvr)
 endif()
@@ -163,6 +184,8 @@ if (WIN32 OR AVP_LINUX OR AVP_MAC)
         # could drift from the one above.
         if (AVP_ENABLE_PCVR)
             set(AVP_EXE_NAME "avpvr_${ARCH_DIR}")
+        elseif (AVP_ENABLE_RTX_REMIX)
+            set(AVP_EXE_NAME "avpremix_${ARCH_DIR}")
         else()
             set(AVP_EXE_NAME "avp_${ARCH_DIR}")
         endif()
@@ -182,6 +205,30 @@ if (WIN32 OR AVP_LINUX OR AVP_MAC)
         set(AVP_SHLIB_SUFFIX ".dylib")
     else()
         set(AVP_SHLIB_SUFFIX ".so")
+    endif()
+endif()
+
+# RTX Remix: validated here, once ARCH_DIR is known. x86 only, because the Remix bridge
+# targets 32-bit D3D9 hosts. It cannot be combined with PCVR, because Remix owns and
+# presents the frame, so there is no stereo pair to hand to xrEndFrame.
+if (AVP_ENABLE_RTX_REMIX)
+    if (NOT WIN32 OR NOT ARCH_DIR STREQUAL "x86")
+        message(FATAL_ERROR
+            "AVP_ENABLE_RTX_REMIX is supported on the Windows x86 (Win32) build only "
+            "(this is '${ARCH_DIR}'). Configure with -A Win32, or -DAVP_ENABLE_RTX_REMIX=OFF.")
+    endif()
+    if (AVP_ENABLE_PCVR)
+        message(FATAL_ERROR
+            "AVP_ENABLE_RTX_REMIX and AVP_ENABLE_PCVR cannot be combined: Remix presents "
+            "the frame itself and has no VR output.")
+    endif()
+    add_definitions(-DAVP_RTX_REMIX)
+    set(AVP_REMIX_RUNTIME_DIR "${CMAKE_SOURCE_DIR}/extern/RTXRemix/windows/${ARCH_DIR}")
+    if (EXISTS "${AVP_REMIX_RUNTIME_DIR}/d3d9.dll")
+        message(STATUS "AVP: RTX Remix build enabled -> ${AVP_EXE_NAME}.exe (runtime: ${AVP_REMIX_RUNTIME_DIR})")
+    else()
+        message(STATUS "AVP: RTX Remix build enabled -> ${AVP_EXE_NAME}.exe (no runtime in "
+                       "${AVP_REMIX_RUNTIME_DIR}; drop d3d9.dll + .trex/ there to stage it)")
     endif()
 endif()
 
@@ -1154,6 +1201,8 @@ elseif (WIN32)
     # the solution and the binary can drift apart. Only the output FOLDER is decided here.
     if (AVP_ENABLE_PCVR)
         set(AVP_OUT_DIR "${AVP_ARCH}vr")
+    elseif (AVP_ENABLE_RTX_REMIX)
+        set(AVP_OUT_DIR "${AVP_ARCH}remix")
     else()
         set(AVP_OUT_DIR "${AVP_ARCH}")
     endif()
@@ -1211,6 +1260,18 @@ elseif (WIN32)
                     "${AVP_OPENXR_LOADER}"
                     "$<TARGET_FILE_DIR:avp>"
             COMMENT "Copying openxr_loader.dll next to ${AVP_EXE_NAME}.exe"
+            VERBATIM)
+    endif()
+
+    # 1b2. RTX Remix: stage the Remix runtime (d3d9.dll + .trex/) next to the exe when it
+    # has been dropped into extern/RTXRemix/windows/x86/. Optional - the build is scaffolding
+    # and still renders through OpenGL, which never loads d3d9.dll.
+    if (AVP_ENABLE_RTX_REMIX AND EXISTS "${AVP_REMIX_RUNTIME_DIR}/d3d9.dll")
+        add_custom_command(TARGET avp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${AVP_REMIX_RUNTIME_DIR}"
+                    "$<TARGET_FILE_DIR:avp>"
+            COMMENT "Copying RTX Remix runtime next to ${AVP_EXE_NAME}.exe"
             VERBATIM)
     endif()
 

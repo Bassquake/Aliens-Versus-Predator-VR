@@ -5897,6 +5897,13 @@ int InitSDL()
                        "com.bassquake.avp");
 #endif
 
+#ifdef AVP_RTX_REMIX
+    /* RTX Remix target (CMake AVP_ENABLE_RTX_REMIX, Windows x86 only): scaffolding. The
+       renderer is still OpenGL, so Remix has nothing to hook yet. See "RTX Remix" in
+       CLAUDE.md for what a D3D9 backend needs. */
+    SDL_Log("AVP: RTX Remix build - renderer is OpenGL (D3D9 backend not implemented yet)");
+#endif
+
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "SDL Init failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);

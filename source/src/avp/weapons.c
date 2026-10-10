@@ -476,9 +476,44 @@ static int VR_MeleeHitCore(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFI
 	return hits;
 }
 
+/* REACH of a motion strike: the SAME as the weapon's primary (TemplateAmmo MaxRange),
+   which the press-to-fire strike measures from the CAMERA. The hit test measures from
+   the tip, so the reach past the tip is MaxRange less the head-to-tip distance - a
+   target the swing reaches is one pressing fire would reach too.
+
+   History (2026-10-10): the eye pass passed a fixed reach in real metres past the tip -
+   0.6 m for the claws, 1.0 m for the blade - leaving the claws far short of their
+   primary (MaxRange 4000 against ~1500 units) and the blade slightly short (2500 against
+   ~2400). The first fix used MaxRange from the TIP, which overshot the primary by the
+   head-to-tip distance and read as "too far". The `range` argument (the old metre
+   value) is no longer used. */
+/* Fraction of the primary range a motion strike gets, in percent. 100 matched the
+   primary exactly and still read as a little too far; trimmed on request. The
+   wristblade's SECONDARY (wind-up) punch reaches slightly further, also on request. */
+#define VR_MOTION_STRIKE_REACH_PERCENT            85
+#define VR_MOTION_STRIKE_SECONDARY_REACH_PERCENT  95
+static int VR_MotionStrikeReachPercent = VR_MOTION_STRIKE_REACH_PERCENT;   /* set per strike */
+static int VR_MotionStrikeReach(VECTORCH *tip, int ammoID)
+{
+	extern VIEWDESCRIPTORBLOCK *Global_VDB_Ptr;
+	int reach = TemplateAmmo[ammoID].MaxRange * VR_MotionStrikeReachPercent / 100;
+	if (Global_VDB_Ptr) {
+		VECTORCH d;
+		d.vx = tip->vx - Global_VDB_Ptr->VDB_World.vx;
+		d.vy = tip->vy - Global_VDB_Ptr->VDB_World.vy;
+		d.vz = tip->vz - Global_VDB_Ptr->VDB_World.vz;
+		reach -= Approximate3dMagnitude(&d);
+	}
+	return (reach > 0) ? reach : 0;
+}
+
 int VR_WristbladePunchHit(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFILE *damage)
 {
 	int hits;
+	/* The ALIEN CLAW's range, not the wristblade's own (2500): a punch reaches exactly as
+	   far as an Alien swipe, on request (2026-10-10). VR only - motion strikes do not
+	   exist on flat, and the wristblade's press-to-fire range is untouched. */
+	range = VR_MotionStrikeReach(tip, AMMO_ALIEN_CLAW);
 	if (!damage) damage = &TemplateAmmo[AMMO_PRED_WRISTBLADE].MaxDamage[AvP.Difficulty];
 	hits = VR_MeleeHitCore(tip, dir, range, damage);
 	if (hits) PlayPredSlashSound();
@@ -494,6 +529,7 @@ int VR_WristbladePunchHit(VECTORCH *tip, VECTORCH *dir, int range, DAMAGE_PROFIL
 int VR_AlienSwipeHit(VECTORCH *tip, VECTORCH *dir, int range)
 {
 	PlayAlienSwipeSound();
+	range = VR_MotionStrikeReach(tip, AMMO_ALIEN_CLAW);
 	return VR_MeleeHitCore(tip, dir, range, &TemplateAmmo[AMMO_ALIEN_CLAW].MaxDamage[AvP.Difficulty]);
 }
 
@@ -536,7 +572,9 @@ int VR_WristbladePunchSecondary(VECTORCH *tip, VECTORCH *dir, int range, PLAYER_
 		d.Acid        = MUL_FIXED(d.Acid, m);
 	}
 	d.Special = 0;
+	VR_MotionStrikeReachPercent = VR_MOTION_STRIKE_SECONDARY_REACH_PERCENT;
 	hits = VR_WristbladePunchHit(tip, dir, range, &d);
+	VR_MotionStrikeReachPercent = VR_MOTION_STRIKE_REACH_PERCENT;
 	vr_windup_punched = 1;
 	vr_windup_rewind  = 1;
 	wp->StateTimeOutCounter = WEAPONSTATE_INITIALTIMEOUTCOUNT;   /* wind up again */
@@ -9333,7 +9371,12 @@ int Tail_TargetFilter(STRATEGYBLOCK *candidate) {
 
 }
 
-#define ALIEN_TAIL_RANGE (4000)
+/* The original 4000 - the same as the claws' primary strike
+   (MeleeWeapon_180Degree_Front_Core, 4000) - everywhere except in a headset, where the
+   tail reaches 5000 so the secondary outreaches the primary (requested 2026-10-10, VR
+   only; flat keeps the original value). */
+extern int VR_IsIn3DMode(void);
+#define ALIEN_TAIL_RANGE (VR_IsIn3DMode() ? 5000 : 4000)
 
 DISPLAYBLOCK *AlienTail_TargetSelect(void)
 {

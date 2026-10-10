@@ -2382,8 +2382,9 @@ extern int Alien_Visible_Weapon;   /* weapons.c: 1 = the tail is out rather than
 /* The Alien's TAIL rides the same rig as its claws (Alien_Visible_Weapon swaps which
    is shown), so it used to share vr_weapon_offset[WEAPON_ALIEN_CLAW]. Tuning the claws
    for the split hands (yaw 58) swung the tail with them, so the tail keeps the values
-   the claws had before that tuning. */
-static VR_WEAPON_OFFSET vr_alien_tail_offset = { -1220, -260, -210, -29, 0, 0 };
+   the claws had before that tuning - except FORWARD, moved 400 further back on
+   2026-10-10: after a strike the tail rested about where the elbow is. */
+static VR_WEAPON_OFFSET vr_alien_tail_offset = { -1620, -260, -210, -29, 0, 0 };
 
 /* VR_ALIEN_SINGLE_POSE: in VR the claws are DRAWN in one fixed pose - the resting one,
  * the first frame of AHSS_LeftSwipeDown that AlienClaw_SwapIn sets up and that the claw
@@ -6427,8 +6428,17 @@ void AvpShowViewsVR(void)
                             /* Alien claws: each arm on its own controller. */
                             VR_RenderAlienSplitClaws(wpn, tw, wscale);
                         } else {
-                            /* The tail or the bite as usual - and the claws stay out. */
-                            RenderThisDisplayblock(&PlayersWeapon);
+                            /* The tail or the bite as usual - and the claws stay out.
+                             * The TAIL only while a tail attack is actually happening
+                             * (poise = FIRING_SECONDARY, strike = RECOIL_SECONDARY). The
+                             * game only swaps the rig back to the claws on the next claw
+                             * attack, so the tail used to stay on show after the strike,
+                             * resting by the elbow; hidden then, at the user's request
+                             * (2026-10-10), leaving the claws on the controllers. */
+                            const int tailIdle = (Alien_Visible_Weapon == 1
+                                && wpn->CurrentState != WEAPONSTATE_FIRING_SECONDARY
+                                && wpn->CurrentState != WEAPONSTATE_RECOIL_SECONDARY);
+                            if (!tailIdle) RenderThisDisplayblock(&PlayersWeapon);
                             VR_DrawAlienClawsBeside(wpn, tw, wscale);
                         }
                     } else {

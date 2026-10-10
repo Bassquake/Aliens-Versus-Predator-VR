@@ -598,8 +598,8 @@ static const char * gamedatapath = NULL;
 /* Stick deadzones (VR Configuration and Joystick Configuration). Defined out here with
    VRBinding, ahead of the AVP_XR split, because the menu arrays reference them on every
    target.
-     LeftStickDeadzone   0..19 -> 0 .. 0.95 of full travel (5% a step), the PHYSICAL left stick
-     RightStickDeadzone  0..19 -> 0 .. 0.95 of full travel (5% a step), the PHYSICAL right stick
+     LeftStickDeadzone(Y)   0..19 -> 0 .. 0.95 of full travel (5% a step), the PHYSICAL left stick's X (Y) axis
+     RightStickDeadzone(Y)  0..19 -> 0 .. 0.95 of full travel (5% a step), the PHYSICAL right stick's X (Y) axis
    The range was 0..10 (0..50%) until 2026-10-10; it was extended rather than rescaled so
    every saved setting keeps its exact meaning, for a worn or drifting stick.
    20 (100%) is deliberately NOT allowed: the stick can never pass full travel, so it
@@ -624,17 +624,39 @@ static const char * gamedatapath = NULL;
    are not mirrored on the hardware, so the result was a left hand wearing a right arm
    with A/B still on the right controller. It needs mirrored art to be worth having,
    not more input plumbing. */
-int LeftStickDeadzone = 2;
-int RightStickDeadzone = 2;
+/* X and Y separately per stick (2026-10-10). The original single slider per stick
+   became the X one - its variable and profile byte keep their names - and Y was added
+   beside it. Per AXIS, not radial: each axis is zeroed inside its own deadzone and
+   rescaled beyond it, which is what lets a stick that drifts sideways be tamed without
+   making forward movement stiff. */
+int LeftStickDeadzone = 2;     /* left stick X */
+int RightStickDeadzone = 2;    /* right stick X */
+int LeftStickDeadzoneY = 2;
+int RightStickDeadzoneY = 2;
 
-/* The deadzone, as a fraction of full travel, for the stick currently doing a ROLE:
-   isLookStick 0 = the movement stick, 1 = the turn/look stick. Resolves Swap Joysticks
-   back to the physical stick, so a setting always follows the hardware. */
-static float StickDeadzoneFraction(int isLookStick)
+/* The deadzone, as a fraction of full travel, for one AXIS of the stick currently doing
+   a ROLE: isLookStick 0 = the movement stick, 1 = the turn/look stick; axisY 0 = X,
+   1 = Y. Resolves Swap Joysticks back to the physical stick, so a setting always
+   follows the hardware. */
+static float StickDeadzoneFraction(int isLookStick, int axisY)
 {
     extern int SwapJoysticksEnabled;
     const int physicalRight = isLookStick ? !SwapJoysticksEnabled : SwapJoysticksEnabled;
-    return (physicalRight ? RightStickDeadzone : LeftStickDeadzone) / 20.0f;
+    const int v = physicalRight ? (axisY ? RightStickDeadzoneY : RightStickDeadzone)
+                                : (axisY ? LeftStickDeadzoneY  : LeftStickDeadzone);
+    return v / 20.0f;
+}
+
+/* One axis through its deadzone: zero inside, rescaled beyond so full deflection is
+   still reachable however large the deadzone. */
+static float StickAxisDeadzone(float v, float dz)
+{
+    float m = v < 0.0f ? -v : v;
+    if (dz <= 0.0f) return v;
+    if (m <= dz) return 0.0f;
+    m = (m - dz) / (1.0f - dz);
+    if (m > 1.0f) m = 1.0f;
+    return v < 0.0f ? -m : m;
 }
 
 /* Response curve for the MOVEMENT stick, applied after the deadzone: speed = push ^
@@ -664,20 +686,11 @@ static void MoveStickCurve(float *x, float *y)
    JoystickData AFTER the slider's deadzone has been applied above - the two stacked:
    nothing below ~18% was reachable, and every setting 0..3 felt the same.
    0 while a VR session is live, because the thumbstick values are already deadzoned. */
-int Joystick_DeadZoneUnits(int isLookStick)
+int Joystick_DeadZoneUnits(int isLookStick, int axisY)
 {
     extern int VR_SessionActive(void);
-    static int lastL = -1, lastR = -1;
-    if (LeftStickDeadzone != lastL || RightStickDeadzone != lastR) {   /* log each change */
-        lastL = LeftStickDeadzone; lastR = RightStickDeadzone;
-        extern int SwapJoysticksEnabled;
-        SDL_Log("INPUT: joystick deadzone left %d (%.0f%%) right %d (%.0f%%), swap joysticks %s"
-                " - movement uses the %s value",
-                lastL, lastL * 5.0f, lastR, lastR * 5.0f, SwapJoysticksEnabled ? "ON" : "off",
-                SwapJoysticksEnabled ? "RIGHT" : "LEFT");
-    }
     if (VR_SessionActive()) return 0;
-    return (int)(StickDeadzoneFraction(isLookStick) * 65536.0f);
+    return (int)(StickDeadzoneFraction(isLookStick, axisY) * 65536.0f);
 }
 int VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 
@@ -773,7 +786,7 @@ int TwoHandProximityGrip = 1;   /* defined in avpview.c on VR builds; inert here
 int VRLeftHanded = 0;           /* defined in avpview.c on VR builds; inert here */
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;
-int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1,2 pull HUD toward centre (inert on desktop) */
+int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1..4 pull HUD toward centre (inert on desktop) */
 /* "Swap Joysticks": 0=No (default), 1=Yes. ONE setting for both input paths - the VR
  * thumbsticks and the flat gamepad - so it is defined on every target, not just VR. */
 int SwapJoysticksEnabled = 0;
@@ -4270,25 +4283,12 @@ int axes, balls, hats;
             xr_left_stick_x = state.currentState.x;
             xr_left_stick_y = state.currentState.y;
         }
-        /* Movement stick deadzone, applied once here where the stick becomes movement.
-           Rescaled beyond the threshold rather than merely clipped, so the full speed
-           range is still reachable however large the deadzone is set. Left or Right
-           Joystick Deadzone, whichever physical stick is moving (Swap Joysticks). */
-        {
-            float dz = StickDeadzoneFraction(0);
-            float mag = SDL_sqrtf(xr_left_stick_x*xr_left_stick_x
-                                + xr_left_stick_y*xr_left_stick_y);
-            if (dz > 0.0f && mag > 0.0f) {
-                if (mag <= dz) {
-                    xr_left_stick_x = 0.0f;
-                    xr_left_stick_y = 0.0f;
-                } else {
-                    float scale = ((mag - dz) / (1.0f - dz)) / mag;
-                    xr_left_stick_x *= scale;
-                    xr_left_stick_y *= scale;
-                }
-            }
-        }
+        /* Movement stick deadzone, applied once here where the stick becomes movement,
+           per axis (X and Y deadzones of whichever physical stick is moving - Swap
+           Joysticks). Rescaled beyond the threshold rather than merely clipped, so the
+           full speed range is still reachable however large the deadzone is set. */
+        xr_left_stick_x = StickAxisDeadzone(xr_left_stick_x, StickDeadzoneFraction(0, 0));
+        xr_left_stick_y = StickAxisDeadzone(xr_left_stick_y, StickDeadzoneFraction(0, 1));
 
         /* Left Stick Up/Down/Left/Right as bindable controls, from the deadzoned stick.
            A direction bound to an action stops moving the player that way, so the
@@ -4338,24 +4338,12 @@ int axes, balls, hats;
                 rx = rstate.currentState.x;
                 ry = rstate.currentState.y;
             }
-            /* Turn stick deadzone: radial and rescaled, exactly as the movement stick
-               above, so snap/smooth turning and weapon cycling all see a stick that
-               still reaches full deflection. This is the ONLY turn threshold for smooth
-               turning - there is no separate smooth-turn deadzone any more. */
-            {
-                float dz  = StickDeadzoneFraction(1);
-                float mag = SDL_sqrtf(rx*rx + ry*ry);
-                if (dz > 0.0f && mag > 0.0f) {
-                    if (mag <= dz) {
-                        rx = 0.0f;
-                        ry = 0.0f;
-                    } else {
-                        float scale = ((mag - dz) / (1.0f - dz)) / mag;
-                        rx *= scale;
-                        ry *= scale;
-                    }
-                }
-            }
+            /* Turn stick deadzone: per axis and rescaled, exactly as the movement stick
+               above, so snap/smooth turning (X) and weapon cycling (Y) each see an axis
+               that still reaches full deflection. This is the ONLY turn threshold for
+               smooth turning - there is no separate smooth-turn deadzone any more. */
+            rx = StickAxisDeadzone(rx, StickDeadzoneFraction(1, 0));
+            ry = StickAxisDeadzone(ry, StickDeadzoneFraction(1, 1));
 
 #if AVP_VR_WORLD_TUNER
             /* In-world world-scale tuning. Toggled with crouch-click + A, a different
@@ -5162,10 +5150,8 @@ int axes, balls, hats;
      * Deadzones are applied per stick and RESCALED, not clipped, so there is no jump as
      * the stick leaves the dead area. */
     if (Pad_IsActive()) {
-        /* Left / Right Joystick Deadzone, resolved to the role each stick is playing. */
-        const float moveDead = StickDeadzoneFraction(0);
-        const float lookDead = StickDeadzoneFraction(1);
-        float DEAD;
+        /* Left / Right Joystick X and Y Deadzones, resolved to the role each stick is
+           playing (applied below, after the read). */
         /* "Swap Joysticks" (Joystick Configuration). Swapped HERE, at the read, so the
            deadzones and everything downstream in usr_io.c are untouched - lx/ly stay
            "the movement stick" and rx/ly "the look stick" whichever physical stick that
@@ -5185,10 +5171,10 @@ int axes, balls, hats;
         float rx = SDL_GetGamepadAxis(gamepad, lookX) / 32767.0f;
         float ry = SDL_GetGamepadAxis(gamepad, lookY) / 32767.0f;
 
-        #define PAD_DEADZONE(v) do {             float m = (v) < 0.0f ? -(v) : (v);             if (m <= DEAD) (v) = 0.0f;             else { m = (m - DEAD) / (1.0f - DEAD); (v) = ((v) < 0.0f) ? -m : m; }         } while (0)
-        DEAD = moveDead; PAD_DEADZONE(lx); PAD_DEADZONE(ly);
-        DEAD = lookDead; PAD_DEADZONE(rx); PAD_DEADZONE(ry);
-        #undef PAD_DEADZONE
+        lx = StickAxisDeadzone(lx, StickDeadzoneFraction(0, 0));
+        ly = StickAxisDeadzone(ly, StickDeadzoneFraction(0, 1));
+        rx = StickAxisDeadzone(rx, StickDeadzoneFraction(1, 0));
+        ry = StickAxisDeadzone(ry, StickDeadzoneFraction(1, 1));
 
         /* Both sticks are applied DIRECTLY (usr_io.c turns these into movement and look
            requests) rather than being poured into JoystickData.
@@ -6139,8 +6125,6 @@ int InitSDL()
             if (gp_ids && gp_count > 0) {
                 gamepad = SDL_OpenGamepad(gp_ids[0]);
                 if (gamepad) {
-                    SDL_Log("INPUT: opened gamepad '%s' (deadzone sliders apply via the pad path)",
-                            SDL_GetGamepadName(gamepad) ? SDL_GetGamepadName(gamepad) : "?");
                     GotJoystick = 1;
                     JoystickCaps.wCaps = 0;
                     JoystickData.dwXpos = 32768;
@@ -6162,7 +6146,6 @@ int InitSDL()
         if (gp_ids && gp_count > 0) {
             gamepad = SDL_OpenGamepad(gp_ids[0]);
             if (gamepad) {
-                SDL_Log("INPUT: opened gamepad '%s'", SDL_GetGamepadName(gamepad) ? SDL_GetGamepadName(gamepad) : "?");
                 GotJoystick = 1;
                 JoystickCaps.wCaps = 0;
                 JoystickData.dwXpos = 32768;
@@ -6187,8 +6170,6 @@ int InitSDL()
             SDL_free(joy_ids);
         }
         if (joy) {
-            SDL_Log("INPUT: opened RAW joystick '%s' (no SDL gamepad mapping; %d axes)",
-                    SDL_GetJoystickName(joy) ? SDL_GetJoystickName(joy) : "?", SDL_GetNumJoystickAxes(joy));
             GotJoystick = 1;
 
             JoystickCaps.wCaps = 0;
@@ -7329,7 +7310,6 @@ void CheckForWindowsMessages()
                 if (!gamepad) {
                     gamepad = SDL_OpenGamepad(event.gdevice.which);
                     if (gamepad) {
-                        SDL_Log("INPUT: hot-plugged gamepad '%s'", SDL_GetGamepadName(gamepad) ? SDL_GetGamepadName(gamepad) : "?");
                         GotJoystick = 1;
                         JoystickCaps.wCaps = 0;
                         JoystickData.dwXpos = 32768;
@@ -7355,8 +7335,6 @@ void CheckForWindowsMessages()
                 if (WantJoystick && !joy && !GotJoystick && !SDL_IsGamepad(event.jdevice.which)) {
                     joy = SDL_OpenJoystick(event.jdevice.which);
                     if (joy) {
-                        SDL_Log("INPUT: hot-plugged RAW joystick '%s' (%d axes)",
-                                SDL_GetJoystickName(joy) ? SDL_GetJoystickName(joy) : "?", SDL_GetNumJoystickAxes(joy));
                         GotJoystick = 1;
                         JoystickCaps.wCaps = 0;
                         JoystickData.dwXpos = 32768;

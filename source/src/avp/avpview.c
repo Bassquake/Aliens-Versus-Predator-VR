@@ -6573,13 +6573,15 @@ void AvpShowViewsVR(void)
          * toward the centre of view for narrow-FOV headsets. Level 0 (default) is
          * the tuned 0.50; each higher level nudges it in slightly (also a touch
          * smaller, which helps it fit a narrow FOV). The crosshair recompute below
-         * and hud.c both divide by vr_hud_clip_scale, so they stay consistent. */
+         * and hud.c both divide by vr_hud_clip_scale, so they stay consistent.
+         * Levels 4 and 5 (0.35, 0.30) added 2026-10-10 for headsets where 3 was still
+         * too far out; same 0.05 step. */
         {
             extern int HUDInsetLevel;
-            static const float hudInsetScale[3] = { 0.50f, 0.45f, 0.40f };
+            static const float hudInsetScale[5] = { 0.50f, 0.45f, 0.40f, 0.35f, 0.30f };
             int lvl = HUDInsetLevel;
             if (lvl < 0) lvl = 0;
-            if (lvl > 2) lvl = 2;
+            if (lvl > 4) lvl = 4;
             vr_hud_clip_scale = hudInsetScale[lvl];
         }
         vr_hud_offset_x   = (eye == 0) ? +VR_HUD_STEREO_DEPTH : -VR_HUD_STEREO_DEPTH;

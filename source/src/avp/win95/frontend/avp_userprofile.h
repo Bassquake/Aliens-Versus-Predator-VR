@@ -103,7 +103,7 @@ typedef struct
 	unsigned char EnemySpeedAlien;    //main menu Cheats: alien enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char EnemySpeedMarine;   //main menu Cheats: marine enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char EnemySpeedPredator; //main menu Cheats: predator enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
-	unsigned char HUDInsetLevel; //Controller Config: "Adjust HUD elements" 0=default,1,2 pull HUD toward centre (was Padding)
+	unsigned char HUDInsetLevel; //VR Comfort & Display: "Adjust HUD elements" 0=default,1..4 pull HUD toward centre (was Padding)
 	unsigned char ReservedWasManualReloadEnabled; //"Manual Reload" gesture toggle, removed (now the Reload binding) - byte kept so the blob layout does not shift
 	/* AV Options texture filtering. All three are index 0 = the port's previous
 	   behaviour, which is required rather than tidy: these come out of Padding,
@@ -262,7 +262,13 @@ typedef struct
 	unsigned char TwoHandProximityOff;
 	/* VR Configuration "Left Handed". 0 = No (default), 1 = Yes. */
 	unsigned char LeftHanded;
-	unsigned char ExtReserved[12];
+	/* VR Controls / Joystick Configuration Y-axis deadzones. The X ones are the older
+	   LeftStickDeadzonePlus1 / RightStickDeadzonePlus1, which predate the split and were
+	   the whole-stick value. 0 = unset -> INHERIT that stick's X value, so a profile
+	   written before the split keeps exactly the deadzone it had on both axes. */
+	unsigned char LeftStickDeadzoneYPlus1;
+	unsigned char RightStickDeadzoneYPlus1;
+	unsigned char ExtReserved[10];
 
 } AVP_USER_PROFILE;
 

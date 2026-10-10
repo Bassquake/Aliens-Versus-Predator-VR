@@ -1110,6 +1110,7 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 		}
 
 		case AVPMENU_VRCONFIG:
+		case AVPMENU_VRCONFIG2:
 		{
 			/* Rebuilt on open so it reflects the species being played right now. */
 			MakeVRConfigMenu(AvPMenus.MenusState == MENUSSTATE_INGAMEMENUS);
@@ -1488,7 +1489,9 @@ static int MenuElementIsDisabled(const AVPMENU_ELEMENT *elementPtr)
 	   row - see the brightness selection in RenderMenu. */
 	if (MenuElementIsReadOnlyLabel(elementPtr)) return 1;
 
-	if (AvPMenus.CurrentMenu != AVPMENU_VRCONFIG) return 0;
+	/* Both VR Configuration pages: the turn mode is on page 1 and the vignette rows it
+	   greys are on page 2. */
+	if (AvPMenus.CurrentMenu != AVPMENU_VRCONFIG && AvPMenus.CurrentMenu != AVPMENU_VRCONFIG2) return 0;
 	{
 		const int smooth = (VRTurnMode == 1);   /* 0 = Snap (default), 1 = Smooth */
 		switch (elementPtr->a.TextDescription)

@@ -1557,9 +1557,10 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		/* Was a fixed 12000 (~18% of travel). Now the Left / Right Joystick Deadzone
 		   sliders, resolved to the stick's role - and 0 in VR, whose thumbsticks
 		   arrive here already deadzoned (see Joystick_DeadZoneUnits, main.c). */
-		extern int Joystick_DeadZoneUnits(int isLookStick);
-		const int moveDeadZone = Joystick_DeadZoneUnits(0);
-		const int lookDeadZone = Joystick_DeadZoneUnits(1);
+		extern int Joystick_DeadZoneUnits(int isLookStick, int axisY);
+		const int moveDeadZoneX = Joystick_DeadZoneUnits(0, 0);
+		const int moveDeadZoneY = Joystick_DeadZoneUnits(0, 1);
+		const int lookDeadZoneX = Joystick_DeadZoneUnits(1, 0);   /* the rudder: a turn axis */
 		extern JOYINFOEX JoystickData;
 		extern JOYCAPS JoystickCaps;
 
@@ -1577,12 +1578,12 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		{
 			if(JoystickControlMethods.JoystickFlipVerticalAxis) yAxis=-yAxis;
 
-			if(yAxis>moveDeadZone)
+			if(yAxis>moveDeadZoneY)
 			{
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Forward = 1;
 				playerStatusPtr->Mvt_MotionIncrement = yAxis;
 			}	
-			else if(yAxis<-moveDeadZone)
+			else if(yAxis<-moveDeadZoneY)
 			{
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Backward = 1;
 				playerStatusPtr->Mvt_MotionIncrement = yAxis;
@@ -1592,13 +1593,13 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		{
 			if(!JoystickControlMethods.JoystickFlipVerticalAxis) yAxis=-yAxis;
 
-			if(yAxis>moveDeadZone)
+			if(yAxis>moveDeadZoneY)
 			{
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_LookDown = 1;
 				playerStatusPtr->Mvt_AnaloguePitching = 1;
 				playerStatusPtr->Mvt_PitchIncrement = yAxis;
 			}
-			else if(yAxis<-moveDeadZone)
+			else if(yAxis<-moveDeadZoneY)
 			{
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_LookUp = 1;
 				playerStatusPtr->Mvt_AnaloguePitching = 1;
@@ -1608,13 +1609,13 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 		if (JoystickControlMethods.JoystickHAxisIsTurning)
 		{
-			if(xAxis<-moveDeadZone)
+			if(xAxis<-moveDeadZoneX)
 			{
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_TurnLeft = 1;
 				playerStatusPtr->Mvt_AnalogueTurning = 1;
 				playerStatusPtr->Mvt_TurnIncrement = xAxis;
 			}
-			else if(xAxis>moveDeadZone)
+			else if(xAxis>moveDeadZoneX)
 			{			  
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_TurnRight = 1;
 				playerStatusPtr->Mvt_AnalogueTurning = 1;
@@ -1623,12 +1624,12 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		}
 		else // strafing
 		{
-			if(xAxis<-moveDeadZone)
+			if(xAxis<-moveDeadZoneX)
 			{
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_SideStepLeft = 1;
 				playerStatusPtr->Mvt_SideStepIncrement = xAxis;
 			}
-			else if(xAxis>moveDeadZone)
+			else if(xAxis>moveDeadZoneX)
 			{			  
 				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_SideStepRight = 1;
 				playerStatusPtr->Mvt_SideStepIncrement = xAxis;
@@ -1704,13 +1705,13 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			int rAxis = (JoystickData.dwRpos-32768)*2;
 			if (JoystickControlMethods.JoystickRudderAxisIsTurning)
 			{
-				if(rAxis>lookDeadZone)
+				if(rAxis>lookDeadZoneX)
 				{
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_TurnRight = 1;
 					playerStatusPtr->Mvt_AnalogueTurning = 1;
 					playerStatusPtr->Mvt_TurnIncrement = rAxis;
 				}
-				else if(rAxis<-lookDeadZone)
+				else if(rAxis<-lookDeadZoneX)
 				{			  
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_TurnLeft = 1;
 					playerStatusPtr->Mvt_AnalogueTurning = 1;
@@ -1719,14 +1720,14 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 			}
 			else
 			{
-				if(rAxis>lookDeadZone)
+				if(rAxis>lookDeadZoneX)
 				{
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Strafe = 1;
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_TurnRight = 1;
 					playerStatusPtr->Mvt_AnalogueTurning = 1;
 					playerStatusPtr->Mvt_TurnIncrement = rAxis;
 				}	
-				else if(rAxis<-lookDeadZone)
+				else if(rAxis<-lookDeadZoneX)
 				{
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Strafe = 1;
 					playerStatusPtr->Mvt_InputRequests.Flags.Rqst_TurnLeft = 1;

@@ -134,6 +134,9 @@ enum AVPMENU_ID
 	AVPMENU_MARINEPADCONFIG,
 	AVPMENU_PREDATORPADCONFIG,
 
+	/* Page 2 of VR Configuration. Appended for the same reason as everything above. */
+	AVPMENU_VRCONFIG2,
+
 };
 
 enum AVPMENU_FONT_ID

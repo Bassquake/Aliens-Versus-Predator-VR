@@ -69,6 +69,8 @@ extern int VRLeftHanded;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
 extern int LeftStickDeadzone;
 extern int RightStickDeadzone;
+extern int LeftStickDeadzoneY;
+extern int RightStickDeadzoneY;
 extern int VRWorldScaleIndex;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
@@ -410,6 +412,8 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRLeftHanded = 0;         /* right-handed */
 	LeftStickDeadzone = 2;
 	RightStickDeadzone = 2;
+	LeftStickDeadzoneY = 2;
+	RightStickDeadzoneY = 2;
 	PadVertSensitivity = 10;
 	PadHorizSensitivity = 10;
 	PadInvertVertical = 0;
@@ -562,6 +566,11 @@ extern void GetSettingsFromUserProfile(void)
 					? UserProfilePtr->LeftStickDeadzonePlus1 - 1 : 2;
 	RightStickDeadzone =			UserProfilePtr->RightStickDeadzonePlus1
 					? UserProfilePtr->RightStickDeadzonePlus1 - 1 : 2;
+	/* Unset Y inherits the stick's X: before the split one value covered both axes. */
+	LeftStickDeadzoneY =			UserProfilePtr->LeftStickDeadzoneYPlus1
+					? UserProfilePtr->LeftStickDeadzoneYPlus1 - 1 : LeftStickDeadzone;
+	RightStickDeadzoneY =			UserProfilePtr->RightStickDeadzoneYPlus1
+					? UserProfilePtr->RightStickDeadzoneYPlus1 - 1 : RightStickDeadzone;
 	VRWorldScaleIndex =			UserProfilePtr->VRWorldScaleIndexPlus1
 					? UserProfilePtr->VRWorldScaleIndexPlus1 - 1
 					: VR_WORLD_SCALE_DEFAULT_INDEX;
@@ -694,6 +703,7 @@ extern void GetSettingsFromUserProfile(void)
 	EnemySpeedMarine =			10 - UserProfilePtr->EnemySpeedMarine;
 	EnemySpeedPredator =			10 - UserProfilePtr->EnemySpeedPredator;
 	HUDInsetLevel =				UserProfilePtr->HUDInsetLevel;
+	if (HUDInsetLevel > 4) HUDInsetLevel = 0;   /* untrusted blob: out of range -> default */
 	SwapJoysticksEnabled =			UserProfilePtr->SwapJoysticksEnabled;
    	strncpy(MP_PlayerName,UserProfilePtr->MultiplayerCallsign,15);
 
@@ -745,6 +755,8 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->LeftHanded =		(unsigned char)(VRLeftHanded ? 1 : 0);
 	profilePtr->LeftStickDeadzonePlus1 =	(unsigned char)(LeftStickDeadzone + 1);
 	profilePtr->RightStickDeadzonePlus1 =	(unsigned char)(RightStickDeadzone + 1);
+	profilePtr->LeftStickDeadzoneYPlus1 =	(unsigned char)(LeftStickDeadzoneY + 1);
+	profilePtr->RightStickDeadzoneYPlus1 =	(unsigned char)(RightStickDeadzoneY + 1);
 	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);
 	{
 		int sp, i;

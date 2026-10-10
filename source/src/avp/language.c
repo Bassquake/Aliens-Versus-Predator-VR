@@ -200,8 +200,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_MARINELEFTARM_ON:   return "On (Default)";
 			case TEXTSTRING_VERSION:            return "Version";
 			case TEXTSTRING_VERSION_VALUE:      return AVP_VERSION_STRING;
-			case TEXTSTRING_VRCONFIG_TITLE:     return "General VR Configuration";
-			case TEXTSTRING_VRCONFIG_HELP:      return "Headset and comfort options: turning, vignettes, HUD placement and gestures.";
+			case TEXTSTRING_VRCONFIG_TITLE:     return "VR Controls";
+			case TEXTSTRING_VRCONFIG_HELP:      return "Handedness, joysticks, deadzones, turning and its vignette, and the two-handed grip.";
+			case TEXTSTRING_VRCONFIG2_TITLE:    return "VR Comfort and	 Display";
+			case TEXTSTRING_VRCONFIG2_HELP:     return "HUD placement, message text size, the Alien climbing vignette, the Marine's left arm and world scale.";
 			case TEXTSTRING_MARINECONTROLLERCONFIG_TITLE:   return "Marine Controller Configuration";
 			case TEXTSTRING_PREDATORCONTROLLERCONFIG_TITLE: return "Predator Controller Configuration";
 			case TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE:    return "Alien Controller Configuration";
@@ -229,8 +231,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. A Hold option fires after holding the control for half a second, so one control can do two things. X and the stick directions cannot be held. A stick direction given an action stops moving or turning that way.";
 			case TEXTSTRING_VRWORLDSCALE:       return "World Scale (Default: 1.30)";
 			case TEXTSTRING_VRWORLDSCALE_HELP:  return "How large the world feels. Higher values make one real step cover more ground, so the world seems smaller.";
-			case TEXTSTRING_LEFTSTICKDEADZONE:     return "Left Joystick Deadzone";
-			case TEXTSTRING_LEFTSTICKDEADZONE_HELP:return "How far the left stick must be pushed before it registers. Applies to VR controllers and to a gamepad, and stays with the left stick if the sticks are swapped.";
+			case TEXTSTRING_LEFTSTICKDEADZONE:     return "Left Joystick X Deadzone";
+			case TEXTSTRING_LEFTSTICKDEADZONE_Y:   return "Left Joystick Y Deadzone";
+			case TEXTSTRING_LEFTSTICKDEADZONE_Y_HELP:return "How far the left stick must be pushed forward or back before it registers. Applies to VR controllers and to a gamepad, and stays with the left stick if the sticks are swapped.";
+			case TEXTSTRING_LEFTSTICKDEADZONE_HELP:return "How far the left stick must be pushed sideways before it registers. Applies to VR controllers and to a gamepad, and stays with the left stick if the sticks are swapped.";
 			case TEXTSTRING_BIND_RESET:         return "Reset All To Default";
 			case TEXTSTRING_BIND_RESET_HELP:    return "Put every control for this species back to its original mapping. Use These Settings still has to be chosen to keep it.";
 
@@ -326,10 +330,12 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR: return "Predator Speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_HELP: return "Slow this enemy type down in Single Player. Full is normal speed, empty stops them (not Skirmish or Multiplayer).";
 			case TEXTSTRING_HUDADJUST: return "Adjust HUD Elements";
-			case TEXTSTRING_HUDADJUST_HELP: return "Moves HUD elements toward the centre of view. 1 is furthest out, 3 is closer to center of view.";
+			case TEXTSTRING_HUDADJUST_HELP: return "Moves HUD elements toward the centre of view. 1 is furthest out, 5 is closest to the centre of view.";
 			case TEXTSTRING_HUDADJUST_1: return "1 (Default)";
 			case TEXTSTRING_HUDADJUST_2: return "2";
 			case TEXTSTRING_HUDADJUST_3: return "3";
+			case TEXTSTRING_HUDADJUST_4: return "4";
+			case TEXTSTRING_HUDADJUST_5: return "5";
 			case TEXTSTRING_MANUALRELOAD: return "Manual Reload";
 			case TEXTSTRING_MANUALRELOAD_HELP: return "Manually reload weapons by almost touching the controllers together.";
 			case TEXTSTRING_MANUALRELOAD_OFF: return "Off (Default)";
@@ -344,7 +350,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_SWAPJOYSTICKS_NO:   return "No (Default)";
 			case TEXTSTRING_SWAPJOYSTICKS_YES:  return "Yes";
 			case TEXTSTRING_SWAPJOYSTICKS_HELP: return "Swap the left and right sticks: movement moves to the right stick and turning to the left. Applies to VR controllers and to a gamepad.";
-			case TEXTSTRING_RIGHTSTICKDEADZONE:      return "Right Joystick Deadzone";
+			case TEXTSTRING_RIGHTSTICKDEADZONE:      return "Right Joystick X Deadzone";
+			case TEXTSTRING_RIGHTSTICKDEADZONE_Y:    return "Right Joystick Y Deadzone";
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES:      return "Enlarge Messages Text";
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_HELP: return "Draw the messages, logs and instructions that drop down from the top of the screen at a larger size.";
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_OFF:  return "Off (Default)";
@@ -368,7 +375,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_LEFTHANDED_YES:  return "Yes";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_OFF:  return "Off";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_ON:   return "On (Default)";
-			case TEXTSTRING_RIGHTSTICKDEADZONE_HELP: return "How far the right stick must be pushed before it registers. Applies to VR controllers and to a gamepad, and stays with the right stick if the sticks are swapped.";
+			case TEXTSTRING_RIGHTSTICKDEADZONE_Y_HELP: return "How far the right stick must be pushed forward or back before it registers. Applies to VR controllers and to a gamepad, and stays with the right stick if the sticks are swapped.";
+			case TEXTSTRING_RIGHTSTICKDEADZONE_HELP: return "How far the right stick must be pushed sideways before it registers. Applies to VR controllers and to a gamepad, and stays with the right stick if the sticks are swapped.";
 			default: break;
 		}
 	}

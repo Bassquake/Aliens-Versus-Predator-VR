@@ -73,6 +73,8 @@ extern int TwoHandProximityGrip;
 extern int VRLeftHanded;
 extern int LeftStickDeadzone;
 extern int RightStickDeadzone;
+extern int LeftStickDeadzoneY;
+extern int RightStickDeadzoneY;
 extern int VRWorldScaleIndex;
 extern int HUDInsetLevel;
 /* "Swap Joysticks" - one setting, shown on General VR Configuration and on the flat
@@ -256,18 +258,33 @@ static const AVPMENU_ELEMENT AvPMenu_VRConfigMaster[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_LEFTHANDED},	{1}, {&VRLeftHanded},	{TEXTSTRING_LEFTHANDED_NO},	TEXTSTRING_LEFTHANDED_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_SWAPJOYSTICKS},	{1}, {&SwapJoysticksEnabled},	{TEXTSTRING_SWAPJOYSTICKS_NO},	TEXTSTRING_SWAPJOYSTICKS_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_LEFTSTICKDEADZONE},	{19}, {&LeftStickDeadzone},	{0},	TEXTSTRING_LEFTSTICKDEADZONE_HELP},
+	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_LEFTSTICKDEADZONE_Y},	{19}, {&LeftStickDeadzoneY},	{0},	TEXTSTRING_LEFTSTICKDEADZONE_Y_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_RIGHTSTICKDEADZONE},	{19}, {&RightStickDeadzone},	{0},	TEXTSTRING_RIGHTSTICKDEADZONE_HELP},
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_HUDADJUST},	{2}, {&HUDInsetLevel},	{TEXTSTRING_HUDADJUST_1},	TEXTSTRING_HUDADJUST_HELP},
+	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_RIGHTSTICKDEADZONE_Y},	{19}, {&RightStickDeadzoneY},	{0},	TEXTSTRING_RIGHTSTICKDEADZONE_Y_HELP},
 
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRTURN_MODE},	{1}, {&VRTurnMode},		{TEXTSTRING_VRTURN_SNAP},	TEXTSTRING_VRTURN_MODE_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRSNAP_ANGLE},	{3}, {&VRSnapAngleIndex},	{TEXTSTRING_VRSNAP_30},		TEXTSTRING_VRSNAP_ANGLE_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRSMOOTH_SPEED},	{10}, {&VRSmoothTurnSpeed},	{0},	TEXTSTRING_VRSMOOTH_SPEED_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRVIGNETTE},	{1}, {&VRVignetteOn},		{TEXTSTRING_VRVIGNETTE_OFF},	TEXTSTRING_VRVIGNETTE_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRVIGNETTE_STRENGTH}, {10}, {&VRVignetteStrength},	{0},	TEXTSTRING_VRVIGNETTE_STRENGTH_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_TWOHANDPROXIMITY},	{1}, {&TwoHandProximityGrip},	{TEXTSTRING_TWOHANDPROXIMITY_NO},	TEXTSTRING_TWOHANDPROXIMITY_HELP},
+
+	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
+	{AVPMENU_ELEMENT_ENDOFMENU}
+};
+
+/* Page 2 of VR Configuration: comfort and display. Split off 2026-10-10 because the
+   single page had filled the screen (menus here do not scroll) and the stick rows
+   needed room to grow. Every row is unchanged, only moved. */
+static const AVPMENU_ELEMENT AvPMenu_VRConfig2Master[] =
+{
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_HUDADJUST},	{4}, {&HUDInsetLevel},	{TEXTSTRING_HUDADJUST_1},	TEXTSTRING_HUDADJUST_HELP},
+	/* Moved here from AV Options in headset builds (2026-10-10); flat and phone keep it
+	   on AV Options. One variable, so either place edits the same setting. */
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES},	{4}, {&EnlargeMessagesText},	{TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_OFF},	TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRCLIMBVIGNETTE},	{1}, {&VRClimbVignetteOn},	{TEXTSTRING_VRCLIMBVIGNETTE_OFF},	TEXTSTRING_VRCLIMBVIGNETTE_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH}, {10}, {&VRClimbVignetteStrength},	{0},	TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_MARINELEFTARM},	{1}, {&MarineLeftArmVisible},	{TEXTSTRING_MARINELEFTARM_OFF},	TEXTSTRING_MARINELEFTARM_HELP},
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_TWOHANDPROXIMITY},	{1}, {&TwoHandProximityGrip},	{TEXTSTRING_TWOHANDPROXIMITY_NO},	TEXTSTRING_TWOHANDPROXIMITY_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRWORLDSCALE},	{VR_WORLD_SCALE_MAX_INDEX}, {&VRWorldScaleIndex},	{0},	TEXTSTRING_VRWORLDSCALE_HELP},
 
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
@@ -284,18 +301,35 @@ static const AVPMENU_ELEMENT AvPMenu_VRConfigMaster[] =
  * played there, so all of it is legitimately configurable in advance. */
 static AVPMENU_ELEMENT AvPMenu_VRConfig[
     sizeof(AvPMenu_VRConfigMaster)/sizeof(AvPMenu_VRConfigMaster[0])];
+static AVPMENU_ELEMENT AvPMenu_VRConfig2[
+    sizeof(AvPMenu_VRConfig2Master)/sizeof(AvPMenu_VRConfig2Master[0])];
+
+static void MakeVRConfigPage(const AVPMENU_ELEMENT *master, unsigned int count,
+                             AVPMENU_ELEMENT *live, int inGame);
 
 /* inGame is passed in rather than read here: AvPMenus is static to avp_menus.c, and
    the caller is the one that knows which menu state it is setting up. */
+/* Builds BOTH pages, so whichever is opened is current. */
 extern void MakeVRConfigMenu(int inGame)
+{
+    MakeVRConfigPage(AvPMenu_VRConfigMaster,
+                     sizeof(AvPMenu_VRConfigMaster)/sizeof(AvPMenu_VRConfigMaster[0]),
+                     AvPMenu_VRConfig, inGame);
+    MakeVRConfigPage(AvPMenu_VRConfig2Master,
+                     sizeof(AvPMenu_VRConfig2Master)/sizeof(AvPMenu_VRConfig2Master[0]),
+                     AvPMenu_VRConfig2, inGame);
+}
+
+static void MakeVRConfigPage(const AVPMENU_ELEMENT *master, unsigned int count,
+                             AVPMENU_ELEMENT *live, int inGame)
 {
     const int isAlien  = (AvP.PlayerType == I_Alien);
     const int isMarine = (AvP.PlayerType == I_Marine);
     unsigned int src, dst = 0;
 
-    for (src = 0; src < sizeof(AvPMenu_VRConfigMaster)/sizeof(AvPMenu_VRConfigMaster[0]); src++)
+    for (src = 0; src < count; src++)
     {
-        const AVPMENU_ELEMENT *e = &AvPMenu_VRConfigMaster[src];
+        const AVPMENU_ELEMENT *e = &master[src];
 
         if (inGame && e->ElementID != AVPMENU_ELEMENT_ENDOFMENU)
         {
@@ -312,7 +346,7 @@ extern void MakeVRConfigMenu(int inGame)
                     break;
             }
         }
-        AvPMenu_VRConfig[dst++] = *e;
+        live[dst++] = *e;
     }
     /* The terminator is copied with everything else, so dst is already past it. */
 }
@@ -466,10 +500,12 @@ static const AVPMENU_ELEMENT AvPMenu_JoystickControlsMaster[] =
 	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_PADHORIZSENSITIVITY},	{20},	{&PadHorizSensitivity},	{0},	TEXTSTRING_PADSENSITIVITY_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_MOUSECONTROLS_INVERTVERTICAL},	{1},	{&PadInvertVertical},	{TEXTSTRING_NO},	TEXTSTRING_JOYSTICKCONTROLS_INVERTVERTICAL_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_SWAPJOYSTICKS},	{1}, {&SwapJoysticksEnabled},	{TEXTSTRING_SWAPJOYSTICKS_NO},	TEXTSTRING_SWAPJOYSTICKS_HELP},
-	/* The same two settings as on VR Configuration - one value each, shared by both
+	/* The same four settings as on VR Controls - one value each, shared by both
 	   input paths. */
 	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_LEFTSTICKDEADZONE},	{19},	{&LeftStickDeadzone},	{0},	TEXTSTRING_LEFTSTICKDEADZONE_HELP},
+	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_LEFTSTICKDEADZONE_Y},	{19},	{&LeftStickDeadzoneY},	{0},	TEXTSTRING_LEFTSTICKDEADZONE_Y_HELP},
 	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_RIGHTSTICKDEADZONE},	{19},	{&RightStickDeadzone},	{0},	TEXTSTRING_RIGHTSTICKDEADZONE_HELP},
+	{AVPMENU_ELEMENT_SLIDER,	{TEXTSTRING_RIGHTSTICKDEADZONE_Y},	{19},	{&RightStickDeadzoneY},	{0},	TEXTSTRING_RIGHTSTICKDEADZONE_Y_HELP},
 
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENPADCONFIG_TITLE},	{AVPMENU_ALIENPADCONFIG},	{0},	{0},	TEXTSTRING_PADCONFIG_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MARINEPADCONFIG_TITLE},	{AVPMENU_MARINEPADCONFIG},	{0},	{0},	TEXTSTRING_PADCONFIG_HELP},
@@ -525,7 +561,11 @@ static AVPMENU_ELEMENT AvPMenu_InGameAVOptions[] =
 	{AVPMENU_ELEMENT_SLIDER, 		{TEXTSTRING_AVOPTIONS_MUSICVOLUME},	 {ONE_FIXED/512},	{&SmackerSoundVolume}},
 	{AVPMENU_ELEMENT_SLIDER, 		{TEXTSTRING_AVOPTIONS_CDVOLUME},	 {CDDA_VOLUME_MAX},	{&CDPlayerVolume}},
 	{AVPMENU_ELEMENT_TEXTSLIDER, 	{TEXTSTRING_AVOPTIONS_INGAMEMOVIES}, {1}, {&MoviesAreActive},	{TEXTSTRING_NO}},
+	/* In a headset this lives on VR Comfort & Display instead, beside Adjust HUD
+	   Elements - it sizes the drop-down message box, a HUD element. */
+	#ifndef AVP_MENU_VR
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES},	{4}, {&EnlargeMessagesText},	{TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_OFF},	TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_HELP},
+	#endif
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_CROSSHAIR},    {1}, {&ShowCrosshair},	{TEXTSTRING_DETAILLEVELS_OFF},	TEXTSTRING_AVOPTIONS_CROSSHAIR_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FRAMERATE},        {1}, {&ShowFrameRate},       {TEXTSTRING_FPS_OFF},	TEXTSTRING_AVOPTIONS_FRAMERATE_HELP},
 	/* MSAA is offered everywhere the game renders 3D itself; refresh rate is
@@ -577,7 +617,11 @@ static AVPMENU_ELEMENT AvPMenu_MainMenuAVOptions[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER,   	{TEXTSTRING_AVOPTIONS_INTROOUTROMOVIES}, {1}, {&IntroOutroMoviesAreActive},	{TEXTSTRING_NO},	TEXTSTRING_AVOPTIONS_INTROOUTROMOVIES_HELP},
 	/* Main-menu AV Options only: the backdrop it changes is never seen in-game. */
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MENUVIDEO},	{1}, {&MenuBackgroundVideoEnabled},	{TEXTSTRING_AVOPTIONS_MENUVIDEO_OFF},	TEXTSTRING_AVOPTIONS_MENUVIDEO_HELP},
+	/* In a headset this lives on VR Comfort & Display instead, beside Adjust HUD
+	   Elements - it sizes the drop-down message box, a HUD element. */
+	#ifndef AVP_MENU_VR
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES},	{4}, {&EnlargeMessagesText},	{TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_OFF},	TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_HELP},
+	#endif
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_CROSSHAIR},    {1}, {&ShowCrosshair},	{TEXTSTRING_DETAILLEVELS_OFF},	TEXTSTRING_AVOPTIONS_CROSSHAIR_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_FRAMERATE},        {1}, {&ShowFrameRate},       {TEXTSTRING_FPS_OFF},	TEXTSTRING_AVOPTIONS_FRAMERATE_HELP},
 	/* MSAA is offered everywhere the game renders 3D itself; refresh rate is
@@ -1022,6 +1066,7 @@ static AVPMENU_ELEMENT AvPMenu_InGame[] =
 	   still lists all three, which is where you would set them up in advance. */
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE},	{AVPMENU_ALIENCONTROLLERCONFIG}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG_TITLE},		{AVPMENU_VRCONFIG}},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG2_TITLE},		{AVPMENU_VRCONFIG2}},
 	#endif
 	/* Mouse / joystick / key configuration hidden only in a real headset. */
 	#ifndef AVP_MENU_VR
@@ -1047,6 +1092,7 @@ static AVPMENU_ELEMENT AvPMenu_InNetGame[] =
 	   still lists all three, which is where you would set them up in advance. */
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE},	{AVPMENU_ALIENCONTROLLERCONFIG}},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG_TITLE},		{AVPMENU_VRCONFIG}},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG2_TITLE},		{AVPMENU_VRCONFIG2}},
 	#endif
 	/* Mouse / joystick / key configuration hidden only in a real headset. */
 	#ifndef AVP_MENU_VR
@@ -1074,6 +1120,7 @@ static AVPMENU_ELEMENT AvPMenu_Options[] =
 	 * above. Gated on AVP_MENU_VR so the non-VR phone flavor does not get it. */
 	#ifdef AVP_MENU_VR
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG_TITLE},		{AVPMENU_VRCONFIG},		{0},	{0},	TEXTSTRING_VRCONFIG_HELP},
+	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_VRCONFIG2_TITLE},		{AVPMENU_VRCONFIG2},		{0},	{0},	TEXTSTRING_VRCONFIG2_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_ALIENCONTROLLERCONFIG_TITLE},	{AVPMENU_ALIENCONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_MARINECONTROLLERCONFIG_TITLE},	{AVPMENU_MARINECONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU,	{TEXTSTRING_PREDATORCONTROLLERCONFIG_TITLE},	{AVPMENU_PREDATORCONTROLLERCONFIG},	{0},	{0},	TEXTSTRING_CONTROLLERCONFIG_HELP},
@@ -1366,6 +1413,9 @@ AVPMENU AvPMenusData[]=
 	{AVPMENU_FONT_SMALL,TEXTSTRING_MARINEPADCONFIG_TITLE,	AvPMenu_MarinePadConfig,	AVPMENU_JOYSTICKCONTROLS, 0},
 	// AVPMENU_PREDATORPADCONFIG
 	{AVPMENU_FONT_SMALL,TEXTSTRING_PREDATORPADCONFIG_TITLE,	AvPMenu_PredatorPadConfig,	AVPMENU_JOYSTICKCONTROLS, 0},
+
+	// AVPMENU_VRCONFIG2 - page 2 of VR Configuration (see AvPMenu_VRConfig2Master)
+	{AVPMENU_FONT_SMALL,TEXTSTRING_VRCONFIG2_TITLE,	AvPMenu_VRConfig2, AVPMENU_OPTIONS, 0},
 
 };
 

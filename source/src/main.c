@@ -598,8 +598,12 @@ static const char * gamedatapath = NULL;
 /* Stick deadzones (VR Configuration and Joystick Configuration). Defined out here with
    VRBinding, ahead of the AVP_XR split, because the menu arrays reference them on every
    target.
-     LeftStickDeadzone   0..10 -> 0 .. 0.5 of full travel, the PHYSICAL left stick
-     RightStickDeadzone  0..10 -> 0 .. 0.5 of full travel, the PHYSICAL right stick
+     LeftStickDeadzone   0..19 -> 0 .. 0.95 of full travel (5% a step), the PHYSICAL left stick
+     RightStickDeadzone  0..19 -> 0 .. 0.95 of full travel (5% a step), the PHYSICAL right stick
+   The range was 0..10 (0..50%) until 2026-10-10; it was extended rather than rescaled so
+   every saved setting keeps its exact meaning, for a worn or drifting stick.
+   20 (100%) is deliberately NOT allowed: the stick can never pass full travel, so it
+   would silently disable the stick.
    Both apply to the VR thumbsticks and to a flat gamepad alike. They follow the
    hardware, not the role: "Swap Joysticks" moves movement onto the right stick, but a
    deadzone exists to soak up a worn or drifting stick, so it stays with the stick.
@@ -633,6 +637,26 @@ static float StickDeadzoneFraction(int isLookStick)
     return (physicalRight ? RightStickDeadzone : LeftStickDeadzone) / 20.0f;
 }
 
+/* Response curve for the MOVEMENT stick, applied after the deadzone: speed = push ^
+   MOVE_STICK_CURVE along the push direction. Linear made the deadzone setting hard to
+   feel - speed rose straight from the edge of the deadzone and a full push was the same
+   at every setting - and gave little control at walking pace. Squared, a half push
+   walks at quarter speed and the outer half of the travel does most of the work.
+   Radial, so a diagonal keeps its direction; the scale is clamped at a magnitude of 1,
+   so a full push (or a per-axis pad diagonal past 1) is exactly as fast as before.
+   Movement only: the stick-direction bindings and menu navigation keep their linear
+   thresholds, and turning has its own snap/smooth handling. */
+#define MOVE_STICK_CURVE 2.0f
+static void MoveStickCurve(float *x, float *y)
+{
+    float m = SDL_sqrtf(*x * *x + *y * *y);
+    if (m > 0.0f && m < 1.0f) {
+        float k = SDL_powf(m, MOVE_STICK_CURVE - 1.0f);
+        *x *= k;
+        *y *= k;
+    }
+}
+
 /* The same deadzone on the 1999 joystick scale (usr_io.c's JoystickData axes run
    -65536..65536 after its centring), for the raw-joystick consumer there. It used a
    fixed JOYSTICK_DEAD_ZONE of 12000 (~18% of travel), so for a raw (non-gamepad)
@@ -643,6 +667,15 @@ static float StickDeadzoneFraction(int isLookStick)
 int Joystick_DeadZoneUnits(int isLookStick)
 {
     extern int VR_SessionActive(void);
+    static int lastL = -1, lastR = -1;
+    if (LeftStickDeadzone != lastL || RightStickDeadzone != lastR) {   /* log each change */
+        lastL = LeftStickDeadzone; lastR = RightStickDeadzone;
+        extern int SwapJoysticksEnabled;
+        SDL_Log("INPUT: joystick deadzone left %d (%.0f%%) right %d (%.0f%%), swap joysticks %s"
+                " - movement uses the %s value",
+                lastL, lastL * 5.0f, lastR, lastR * 5.0f, SwapJoysticksEnabled ? "ON" : "off",
+                SwapJoysticksEnabled ? "RIGHT" : "LEFT");
+    }
     if (VR_SessionActive()) return 0;
     return (int)(StickDeadzoneFraction(isLookStick) * 65536.0f);
 }
@@ -4272,6 +4305,7 @@ int axes, balls, hats;
             if (mx > 0.0f && VR_SourceIsBoundForPlayer(VR_SRC_L_STICK_RIGHT)) mx = 0.0f;
 
         /* Convert OpenXR [-1,1] floats to Win95 JOYINFOEX 0..65535 convention. */
+        MoveStickCurve(&mx, &my);
         JoystickData.dwXpos = (DWORD)((mx  * 32767.0f) + 32768.0f);
         JoystickData.dwYpos = (DWORD)((-my * 32767.0f) + 32768.0f);
         }
@@ -5184,6 +5218,7 @@ int axes, balls, hats;
         if (rx < 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_RSTICK_LEFT))  rx = 0.0f;
         if (rx > 0.0f && Pad_SourceIsBoundForPlayer(PAD_SRC_RSTICK_RIGHT)) rx = 0.0f;
 
+        MoveStickCurve(&lx, &ly);
         Pad_ApplyMove(lx, -ly);
         Pad_ApplyLook(rx, ry);
     }
@@ -6104,6 +6139,8 @@ int InitSDL()
             if (gp_ids && gp_count > 0) {
                 gamepad = SDL_OpenGamepad(gp_ids[0]);
                 if (gamepad) {
+                    SDL_Log("INPUT: opened gamepad '%s' (deadzone sliders apply via the pad path)",
+                            SDL_GetGamepadName(gamepad) ? SDL_GetGamepadName(gamepad) : "?");
                     GotJoystick = 1;
                     JoystickCaps.wCaps = 0;
                     JoystickData.dwXpos = 32768;
@@ -6125,6 +6162,7 @@ int InitSDL()
         if (gp_ids && gp_count > 0) {
             gamepad = SDL_OpenGamepad(gp_ids[0]);
             if (gamepad) {
+                SDL_Log("INPUT: opened gamepad '%s'", SDL_GetGamepadName(gamepad) ? SDL_GetGamepadName(gamepad) : "?");
                 GotJoystick = 1;
                 JoystickCaps.wCaps = 0;
                 JoystickData.dwXpos = 32768;
@@ -6149,6 +6187,8 @@ int InitSDL()
             SDL_free(joy_ids);
         }
         if (joy) {
+            SDL_Log("INPUT: opened RAW joystick '%s' (no SDL gamepad mapping; %d axes)",
+                    SDL_GetJoystickName(joy) ? SDL_GetJoystickName(joy) : "?", SDL_GetNumJoystickAxes(joy));
             GotJoystick = 1;
 
             JoystickCaps.wCaps = 0;
@@ -7289,6 +7329,7 @@ void CheckForWindowsMessages()
                 if (!gamepad) {
                     gamepad = SDL_OpenGamepad(event.gdevice.which);
                     if (gamepad) {
+                        SDL_Log("INPUT: hot-plugged gamepad '%s'", SDL_GetGamepadName(gamepad) ? SDL_GetGamepadName(gamepad) : "?");
                         GotJoystick = 1;
                         JoystickCaps.wCaps = 0;
                         JoystickData.dwXpos = 32768;
@@ -7314,6 +7355,8 @@ void CheckForWindowsMessages()
                 if (WantJoystick && !joy && !GotJoystick && !SDL_IsGamepad(event.jdevice.which)) {
                     joy = SDL_OpenJoystick(event.jdevice.which);
                     if (joy) {
+                        SDL_Log("INPUT: hot-plugged RAW joystick '%s' (%d axes)",
+                                SDL_GetJoystickName(joy) ? SDL_GetJoystickName(joy) : "?", SDL_GetNumJoystickAxes(joy));
                         GotJoystick = 1;
                         JoystickCaps.wCaps = 0;
                         JoystickData.dwXpos = 32768;

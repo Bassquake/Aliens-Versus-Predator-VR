@@ -1584,9 +1584,45 @@ static int MoveObject(STRATEGYBLOCK *sbPtr)
         	/* resolve player's movement vector against the collision plane */
 			/* awkward problem here to do with non-exact normals */
 			{
+				/* The SAME angled-ceiling rule as the impulse below, applied to this
+				   frame's movement. Resolving an upward step against a sloped ceiling
+				   leaves a slide along the slope, with a horizontal part - and with the
+				   jetpack firing that happens EVERY frame, so the player was carried
+				   steadily one way along the slope faster than the quarter-speed
+				   airborne strafe could push back: "stuck under certain ceiling angles,
+				   can't move left" (2026-10-10). The impulse fix alone did not cover it,
+				   since this displacement is rebuilt from the thrust each frame.
+
+				   So for the player under a ceiling the horizontal (perpendicular-to-
+				   gravity) movement is kept exactly as it was, and only the movement
+				   ALONG gravity is solved for, so the result lands on the plane exactly
+				   where the normal resolution would:  n.d' = n.d_resolved  with
+				   d' = h_before + v*g  gives  v = (n.d_resolved - n.h_before) / (n.g).
+				   n.g > 16384 by the ceiling test, so the divide is well conditioned.
+				   Moving under the slope toward its low side therefore pushes the
+				   player down, as it should; rising into it just stops the rise. */
+				int ceilingHitD = (sbPtr == Player->ObStrategyBlock
+				                   && AvP.PlayerType != I_Alien
+				                   && DotProduct(&obstacleNormal, &dynPtr->GravityDirection) > 16384);
+				VECTORCH dispBefore = dynPtr->Displacement;
+
 		   //     int magOfPerpVel = DotProduct(&obstacleNormal,&(dynPtr->Displacement));
 		        int magOfPerpVel = MUL_FIXED(66000,DotProduct(&obstacleNormal,&(dynPtr->Displacement)));
 		   		SubScaledVectorFromVector(obstacleNormal, magOfPerpVel, (dynPtr->Displacement));
+
+				if (ceilingHitD)
+				{
+					int ng = DotProduct(&obstacleNormal, &dynPtr->GravityDirection);
+					int gB = DotProduct(&dispBefore, &dynPtr->GravityDirection);
+					VECTORCH hB = dispBefore;
+					int nd, nh, v;
+					SubScaledVectorFromVector(dynPtr->GravityDirection, gB, hB);
+					nd = DotProduct(&obstacleNormal, &dynPtr->Displacement);
+					nh = DotProduct(&obstacleNormal, &hB);
+					v = DIV_FIXED(nd - nh, ng);
+					dynPtr->Displacement = hB;
+					AddScaledVectorToVector(dynPtr->GravityDirection, v, dynPtr->Displacement);
+				}
 			}
 	
     		/* collision - elasticity */

@@ -23,6 +23,7 @@ static D3DPRESENT_PARAMETERS  r9_pp;
 static SDL_Window            *r9_window;
 static D3DCAPS9               r9_caps;
 static int                    r9_in_scene;
+static int                    r9_overlay_begun;   /* R9_BeginOverlay, once per scene */
 static int                    r9_state_dirty = 1;
 
 /* Tracked GL state. It is applied at draw time (R9_ApplyState), not as each GL call
@@ -43,6 +44,12 @@ static GLuint   gs_bound_tex = 0;
    is applied, since that depends on the viewport. */
 static D3DMATRIX r9_view, r9_proj;
 static int       r9_have_camera = 0;
+/* R9_SetCamera ran this frame, i.e. there is a 3D pass. Frames without one - the pause
+   menu, the frontend, loading screens - are entirely 2D, and their first draw marks the
+   UI point (see R9_BeginOverlay). Otherwise Remix composites at Present and runs its
+   denoiser and upscaler over the menu, which comes out blurred and noisy. */
+static int       r9_camera_this_frame = 0;
+static unsigned  r9_frame_no = 0;       /* for the R9_DIAG log */
 
 static void R9_SetViewportFromGL(void);
 
@@ -135,7 +142,24 @@ typedef struct R9Tex {
     GLint   min_filter, mag_filter, wrap_s, wrap_t;
     float   aniso;
     int     used;
+    struct R9Mask *masks;      /* R9_MaskTexture copies, one per colour */
 } R9Tex;
+
+typedef struct R9Mask {
+    D3DCOLOR key;              /* the RGB baked into it */
+    IDirect3DTexture9 *tex;
+    struct R9Mask *next;
+} R9Mask;
+
+static void R9_FreeMasks(R9Tex *t)
+{
+    while (t->masks) {
+        R9Mask *m = t->masks;
+        t->masks = m->next;
+        if (m->tex) IDirect3DTexture9_Release(m->tex);
+        free(m);
+    }
+}
 
 static R9Tex *r9_tex;
 static int    r9_tex_cap;
@@ -175,6 +199,7 @@ static void APIENTRY shim_DeleteTextures(GLsizei n, const GLuint *names)
         R9Tex *t = R9_TexFor(names[i]);
         if (!t) continue;
         if (t->tex) IDirect3DTexture9_Release(t->tex);
+        R9_FreeMasks(t);
         memset(t, 0, sizeof(*t));
         if (gs_bound_tex == names[i]) gs_bound_tex = 0;
     }
@@ -223,6 +248,7 @@ static void APIENTRY shim_TexImage2D(GLenum target, GLint level, GLint internalf
 
     if (!t || !r9_dev || level != 0 || width <= 0 || height <= 0) return;
     if (t->tex) { IDirect3DTexture9_Release(t->tex); t->tex = NULL; }
+    R9_FreeMasks(t);
 
     /* RGB565 is the software-surface texture (one level, never mipmapped); everything
        else is an RGBA game texture with a full mip chain, filled by glGenerateMipmap. */
@@ -257,6 +283,7 @@ static void APIENTRY shim_TexSubImage2D(GLenum target, GLint level, GLint xoff, 
     (void)target;
 
     if (!t || !t->tex || level != 0 || !pixels) return;
+    R9_FreeMasks(t);
     if (xoff + width > t->w)  width  = t->w - xoff;
     if (yoff + height > t->h) height = t->h - yoff;
     if (width <= 0 || height <= 0) return;
@@ -307,6 +334,69 @@ static void APIENTRY shim_GenerateMipmap(GLenum target)
 {
     (void)target;
     R9_GenerateMips(R9_TexFor(gs_bound_tex));
+}
+
+/* A copy of t whose RGB is the flat colour `key` and whose alpha is the texel's
+   brightest channel (times its own alpha), built on first use and dropped whenever t
+   is re-uploaded. Used to turn the subtractive blend into an alpha blend for Remix:
+   see R9_DrawBatch. The colour has to live in the TEXTURE: Remix treats vertex colour
+   as baked lighting (rtx.vertexColorIsBakedLighting) and drops its RGB, which drew
+   bullet holes white.
+
+   With R9_MASK_GLOW set in key, the RGB is instead the texel's own colour tinted by key,
+   for the additive blend: its alpha stops the opaque black background of a glow sprite
+   reading as a black square under Remix. */
+#define R9_MASK_GLOW 0x01000000u
+static IDirect3DTexture9 *R9_MaskTexture(R9Tex *t, D3DCOLOR key)
+{
+    D3DLOCKED_RECT sl, dl;
+    R9Tex tmp;
+    R9Mask *m;
+    int x, y;
+    unsigned char kr = (unsigned char)(key >> 16), kg = (unsigned char)(key >> 8), kb = (unsigned char)key;
+
+    int glow = (key & R9_MASK_GLOW) != 0;
+
+    key &= 0x00ffffff | R9_MASK_GLOW;
+    for (m = t->masks; m; m = m->next)
+        if (m->key == key) return m->tex;
+    if (!t->tex || t->fmt != D3DFMT_A8R8G8B8) return NULL;
+    m = (R9Mask *)calloc(1, sizeof(R9Mask));
+    if (!m) return NULL;
+    m->key = key;
+    m->next = t->masks;
+    t->masks = m;
+    if (FAILED(IDirect3DDevice9_CreateTexture(r9_dev, t->w, t->h, t->levels, 0, D3DFMT_A8R8G8B8,
+                                              D3DPOOL_MANAGED, &m->tex, NULL))) {
+        m->tex = NULL;   /* stays cached as a failure, so it is not retried every draw */
+        return NULL;
+    }
+    if (SUCCEEDED(IDirect3DTexture9_LockRect(t->tex, 0, &sl, NULL, D3DLOCK_READONLY))) {
+        if (SUCCEEDED(IDirect3DTexture9_LockRect(m->tex, 0, &dl, NULL, 0))) {
+            for (y = 0; y < t->h; y++) {
+                const unsigned char *s = (const unsigned char *)sl.pBits + y * sl.Pitch;
+                unsigned char *d = (unsigned char *)dl.pBits + y * dl.Pitch;
+                for (x = 0; x < t->w; x++, s += 4, d += 4) {
+                    int mx = s[0] > s[1] ? s[0] : s[1];
+                    if (s[2] > mx) mx = s[2];
+                    if (glow) {
+                        d[0] = (unsigned char)(s[0] * kb / 255);
+                        d[1] = (unsigned char)(s[1] * kg / 255);
+                        d[2] = (unsigned char)(s[2] * kr / 255);
+                    } else {
+                        d[0] = kb; d[1] = kg; d[2] = kr;
+                    }
+                    d[3] = (unsigned char)((mx * s[3] + 127) / 255);
+                }
+            }
+            IDirect3DTexture9_UnlockRect(m->tex, 0);
+        }
+        IDirect3DTexture9_UnlockRect(t->tex, 0);
+    }
+    tmp = *t;
+    tmp.tex = m->tex;
+    R9_GenerateMips(&tmp);
+    return m->tex;
 }
 
 static void APIENTRY shim_TexParameteri(GLenum target, GLenum pname, GLint param)
@@ -411,12 +501,52 @@ static void R9_ApplyState(void)
     }
 }
 
+/* inverse(VIEW * PROJECTION), for R9_Unproject. Rebuilt when the camera changes. */
+static float r9_inv_vp[16];
+static int   r9_inv_vp_valid = 0;
+
+static int R9_Invert4(const float m[16], float out[16])
+{
+    float inv[16], det;
+    int i;
+    inv[0]  =  m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+    inv[4]  = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+    inv[8]  =  m[4]*m[9]*m[15]  - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
+    inv[12] = -m[4]*m[9]*m[14]  + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
+    inv[1]  = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+    inv[5]  =  m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+    inv[9]  = -m[0]*m[9]*m[15]  + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
+    inv[13] =  m[0]*m[9]*m[14]  - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
+    inv[2]  =  m[1]*m[6]*m[15]  - m[1]*m[7]*m[14]  - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7]  - m[13]*m[3]*m[6];
+    inv[6]  = -m[0]*m[6]*m[15]  + m[0]*m[7]*m[14]  + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7]  + m[12]*m[3]*m[6];
+    inv[10] =  m[0]*m[5]*m[15]  - m[0]*m[7]*m[13]  - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7]  - m[12]*m[3]*m[5];
+    inv[14] = -m[0]*m[5]*m[14]  + m[0]*m[6]*m[13]  + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6]  + m[12]*m[2]*m[5];
+    inv[3]  = -m[1]*m[6]*m[11]  + m[1]*m[7]*m[10]  + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7]   + m[9]*m[3]*m[6];
+    inv[7]  =  m[0]*m[6]*m[11]  - m[0]*m[7]*m[10]  - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7]   - m[8]*m[3]*m[6];
+    inv[11] = -m[0]*m[5]*m[11]  + m[0]*m[7]*m[9]   + m[4]*m[1]*m[11] - m[4]*m[3]*m[9]  - m[8]*m[1]*m[7]   + m[8]*m[3]*m[5];
+    inv[15] =  m[0]*m[5]*m[10]  - m[0]*m[6]*m[9]   - m[4]*m[1]*m[10] + m[4]*m[2]*m[9]  + m[8]*m[1]*m[6]   - m[8]*m[2]*m[5];
+    det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+    if (det == 0.0f) return 0;
+    det = 1.0f / det;
+    for (i = 0; i < 16; i++) out[i] = inv[i] * det;
+    return 1;
+}
+
 void R9_SetCamera(const float view[16], const float proj[16])
 {
+    float vp[16];
+    int r, c;
     memcpy(&r9_view, view, sizeof(r9_view));
     memcpy(&r9_proj, proj, sizeof(r9_proj));
     r9_have_camera = 1;
+    r9_camera_this_frame = 1;
     r9_state_dirty = 1;
+    /* row vectors: clip = world * VIEW * PROJECTION */
+    for (r = 0; r < 4; r++)
+        for (c = 0; c < 4; c++)
+            vp[r*4+c] = view[r*4+0]*proj[0*4+c] + view[r*4+1]*proj[1*4+c]
+                      + view[r*4+2]*proj[2*4+c] + view[r*4+3]*proj[3*4+c];
+    r9_inv_vp_valid = R9_Invert4(vp, r9_inv_vp);
 }
 
 int R9_WorldEnabled(void)
@@ -425,7 +555,7 @@ int R9_WorldEnabled(void)
     if (enabled < 0) {
         const char *e = SDL_getenv("AVP_REMIX_WORLD");
         enabled = !(e && e[0] == '0');
-        SDL_Log("D3D9: world-space level geometry %s (AVP_REMIX_WORLD)", enabled ? "ON" : "OFF");
+        SDL_Log("D3D9: world-space geometry %s (AVP_REMIX_WORLD)", enabled ? "ON" : "OFF");
     }
     return enabled;
 }
@@ -741,19 +871,79 @@ typedef struct R9WorldVertex {
 
 static R9WorldVertex r9_wv[4096];
 
+/* Clip-space vertices back to WORLD space (worldSpace == 2), into r9_wv. This is how the
+   effects still emitted pre-transformed - the sorted translucent list, particles, decals,
+   cloaked and vision-mode polygons - reach Remix as geometry: without it they are drawn
+   before Remix composites its path-traced image and are painted over.
+
+   Exact, because the camera's PROJECTION reproduces the engine's own projection (see
+   TranslationSetup): inverting VIEW * PROJECTION recovers the point. The depth is taken
+   from w, which every emitter sets to the vertex's true view-space Z, and NOT from the
+   emitted z: particles drawn "in front" or "at back" carry a fake z of -/+0.99999 to
+   force their draw order, which would unproject to the wrong distance. In the camera's
+   space z' = Z - ZNear, so the D3D clip z is w + PROJECTION._43.
+
+   Returns 0 (draw the batch pre-transformed instead) if there is no usable camera or a
+   vertex has no valid depth, or once the overlay has begun - everything after that is
+   screen-space UI. */
+static int R9_Unproject(const R9GameVertex *verts, int nverts)
+{
+    const float *m = r9_inv_vp;
+    int i;
+    if (!r9_have_camera || !r9_inv_vp_valid || r9_overlay_begun) return 0;
+    for (i = 0; i < nverts; i++) {
+        const R9GameVertex *s = &verts[i];
+        R9WorldVertex *o = &r9_wv[i];
+        float cx = s->v[0], cy = s->v[1], cw = s->v[3], cz = cw + r9_proj._43;
+        float px, py, pz, pw;
+        if (!(cw > 0.0f)) return 0;
+        px = cx*m[0] + cy*m[4] + cz*m[8]  + cw*m[12];
+        py = cx*m[1] + cy*m[5] + cz*m[9]  + cw*m[13];
+        pz = cx*m[2] + cy*m[6] + cz*m[10] + cw*m[14];
+        pw = cx*m[3] + cy*m[7] + cz*m[11] + cw*m[15];
+        if (pw == 0.0f) return 0;
+        pw = 1.0f / pw;
+        o->x = px * pw; o->y = py * pw; o->z = pz * pw;
+        o->diffuse  = D3DCOLOR_ARGB(s->c[3], s->c[0], s->c[1], s->c[2]);
+        o->specular = D3DCOLOR_ARGB(s->s[3], s->s[0], s->s[1], s->s[2]);
+        o->u = s->t[0];
+        o->v = s->t[1];
+    }
+    return 1;
+}
+
 void R9_DrawBatch(const R9GameVertex *verts, int nverts,
                   const unsigned short *indices, int ntris, int specularPass, int worldSpace)
 {
     IDirect3DDevice9 *d = r9_dev;
-    const R9Tex *t;
+    R9Tex *t;
     float vx, vy, vw, vh;
-    int i;
+    int i, subtractive = 0, glow = 0;
 
     if (!d || nverts <= 0 || ntris <= 0) return;
     if (nverts > (int)(sizeof(r9_tl) / sizeof(r9_tl[0]))) nverts = sizeof(r9_tl) / sizeof(r9_tl[0]);
 
+    if (!r9_camera_this_frame) R9_BeginOverlay();   /* a 2D-only frame: all of it is UI */
     R9_EnsureScene();
     R9_ApplyState();
+
+    /* Blend modes Remix cannot classify get drawn as OPAQUE geometry. The one that
+       matters is TRANSLUCENCY_INVCOLOUR, dst * (1 - src): bullet holes, scorch marks,
+       smoke, and human blood - whose source colour is cyan, so it showed as solid green.
+       In world space it is redrawn below as an alpha blend Remix does understand, exact
+       for grey sources and close for coloured ones. The second (specular) pass of the
+       DST_COLOR modes has no such equivalent and is dropped there. */
+    if (worldSpace && gs_blend_enabled && r9_have_camera) {
+        if (specularPass && (gs_blend_src == GL_DST_COLOR || gs_blend_src == GL_ONE_MINUS_DST_COLOR))
+            return;
+        if (!specularPass && gs_blend_src == GL_ZERO && gs_blend_dst == GL_ONE_MINUS_SRC_COLOR)
+            subtractive = 1;
+        /* TRANSLUCENCY_GLOWING (SRC_ALPHA, ONE): glow sprites are opaque textures on a
+           black background, which only the additive maths hides. Remix takes texel alpha
+           as coverage, so an explosion flashed up as a black square. */
+        if (!specularPass && gs_blend_src == GL_SRC_ALPHA && gs_blend_dst == GL_ONE)
+            glow = 1;
+    }
 
     /* The engine's clip coordinates become D3D9 screen coordinates exactly as GL's
        viewport transform would place them (y flipped, depth -1..1 -> 0..1), less
@@ -763,7 +953,9 @@ void R9_DrawBatch(const R9GameVertex *verts, int nverts,
     vy = (float)((int)r9_pp.BackBufferHeight - (gs_vp_y + gs_vp_h));
     vw = (float)gs_vp_w;
     vh = (float)gs_vp_h;
-    if (worldSpace) {
+    if (worldSpace == 2)
+        worldSpace = R9_Unproject(verts, nverts) ? 3 : 0;   /* 3: r9_wv already filled */
+    if (worldSpace == 1) {
         for (i = 0; i < nverts; i++) {
             const R9GameVertex *s = &verts[i];
             R9WorldVertex *o = &r9_wv[i];
@@ -773,7 +965,7 @@ void R9_DrawBatch(const R9GameVertex *verts, int nverts,
             o->u = s->t[0];
             o->v = s->t[1];
         }
-    } else
+    } else if (worldSpace == 0)
     for (i = 0; i < nverts; i++) {
         const R9GameVertex *s = &verts[i];
         R9TLVertex *o = &r9_tl[i];
@@ -809,6 +1001,93 @@ void R9_DrawBatch(const R9GameVertex *verts, int nverts,
         IDirect3DDevice9_SetTextureStageState(d, 0, D3DTSS_ALPHAOP, t ? D3DTOP_MODULATE : D3DTOP_SELECTARG1);
     }
 
+    /* R9_DIAG: one line per distinct (blend, texture, pass) drawn in world space, so a
+       misdrawn effect can be matched to the frame it first appeared in. Also logs space-0
+       batches drawn during the 3D pass: those are painted over by Remix, i.e. INVISIBLE. */
+    if (worldSpace || (r9_camera_this_frame && !r9_overlay_begun)) {
+        static unsigned seen[512];
+        static int nseen = 0;
+        unsigned h = (unsigned)gs_blend_enabled * 0x9e3779b1u ^ (unsigned)gs_blend_src * 0x85ebca6bu
+                   ^ (unsigned)gs_blend_dst * 0xc2b2ae35u ^ (unsigned)gs_bound_tex * 0x27d4eb2fu
+                   ^ (unsigned)specularPass * 0x165667b1u;
+        for (i = 0; i < nseen && seen[i] != h; i++) {}
+        if (i == nseen && nseen < 512) {
+            seen[nseen++] = h;
+            SDL_Log("R9_DIAG frame %u: space %d blend %s 0x%x/0x%x tex %u (%dx%d) spec %d sub %d glow %d verts %d c0 %d,%d,%d,%d uv0 %.3f,%.3f",
+                    r9_frame_no, worldSpace, gs_blend_enabled ? "on" : "off", gs_blend_src, gs_blend_dst,
+                    gs_bound_tex, t ? t->w : 0, t ? t->h : 0, specularPass, subtractive, glow, nverts,
+                    verts[0].c[0], verts[0].c[1], verts[0].c[2], verts[0].c[3], verts[0].t[0], verts[0].t[1]);
+        }
+    }
+
+    if ((subtractive || glow) && worldSpace) {
+        /* SUBTRACTIVE, dst * (1 - t*c), as an alpha blend: alpha = t * a with a = max(c),
+           and colour k * (a - c) / a, so  dst * (1 - t*a) + t * k * (a - c)  - exact
+           against a background of k (mid-grey), and exact everywhere for grey c (the
+           colour is then black).
+           GLOW keeps its additive blend: alpha = the texel's brightness * c.alpha * a,
+           and the texel tinted by c / a (quantised), so the sum matches but for the soft
+           edges, which the extra brightness factor dims a little.
+           Either way the colour goes into a mask texture per distinct value (see
+           R9_MaskTexture), so the batch is drawn in one group per colour, keyed by each
+           triangle's first vertex; vertex RGB is white so the result is the same whether
+           or not Remix honours it. */
+        static D3DCOLOR key[4096];
+        static unsigned short grp[4096 * 3];
+        static unsigned char done[4096];
+        int tri, j, n;
+        if (ntris > 4096) ntris = 4096;
+        for (i = 0; i < nverts; i++) {
+            const R9GameVertex *sv = &verts[i];
+            int a = sv->c[0] > sv->c[1] ? sv->c[0] : sv->c[1], cr, cg, cb;
+            if (sv->c[2] > a) a = sv->c[2];
+            if (glow) {
+                /* tint in steps of 1/4, rounded up so the brightest channel stays 255 */
+                cr = a ? ((sv->c[0] * 4 + a - 1) / a) * 255 / 4 : 255;
+                cg = a ? ((sv->c[1] * 4 + a - 1) / a) * 255 / 4 : 255;
+                cb = a ? ((sv->c[2] * 4 + a - 1) / a) * 255 / 4 : 255;
+                key[i] = R9_MASK_GLOW | D3DCOLOR_XRGB(cr, cg, cb);
+                r9_wv[i].diffuse = D3DCOLOR_ARGB(sv->c[3] * a / 255, 255, 255, 255);
+                continue;
+            }
+            /* Matched against a mid-grey background (128) rather than white: AvP's walls
+               are dark, and the white match left blood pink on them. */
+            cr = a ? (a - sv->c[0]) * 128 / a : 0;
+            cg = a ? (a - sv->c[1]) * 128 / a : 0;
+            cb = a ? (a - sv->c[2]) * 128 / a : 0;
+            key[i] = D3DCOLOR_XRGB(cr & 0xf8, cg & 0xf8, cb & 0xf8);   /* bounds the cache */
+            r9_wv[i].diffuse = D3DCOLOR_ARGB(a, 255, 255, 255);
+        }
+        if (subtractive) {
+            IDirect3DDevice9_SetRenderState(d, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+            IDirect3DDevice9_SetRenderState(d, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+            r9_state_dirty = 1;   /* the game's blend goes back on at the next draw */
+        }
+        IDirect3DDevice9_SetFVF(d, R9_WORLD_FVF);
+        memset(done, 0, ntris);
+        for (tri = 0; tri < ntris; tri++) {
+            D3DCOLOR k;
+            IDirect3DTexture9 *mask;
+            if (done[tri]) continue;
+            k = key[indices[tri * 3]];
+            for (n = 0, j = tri; j < ntris; j++) {
+                if (done[j] || key[indices[j * 3]] != k) continue;
+                done[j] = 1;
+                grp[n * 3] = indices[j * 3]; grp[n * 3 + 1] = indices[j * 3 + 1]; grp[n * 3 + 2] = indices[j * 3 + 2];
+                n++;
+            }
+            mask = t ? R9_MaskTexture(t, k) : NULL;
+            IDirect3DDevice9_SetTexture(d, 0, (IDirect3DBaseTexture9 *)mask);
+            if (!mask) {   /* untextured: the colour has nowhere else to go */
+                for (j = 0; j < n * 3; j++)
+                    r9_wv[grp[j]].diffuse = (r9_wv[grp[j]].diffuse & 0xff000000) | (k & 0x00ffffff);
+            }
+            IDirect3DDevice9_DrawIndexedPrimitiveUP(d, D3DPT_TRIANGLELIST, 0, nverts, n,
+                                                    grp, D3DFMT_INDEX16, r9_wv, sizeof(R9WorldVertex));
+        }
+        return;
+    }
+
     if (worldSpace && r9_have_camera) {
         IDirect3DDevice9_SetFVF(d, R9_WORLD_FVF);
         IDirect3DDevice9_DrawIndexedPrimitiveUP(d, D3DPT_TRIANGLELIST, 0, nverts, ntris,
@@ -838,12 +1117,76 @@ static void R9_ResetDevice(int w, int h)
     r9_state_dirty = 1;
 }
 
+void R9_SetLights(int n, const float (*pos)[3], const float (*rgb)[3], const float *range)
+{
+    static int enabled = 0;   /* lights left enabled by the previous call */
+    IDirect3DDevice9 *d = r9_dev;
+    int i;
+
+    if (!d) return;
+    if (n > R9_MAX_LIGHTS) n = R9_MAX_LIGHTS;
+    for (i = 0; i < n; i++) {
+        D3DLIGHT9 l;
+        float r = range[i] > 1.0f ? range[i] : 1.0f;
+        memset(&l, 0, sizeof(l));
+        l.Type = D3DLIGHT_POINT;
+        l.Diffuse.r = rgb[i][0]; l.Diffuse.g = rgb[i][1]; l.Diffuse.b = rgb[i][2]; l.Diffuse.a = 1.0f;
+        l.Specular = l.Diffuse;
+        l.Position.x = pos[i][0]; l.Position.y = pos[i][1]; l.Position.z = pos[i][2];
+        l.Range = r;
+        /* The game's falloff is linear to zero at the range; this quadratic is down to
+           about 4% there, which is what Remix's conversion reads the extent from. */
+        l.Attenuation0 = 1.0f;
+        l.Attenuation2 = 25.0f / (r * r);
+        IDirect3DDevice9_SetLight(d, (DWORD)i, &l);
+        IDirect3DDevice9_LightEnable(d, (DWORD)i, TRUE);
+    }
+    for (; i < enabled; i++)
+        IDirect3DDevice9_LightEnable(d, (DWORD)i, FALSE);
+    enabled = n;
+}
+
+void R9_BeginOverlay(void)
+{
+    IDirect3DDevice9 *d = r9_dev;
+    D3DMATRIX ident;
+    R9WorldVertex tri[3];
+
+    if (!d || r9_overlay_begun || !R9_WorldEnabled()) return;
+    r9_overlay_begun = 1;
+
+    R9_EnsureScene();
+    R9_ApplyState();
+
+    /* Remix's UI test: PROJECTION _44 == 1 (orthographic) with depth writes off. All
+       three vertices coincide, so the triangle covers no pixels. */
+    memset(&ident, 0, sizeof(ident));
+    ident._11 = ident._22 = ident._33 = ident._44 = 1.0f;
+    IDirect3DDevice9_SetTransform(d, D3DTS_WORLD, &ident);
+    IDirect3DDevice9_SetTransform(d, D3DTS_VIEW, &ident);
+    IDirect3DDevice9_SetTransform(d, D3DTS_PROJECTION, &ident);
+    IDirect3DDevice9_SetRenderState(d, D3DRS_ZWRITEENABLE, FALSE);
+    IDirect3DDevice9_SetTexture(d, 0, NULL);
+    IDirect3DDevice9_SetTextureStageState(d, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    IDirect3DDevice9_SetTextureStageState(d, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    IDirect3DDevice9_SetTextureStageState(d, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    IDirect3DDevice9_SetTextureStageState(d, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    memset(tri, 0, sizeof(tri));
+    IDirect3DDevice9_SetFVF(d, R9_WORLD_FVF);
+    IDirect3DDevice9_DrawPrimitiveUP(d, D3DPT_TRIANGLELIST, 1, tri, sizeof(R9WorldVertex));
+
+    r9_state_dirty = 1;   /* the camera transforms and depth writes come back on the next draw */
+}
+
 void R9_Present(void)
 {
     HRESULT hr;
     int w = 0, h = 0;
 
     if (!r9_dev) return;
+    r9_overlay_begun = 0;
+    r9_camera_this_frame = 0;
+    r9_frame_no++;
     if (r9_in_scene) {
         IDirect3DDevice9_EndScene(r9_dev);
         r9_in_scene = 0;
@@ -909,6 +1252,7 @@ void R9_PresentSurface565(const void *pixels, int pitch, int viewW, int viewH)
     IDirect3DDevice9_SetViewport(d, &vp);
     IDirect3DDevice9_Clear(d, 0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
 
+    R9_BeginOverlay();   /* the menu surface is UI: keep it out of Remix's denoiser/upscaler */
     R9_EnsureScene();
     IDirect3DDevice9_SetRenderState(d, D3DRS_ZENABLE, D3DZB_FALSE);
     IDirect3DDevice9_SetRenderState(d, D3DRS_ALPHABLENDENABLE, FALSE);

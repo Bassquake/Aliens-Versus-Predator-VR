@@ -632,6 +632,20 @@ static float StickDeadzoneFraction(int isLookStick)
     const int physicalRight = isLookStick ? !SwapJoysticksEnabled : SwapJoysticksEnabled;
     return (physicalRight ? RightStickDeadzone : LeftStickDeadzone) / 20.0f;
 }
+
+/* The same deadzone on the 1999 joystick scale (usr_io.c's JoystickData axes run
+   -65536..65536 after its centring), for the raw-joystick consumer there. It used a
+   fixed JOYSTICK_DEAD_ZONE of 12000 (~18% of travel), so for a raw (non-gamepad)
+   joystick the sliders did nothing, and in VR - whose thumbsticks reach usr_io.c through
+   JoystickData AFTER the slider's deadzone has been applied above - the two stacked:
+   nothing below ~18% was reachable, and every setting 0..3 felt the same.
+   0 while a VR session is live, because the thumbstick values are already deadzoned. */
+int Joystick_DeadZoneUnits(int isLookStick)
+{
+    extern int VR_SessionActive(void);
+    if (VR_SessionActive()) return 0;
+    return (int)(StickDeadzoneFraction(isLookStick) * 65536.0f);
+}
 int VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 
 
@@ -3838,7 +3852,8 @@ static void render_frame(void)
         static float menu_quad_cx = 0.0f, menu_quad_cy = 1.6f, menu_quad_cz = 0.0f,
                      menu_quad_yaw = 0.0f;
         static int   menu_quad_ready = 0;
-        if (!xr_2d_mode) menu_quad_ready = 0;
+        static int   menu_quad_wait = 0;   /* frames spent waiting for a tracked position */
+        if (!xr_2d_mode) { menu_quad_ready = 0; menu_quad_wait = 0; }
         /* Recenter (Reset View) while a menu/intro is up: drop the anchor so the
          * quad re-captures the current head facing on this frame and snaps in front
          * of you, instead of staying where it was first opened. */
@@ -3866,8 +3881,16 @@ static void render_frame(void)
 
             /* On the first frame of each menu open, capture head yaw so the quad
              * appears 2 m ahead of wherever the user is currently facing. */
+            /* POSITION must be valid too, not just orientation. Pico reports a valid
+             * orientation before positional tracking is up, with the position still
+             * 0,0,0 - which in a floor-origin space put the menu IN THE FLOOR, and the
+             * capture latches for the whole time the menu is open. If no tracked
+             * position arrives within ~1 s, place it at a nominal eye height instead. */
+            int pos_valid = (vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) != 0;
+            if (!menu_quad_ready && !pos_valid) menu_quad_wait++;
             if (!menu_quad_ready && vc_out >= 1
-                    && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
+                    && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)
+                    && (pos_valid || menu_quad_wait > 90)) {
                 float qw = xr_views[0].pose.orientation.w;
                 float qx = xr_views[0].pose.orientation.x;
                 float qy = xr_views[0].pose.orientation.y;
@@ -3887,6 +3910,14 @@ static void render_frame(void)
                 float hy = (vc_out >= 2)
                     ? (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f
                     : xr_views[0].pose.position.y;
+                if (!pos_valid) {
+                    hx = 0.0f;
+                    hz = 0.0f;
+                    hy = xr_space_is_stage ? XR_NOMINAL_EYE_HEIGHT_M : 0.0f;
+                }
+                SDL_Log("XR menu: anchored at head (%.2f, %.2f, %.2f)%s, stage=%d",
+                        hx, hy, hz, pos_valid ? "" : " [position not tracked - nominal height]",
+                        xr_space_is_stage);
                 menu_quad_cx  = hx;
                 menu_quad_cy  = hy;
                 menu_quad_cz  = hz;
@@ -5904,7 +5935,7 @@ int InitSDL()
     /* RTX Remix target (CMake AVP_ENABLE_RTX_REMIX, Windows x86 only): renders through
        Direct3D 9 (d3d9_backend.c). Geometry is still pre-transformed, so Remix sees it as
        2D - see "RTX Remix" in CLAUDE.md. */
-    SDL_Log("AVP: RTX Remix build - Direct3D 9 renderer (pre-transformed geometry)");
+    SDL_Log("AVP: RTX Remix build - Direct3D 9 renderer (world-space geometry unless AVP_REMIX_WORLD=0)");
 #endif
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -7274,8 +7305,13 @@ void CheckForWindowsMessages()
                 }
                 break;
             case SDL_EVENT_JOYSTICK_ADDED:
-                /* Open the first controller that connects if we don't have one yet. */
-                if (WantJoystick && !joy && !GotJoystick) {
+                /* Open the first controller that connects if we don't have one yet -
+                   but NOT one SDL can drive as a gamepad. SDL sends JOYSTICK_ADDED
+                   before GAMEPAD_ADDED for the same pad, so a pad connected after launch
+                   was opened TWICE, and the raw path then drove movement from the left
+                   stick with its own fixed deadzone alongside the deadzoned pad path -
+                   which is how the Joystick Deadzone sliders appeared to do nothing. */
+                if (WantJoystick && !joy && !GotJoystick && !SDL_IsGamepad(event.jdevice.which)) {
                     joy = SDL_OpenJoystick(event.jdevice.which);
                     if (joy) {
                         GotJoystick = 1;
@@ -7539,9 +7575,37 @@ void CheckForWindowsMessages()
         }
     }
     
+#ifdef AVP_RTX_REMIX
+    /* The RTX Remix menu (Alt+X) needs a free cursor, but the line in the #else branch
+       re-grabs the mouse every frame. Released, wantmouse reads false next frame, so the
+       game ignores the mouse.
+       - Alt+X only ever RELEASES it: it is the key that opens Remix's menu, so it must
+         not toggle - with the mouse already free, a toggle grabbed it back just as the
+         menu opened. Ctrl+G toggles, to recapture for play. Remix blocks keyboard input
+         to the game while its menu is open, so press Ctrl+G with the menu closed.
+       - The AVP_REMIX_FREE_MOUSE environment variable (any value) starts released, for
+         a Remix setup session where the menu is used a lot. Keyboard turning still works. */
+    {
+        static int r9_mouse_free = -1;
+        if (r9_mouse_free < 0) {
+            r9_mouse_free = SDL_getenv("AVP_REMIX_FREE_MOUSE") != NULL;
+            SDL_Log("D3D9: mouse %s at start (AVP_REMIX_FREE_MOUSE); Alt+X releases, Ctrl+G toggles",
+                    r9_mouse_free ? "released" : "captured");
+        }
+        if ((KeyboardInput[KEY_LEFTALT] || KeyboardInput[KEY_RIGHTALT]) && DebouncedKeyboardInput[KEY_X]) {
+            if (!r9_mouse_free) SDL_Log("D3D9: mouse released (Alt+X)");
+            r9_mouse_free = 1;
+        } else if (KeyboardInput[KEY_LEFTCTRL] && DebouncedKeyboardInput[KEY_G]) {
+            r9_mouse_free = !r9_mouse_free;
+            SDL_Log("D3D9: mouse %s (Ctrl+G)", r9_mouse_free ? "released" : "captured");
+        }
+        SDL_SetWindowRelativeMouseMode(window, r9_mouse_free ? false : true);
+    }
+#else
     // a second reset of relative mouse state because
     // enabling relative mouse mode moves the mouse
     SDL_SetWindowRelativeMouseMode(window, true);
+#endif
     SDL_GetRelativeMouseState(NULL, NULL);
     
     if (GotPrintScn) {

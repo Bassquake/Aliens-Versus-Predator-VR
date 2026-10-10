@@ -535,12 +535,25 @@ static TriangleArray *starrp = starr;
 static int starrc;
 
 #ifdef AVP_RTX_REMIX
-/* Which space the queued vertices are in: 0 = clip space (every emitter but one), 1 =
-   world space (D3D_ZBufferedGouraudTexturedPolygon_OutputWorld; v[0..2] hold the world
-   position). One batch holds one space; CheckTriangleBuffer flushes on a change, exactly
-   as it does on a texture change, so draw order is preserved across the two. */
+/* Which space the queued vertices are in: 0 = clip space, drawn pre-transformed; 1 =
+   world space (the *_OutputWorld emitters; v[0..2] hold the world position); 2 = clip
+   space that the backend unprojects into world space (R9_Unproject) - every other
+   emitter during the 3D pass. One batch holds one space; CheckTriangleBuffer flushes on a
+   change, exactly as it does on a texture change, so draw order is preserved. */
 static int batch_world = 0;
 static int want_world_batch = 0;
+extern int R9_ViewModelPass;
+extern int DrawingAReflection;
+
+/* Whether a clip-space batch should go to Remix as world geometry. Not the view model or
+   anything after it (screen-space overlay), not reflections (their positions are mirrored,
+   and Remix would trace them as real geometry behind the mirror), and not the cheats that
+   warp positions in view space. */
+static int R9_ReprojectWanted(void)
+{
+	return R9_WorldEnabled() && !R9_ViewModelPass && !DrawingAReflection
+	    && !TRIPTASTIC_CHEATMODE && !UNDERWATER_CHEATMODE;
+}
 #endif
 
 void OGL_RegenerateMipmaps(void)
@@ -944,9 +957,12 @@ static void CheckTranslucencyModeIsCorrect(enum TRANSLUCENCY_TYPE mode)
 static void CheckTriangleBuffer(int rver, int sver, int rtri, int stri, D3DTexture *tex, enum TRANSLUCENCY_TYPE mode, enum FILTERING_MODE_ID filter)
 {
 #ifdef AVP_RTX_REMIX
-	if (want_world_batch != batch_world) {
-		FlushTriangleBuffers(0);
-		batch_world = want_world_batch;
+	{
+		int want = want_world_batch ? 1 : (R9_ReprojectWanted() ? 2 : 0);
+		if (want != batch_world) {
+			FlushTriangleBuffers(0);
+			batch_world = want;
+		}
 	}
 	want_world_batch = 0;   /* only the caller that asked gets a world batch */
 #endif
@@ -1271,8 +1287,20 @@ void FlushRenderBuffer(void)
     FlushTriangleBuffers(0);
 }
 
+#ifdef AVP_RTX_REMIX
+/* RTX Remix stage 2a: set while the VIEW-MODEL pass is drawing - everything after the
+   second depth clear (the weapon, hands, muzzle flash, then the HUD). Those stay
+   pre-transformed on purpose: drawn as Remix UI they sit on top of the scene, which is
+   what a view model is, instead of being path-traced into the world where they would
+   clip into walls. FlushD3DZBuffer (frame start, AvpShowViews) clears it. */
+int R9_ViewModelPass = 0;
+#endif
+
 void FlushD3DZBuffer()
 {
+#ifdef AVP_RTX_REMIX
+	R9_ViewModelPass = 0;
+#endif
 	/* glClear(GL_DEPTH_BUFFER_BIT) is gated by the depth-write mask. A preceding
 	   translucent/particle pass can leave the mask disabled, which silently turns
 	   the clear into a no-op — the weapon/HUD then stay depth-tested against the
@@ -1284,6 +1312,10 @@ void FlushD3DZBuffer()
 void SecondFlushD3DZBuffer()
 {
 	FlushTriangleBuffers(0);
+#ifdef AVP_RTX_REMIX
+	R9_ViewModelPass = 1;
+	R9_BeginOverlay();   /* Remix composites the path-traced scene here, under the view model and HUD */
+#endif
 
 	pglDepthMask(GL_TRUE);   /* ensure the clear isn't masked off (see FlushD3DZBuffer) */
 	pglClear(GL_DEPTH_BUFFER_BIT);
@@ -1400,6 +1432,18 @@ void D3D_ZBufferedGouraudTexturedPolygon_Output(POLYHEADER *inputPolyPtr, RENDER
 	RecipH = TextureHandle->RecipH / 65536.0f;
 
 	CheckTriangleBuffer(RenderPolygon.NumberOfVertices, RenderPolygon.NumberOfVertices, 0, 0, TextureHandle, RenderPolygon.TranslucencyMode, -1);
+#ifdef AVP_RTX_REMIX
+	/* R9_DIAG: name each texture the first time it is drawn here, so the backend's
+	   "tex N" can be matched to an image. */
+	if (texoffset && TextureHandle && TextureHandle->id < 4096) {
+		static unsigned char named[4096];
+		if (!named[TextureHandle->id]) {
+			named[TextureHandle->id] = 1;
+			SDL_Log("R9_DIAG tex %u = %s (mode %d)", (unsigned)TextureHandle->id,
+			        ImageHeaderArray[texoffset].ImageName, (int)RenderPolygon.TranslucencyMode);
+		}
+	}
+#endif
 
 	for (i = 0; i < RenderPolygon.NumberOfVertices; i++) {
 		RENDERVERTEX *vertices = &renderVerticesPtr[i];
@@ -1506,6 +1550,66 @@ void D3D_ZBufferedGouraudTexturedPolygon_OutputWorld(POLYHEADER *inputPolyPtr, R
 		varrp->s[1] = GammaValues[vertices->SpecularG];
 		varrp->s[2] = GammaValues[vertices->SpecularB];
 		varrp->s[3] = vertices->A;
+
+		varrp++;
+		varrc++;
+	}
+}
+#endif
+
+#ifdef AVP_RTX_REMIX
+/* RenderSky's cloud layer in WORLD space (stage 2a), so Remix sees it as geometry and it
+   can be tagged as sky (Alt+X, "Sky Texture"). Pre-transformed, it is drawn before Remix
+   composites and is simply overwritten, which is the black sky. Same texture and colours
+   as D3D_SkyPolygon_Output, unclipped, with depth writes off for the whole layer: the
+   original sits at depth 1.0, and a real-depth plane would hide the world drawn after it. */
+void D3D_SkyWorld_Begin(void)
+{
+	FlushTriangleBuffers(0);
+	pglDepthMask(GL_FALSE);
+}
+
+void D3D_SkyWorld_End(void)
+{
+	FlushTriangleBuffers(0);
+	pglDepthMask(GL_TRUE);
+}
+
+void D3D_SkyPolygon_OutputWorld(POLYHEADER *inputPolyPtr, RENDERVERTEX *renderVerticesPtr,
+                                const float (*worldPts)[3], int n)
+{
+	int texoffset = inputPolyPtr->PolyColour & ClrTxDefn;
+	D3DTexture *TextureHandle = (void *)ImageHeaderArray[texoffset].D3DTexture;
+	float RecipW, RecipH;
+	int i;
+
+	CurrTextureHandle = TextureHandle;
+	RecipW = TextureHandle->RecipW / 65536.0f;
+	RecipH = TextureHandle->RecipH / 65536.0f;
+
+	want_world_batch = 1;
+	CheckTriangleBuffer(n, 0, 0, 0, TextureHandle, RenderPolygon.TranslucencyMode, -1);
+
+	for (i = 0; i < n; i++) {
+		RENDERVERTEX *vertices = &renderVerticesPtr[i];
+
+		varrp->v[0] = worldPts[i][0];
+		varrp->v[1] = worldPts[i][1];
+		varrp->v[2] = worldPts[i][2];
+		varrp->v[3] = 1.0f;
+
+		varrp->t[0] = TEXCOORD_FIXED(vertices->U, RecipW);
+		varrp->t[1] = TEXCOORD_FIXED(vertices->V, RecipH);
+
+		varrp->c[0] = vertices->R;
+		varrp->c[1] = vertices->G;
+		varrp->c[2] = vertices->B;
+		varrp->c[3] = vertices->A;
+
+		varrp->s[0] = 0;
+		varrp->s[1] = 0;
+		varrp->s[2] = 0;
+		varrp->s[3] = 0;
 
 		varrp++;
 		varrc++;

@@ -410,21 +410,30 @@ void ChooseLightingModel(DISPLAYBLOCK *dispPtr)
 extern float KShape_WorldPts[][3];
 extern int   KShape_WorldPtsValid;
 extern float KShape_RigViewPrecision;
+extern int   R9_ViewModelPass;   /* opengl.c */
 
-/* Whether this shape's standard polygons go out in WORLD space (RTX Remix stage 2a).
-   Everything listed here keeps the pre-transformed path on purpose: the first-person rig
-   (its HeadUpDisplayZOffset depth cannot be expressed with w = Z, and drawn as UI it sits
-   on top, which is right for a view model), mirrors (reflected by flipping view-space
-   coordinates), and the cheats that warp view-space positions.
+/* Whether this shape's standard polygons go out in WORLD space (RTX Remix stage 2a): the
+   level, objects, pickups and every HModel section (characters, corpses, debris).
+   Everything listed here keeps the pre-transformed path on purpose: the view-model pass
+   (the weapon and hands - drawn as Remix UI they sit on top of the scene, which is right
+   for a view model; see R9_ViewModelPass), a non-zero HeadUpDisplayZOffset (its depth
+   cannot be expressed with w = Z), mirrors (reflected by flipping view-space coordinates),
+   and the cheats that warp view-space positions.
 
-   R9_WORLD_MODULES_ONLY is the bring-up switch: level geometry only, to verify the camera,
-   depth and UVs against the old path before characters and objects follow. */
-#define R9_WORLD_MODULES_ONLY 1
+   R9_WORLD_MODULES_ONLY restricts it to level geometry - the bring-up configuration,
+   verified 2026-10-08 (identical raster image, walls path-traced). */
+#define R9_WORLD_MODULES_ONLY 0
+/* DrawingAReflection, NOT MirroringActive: the latter is a per-AREA flag (true for the
+   whole of Derelict's start area, which has a mirror), so testing it switched the world
+   path off for everything there. The reflected copies themselves are what must stay off
+   it - ReflectObject mirrors their world positions, so Remix would trace a second copy
+   of the room behind the mirror. */
+extern int DrawingAReflection;
 static int KShape_UseWorldPath(void)
 {
 	return R9_WorldEnabled() && KShape_WorldPtsValid
 	    && (!R9_WORLD_MODULES_ONLY || Global_ODB_Ptr->ObMyModule)
-	    && HeadUpDisplayZOffset == 0 && !MirroringActive
+	    && !R9_ViewModelPass && HeadUpDisplayZOffset == 0 && !DrawingAReflection
 	    && !TRIPTASTIC_CHEATMODE && !UNDERWATER_CHEATMODE
 	    && KShape_RigViewPrecision == 1.0f;
 }
@@ -4627,6 +4636,11 @@ extern void TranslationSetup(void)
 
 		FlushRenderBuffer();   /* queued world geometry belongs to the previous camera */
 		R9_SetCamera(view, proj);
+		{
+			extern void R9_GatherLights(void);
+			if (!DrawingAReflection)
+				R9_GatherLights();
+		}
 	}
 #endif
 }
@@ -6191,6 +6205,10 @@ void RenderSky(void)
 {
    	POLYHEADER fakeHeader;
 	int x,z,o;
+#ifdef AVP_RTX_REMIX
+	int r9Sky;
+	float skyWorld[4][3];
+#endif
 	if(!setup)
 	{
 		int i;
@@ -6214,6 +6232,10 @@ void RenderSky(void)
 		u[o]+=MUL_FIXED(du[o],NormalFrameTime);
 		v[o]+=MUL_FIXED(dv[o],NormalFrameTime);
 	}
+#ifdef AVP_RTX_REMIX
+	r9Sky = R9_WorldEnabled() && !DrawingAReflection;
+	if (r9Sky) D3D_SkyWorld_Begin();
+#endif
 	for(x=-10; x<=10; x++)
 	{
 	for(z=-10; z<=10; z++)
@@ -6242,6 +6264,16 @@ void RenderSky(void)
 				translatedPts[i].vx += Global_VDB_Ptr->VDB_World.vx;
 				translatedPts[i].vy += Global_VDB_Ptr->VDB_World.vy;
 				translatedPts[i].vz += Global_VDB_Ptr->VDB_World.vz;
+#ifdef AVP_RTX_REMIX
+				/* The layer is only 1000 units (~0.45 m) above the eye; it reads as
+				   distant only because the original draws it at depth 1.0. In world
+				   space it would hang just overhead and cut through the level, so it is
+				   scaled out about the camera - the same picture, far beyond the map. */
+				#define R9_SKY_DISTANCE_SCALE 1000.0f
+				skyWorld[i][0] = Global_VDB_Ptr->VDB_World.vx + (float)(translatedPts[i].vx - Global_VDB_Ptr->VDB_World.vx) * R9_SKY_DISTANCE_SCALE;
+				skyWorld[i][1] = Global_VDB_Ptr->VDB_World.vy + (float)(translatedPts[i].vy - Global_VDB_Ptr->VDB_World.vy) * R9_SKY_DISTANCE_SCALE;
+				skyWorld[i][2] = Global_VDB_Ptr->VDB_World.vz + (float)(translatedPts[i].vz - Global_VDB_Ptr->VDB_World.vz) * R9_SKY_DISTANCE_SCALE;
+#endif
 				TranslatePointIntoViewspace(&translatedPts[i]);
 				VerticesBuffer[i].X	= translatedPts[i].vx;
 				VerticesBuffer[i].Y	= translatedPts[i].vy;
@@ -6288,7 +6320,12 @@ void RenderSky(void)
 
 			RenderPolygon.NumberOfVertices=4;
 		}
-				
+#ifdef AVP_RTX_REMIX
+		if (r9Sky)
+			D3D_SkyPolygon_OutputWorld(&fakeHeader, VerticesBuffer, (const float (*)[3])skyWorld, 4);
+		else
+#endif
+		{
 		GouraudTexturedPolygon_ClipWithZ();
 		if(RenderPolygon.NumberOfVertices>=3)
 		{
@@ -6310,11 +6347,15 @@ void RenderSky(void)
 				}
 			}
 		}
+		}
 		t/=2;
 		size*=2;
 	}
 	}
 	}
+#ifdef AVP_RTX_REMIX
+	if (r9Sky) D3D_SkyWorld_End();
+#endif
 }
 #endif
 void RenderWaterFall(int xOrigin, int yOrigin, int zOrigin)
@@ -7545,6 +7586,7 @@ void RenderExplosionSurface(VOLUMETRIC_EXPLOSION *explosionPtr)
 	   	int f;
 	   	POLYHEADER fakeHeader;
 		VECTORCH *vSphere = SphereRotatedVertex;
+		int alphaScale = 256;   /* /256: dims the Remix glow, see below */
 			static int o=0;
 			o++;
 
@@ -7552,8 +7594,19 @@ void RenderExplosionSurface(VOLUMETRIC_EXPLOSION *explosionPtr)
 		{
 			extern int BurningImageNumber;
 			fakeHeader.PolyFlags = iflag_transparent;			      
-			fakeHeader.PolyColour = BurningImageNumber;			  
+			fakeHeader.PolyColour = BurningImageNumber;
 			RenderPolygon.TranslucencyMode = TRANSLUCENCY_NORMAL;
+#ifdef AVP_RTX_REMIX
+			/* Remix shades an alpha-blended surface as an ordinary material, and nothing
+			   lights the fireball, so it came out as a black shape. An additive draw is
+			   EMISSIVE to Remix, and the backend's glow mask drops the dark texels. */
+			if (R9_WorldEnabled() && !DrawingAReflection) {
+				RenderPolygon.TranslucencyMode = TRANSLUCENCY_GLOWING;
+				/* ...but as an emitter in a dark level, under Remix's auto-exposure, the
+				   solid-orange burn texture at the original alpha saturates to WHITE. */
+				alphaScale = 80;
+			}
+#endif
 		}
 		else
 		{
@@ -7639,7 +7692,7 @@ void RenderExplosionSurface(VOLUMETRIC_EXPLOSION *explosionPtr)
 						if(i3) VerticesBuffer[2].U+=128*65536*SPHERE_TEXTURE_WRAP;
 					}	
 
-					VerticesBuffer[i].A = explosionPtr->LifeTime/256;
+					VerticesBuffer[i].A = (explosionPtr->LifeTime/256) * alphaScale / 256;
 		  			VerticesBuffer[i].R = red;
 					VerticesBuffer[i].G	= green;
 					VerticesBuffer[i].B = blue;

@@ -40,7 +40,9 @@ void R9_Shutdown(void);
 void R9_InstallGLShim(void);               /* point the pgl* / pfn_gl* pointers at D3D9 */
 
 /* Draw one batch from opengl.c's triangle buffers. specularPass selects the second
-   (specular) pass of the game shader. */
+   (specular) pass of the game shader. worldSpace: 0 = clip-space vertices drawn
+   pre-transformed, 1 = world-space vertices, 2 = clip-space vertices to be UNPROJECTED
+   into world space through the current camera (see R9_Unproject). */
 void R9_DrawBatch(const R9GameVertex *verts, int nverts,
                   const unsigned short *indices, int ntris, int specularPass, int worldSpace);
 
@@ -50,6 +52,23 @@ void R9_DrawBatch(const R9GameVertex *verts, int nverts,
    the A/B switch: on unless the AVP_REMIX_WORLD environment variable is "0". */
 void R9_SetCamera(const float view[16], const float proj[16]);
 int  R9_WorldEnabled(void);
+
+/* Marks where the frame's screen-space overlay begins (the view model, then the HUD).
+   Remix composites its path-traced image at the first draw it classes as UI and
+   rasterizes everything after it on top, unchanged. Pre-transformed draws do not count
+   as UI by default (rtx.preTransformedVerticesIsUI), and turning that on would fire at
+   the frame's FIRST one - the sky, or any stray effect inside the world pass. So the
+   backend issues one invisible orthographic draw here instead, which Remix's
+   orthographicIsUI test always catches. Once per scene; a no-op with the world path off. */
+void R9_BeginOverlay(void);
+
+/* The frame's dynamic lights, as D3D9 point lights that Remix converts into its own.
+   The game lights only through vertex colours, which Remix discards as baked lighting,
+   so without these nothing the game lights (muzzle flashes, explosions, flares, the
+   level's own lights) lights anything under Remix. pos is world space (the same space as
+   the world-path vertices), rgb 0..1 and more, range in world units. */
+#define R9_MAX_LIGHTS 256
+void R9_SetLights(int n, const float (*pos)[3], const float (*rgb)[3], const float *range);
 
 /* The 640x480 RGB565 software surface (menus, FMVs, loading screens), letterboxed into
    the window, then presented. */

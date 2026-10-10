@@ -6883,3 +6883,42 @@ void AvpShowViewsVR(void)
     glViewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
 }
 #endif /* AVP_XR */
+#ifdef AVP_RTX_REMIX
+#include "d3d9_backend.h"
+/* Hands every live game light to the backend once per camera setup (R9_SetLights): the
+   lights attached to active objects - which include the level's own module lights,
+   muzzle flashes and flares - and the short-lived light elements (explosions and the
+   like). Gathered the same way LightSourcesInRangeOfObject finds them, but once for the
+   whole scene rather than per object. */
+void R9_GatherLights(void)
+{
+	extern DISPLAYBLOCK *ActiveBlockList[];
+	extern LIGHTELEMENT LightElementStorage[];
+	extern int NumActiveLightElements;
+	static float pos[R9_MAX_LIGHTS][3], rgb[R9_MAX_LIGHTS][3], range[R9_MAX_LIGHTS];
+	int n = 0, i, j;
+
+	if (!R9_WorldEnabled()) return;
+
+	#define R9_ADD_LIGHT(lp) do { 		const LIGHTBLOCK *l_ = (lp); 		float b_; 		if (n >= R9_MAX_LIGHTS || !l_->LightBright || (l_->LightFlags & LFlag_Off) || l_->LightRange <= 0) break; 		if (!(l_->RedScale || l_->GreenScale || l_->BlueScale)) break; 		b_ = (float)l_->LightBright / 65536.0f; 		pos[n][0] = (float)l_->LightWorld.vx; pos[n][1] = (float)l_->LightWorld.vy; pos[n][2] = (float)l_->LightWorld.vz; 		rgb[n][0] = b_ * (float)l_->RedScale / 65536.0f; 		rgb[n][1] = b_ * (float)l_->GreenScale / 65536.0f; 		rgb[n][2] = b_ * (float)l_->BlueScale / 65536.0f; 		range[n] = (float)l_->LightRange; 		n++; 	} while (0)
+
+	for (i = 0; i < NumActiveBlocks; i++) {
+		DISPLAYBLOCK *dp = ActiveBlockList[i];
+		for (j = 0; j < dp->ObNumLights; j++)
+			R9_ADD_LIGHT(dp->ObLights[j]);
+	}
+	for (i = 0; i < NumActiveLightElements; i++)
+		R9_ADD_LIGHT(&LightElementStorage[i].LightBlock);
+	#undef R9_ADD_LIGHT
+
+	R9_SetLights(n, (const float (*)[3])pos, (const float (*)[3])rgb, range);
+
+	{
+		static int maxLogged = -1;
+		if (n > maxLogged) {   /* one line per new high, so the count is visible without spam */
+			maxLogged = n;
+			SDL_Log("D3D9: %d game lights passed to Remix%s", n, n >= R9_MAX_LIGHTS ? " (capped)" : "");
+		}
+	}
+}
+#endif

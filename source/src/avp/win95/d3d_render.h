@@ -13,6 +13,10 @@ extern void D3D_ZBufferedGouraudTexturedPolygon_Output(POLYHEADER *inputPolyPtr,
 #ifdef AVP_RTX_REMIX
 extern void D3D_ZBufferedGouraudTexturedPolygon_OutputWorld(POLYHEADER *inputPolyPtr, RENDERVERTEX *renderVerticesPtr,
                                                             const float (*worldPts)[3]);
+extern void D3D_SkyWorld_Begin(void);
+extern void D3D_SkyWorld_End(void);
+extern void D3D_SkyPolygon_OutputWorld(POLYHEADER *inputPolyPtr, RENDERVERTEX *renderVerticesPtr,
+                                       const float (*worldPts)[3], int n);
 #endif
 extern void D3D_ZBufferedGouraudPolygon_Output(POLYHEADER *inputPolyPtr,RENDERVERTEX *renderVerticesPtr);
 extern void D3D_ZBufferedTexturedPolygon_Output(POLYHEADER *inputPolyPtr,RENDERVERTEX *renderVerticesPtr);

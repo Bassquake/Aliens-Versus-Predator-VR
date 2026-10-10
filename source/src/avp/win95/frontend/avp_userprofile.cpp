@@ -19,7 +19,9 @@ extern "C"
    drift between that and the enum at compile time rather than by silently writing
    past it. */
 typedef char VRBindingProfileSizeCheck[
-    (VR_SPECIES_COUNT <= 3 && VR_ACT_COUNT <= 12) ? 1 : -1];
+    (VR_SPECIES_COUNT <= 3 && VR_ACT_COUNT <= 13 && VR_ACT_CLIMB == 12) ? 1 : -1];
+/* Actions 0..11 live in VRBindingPlus1[3][12]; action 12 (Climb) in VRClimbBindingPlus1.
+   A 14th action needs bytes of its own - extend the assert when adding one. */
 #include "psnd.h"
 #include "cd_player.h"
 
@@ -66,6 +68,7 @@ extern int MarineLeftArmVisible;
 extern int AutoTwoHandedWeapons;
 extern int TwoHandProximityGrip;
 extern int VRLeftHanded;
+extern int AlienClimbHoldToClimb;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
 extern int LeftStickDeadzone;
 extern int RightStickDeadzone;
@@ -410,6 +413,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	AutoTwoHandedWeapons = 1; /* left hand takes the grip when brought to it */
 	TwoHandProximityGrip = 1; /* the left hand must be near the weapon to take hold */
 	VRLeftHanded = 0;         /* right-handed */
+	AlienClimbHoldToClimb = 0; /* a Climb press grabs; no need to keep holding it */
 	LeftStickDeadzone = 2;
 	RightStickDeadzone = 2;
 	LeftStickDeadzoneY = 2;
@@ -562,6 +566,7 @@ extern void GetSettingsFromUserProfile(void)
 	AutoTwoHandedWeapons =			!UserProfilePtr->AutoTwoHandedDisabled;
 	TwoHandProximityGrip =			UserProfilePtr->TwoHandProximityOff ? 0 : 1;
 	VRLeftHanded =					UserProfilePtr->LeftHanded ? 1 : 0;
+	AlienClimbHoldToClimb =			UserProfilePtr->AlienClimbHoldToClimb ? 1 : 0;
 	LeftStickDeadzone =			UserProfilePtr->LeftStickDeadzonePlus1
 					? UserProfilePtr->LeftStickDeadzonePlus1 - 1 : 2;
 	RightStickDeadzone =			UserProfilePtr->RightStickDeadzonePlus1
@@ -595,9 +600,17 @@ extern void GetSettingsFromUserProfile(void)
 
 			for (i = 0; i < VR_ACT_COUNT; i++)
 			{
-				int stored = (i < 12) ? UserProfilePtr->VRBindingPlus1[sp][i] : 0;
+				int stored = (i < 12) ? UserProfilePtr->VRBindingPlus1[sp][i]
+				           : (i == VR_ACT_CLIMB) ? UserProfilePtr->VRClimbBindingPlus1[sp] : 0;
 				/* 0 = never written; keep this action's default. */
 				candidate[i] = stored ? stored - 1 : VRBinding[sp][i];
+				/* ...except Climb, which before it existed WAS the Jump control. Taking
+				   the fixed default (B) instead would change behaviour for anyone who
+				   moved Jump, and could collide with whatever they put on B - which
+				   fails the duplicate check below and resets their whole layout.
+				   Jump (index 2) is already decoded by the time Climb (12) is. */
+				if (i == VR_ACT_CLIMB && !stored && sp == I_Alien)
+					candidate[i] = candidate[VR_ACT_JUMP];
 				/* A source, optionally flagged Hold (VR_BIND_HOLD) where it can apply. */
 				if (!VR_BINDING_VALID(candidate[i])) ok = 0;
 			}
@@ -607,7 +620,7 @@ extern void GetSettingsFromUserProfile(void)
 				int j;
 				if (candidate[i] == VR_SRC_NONE) continue;
 				for (j = i + 1; j < VR_ACT_COUNT; j++)
-					if (candidate[j] == candidate[i]) { ok = 0; break; }
+					if (candidate[j] == candidate[i] && !VR_ACTIONS_MAY_SHARE(i, j)) { ok = 0; break; }
 			}
 
 			if (ok)
@@ -616,6 +629,8 @@ extern void GetSettingsFromUserProfile(void)
 				SDL_Log("PROFILE: controller bindings for species %d were not usable "
 				        "(older or corrupt profile) - defaults kept", sp);
 		}
+		/* AlienClimbHoldToClimb is read above, so the hold-mode rule can apply now. */
+		VR_ClimbBindingDropHold();
 	}
 	/* Game controller. Same all-or-nothing validation as the VR bindings above: an
 	   out-of-range or duplicated set is rejected wholesale rather than half-applied,
@@ -753,6 +768,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->AutoTwoHandedDisabled =	(unsigned char)(AutoTwoHandedWeapons ? 0 : 1);
 	profilePtr->TwoHandProximityOff =	(unsigned char)(TwoHandProximityGrip ? 0 : 1);
 	profilePtr->LeftHanded =		(unsigned char)(VRLeftHanded ? 1 : 0);
+	profilePtr->AlienClimbHoldToClimb =	(unsigned char)(AlienClimbHoldToClimb ? 1 : 0);
 	profilePtr->LeftStickDeadzonePlus1 =	(unsigned char)(LeftStickDeadzone + 1);
 	profilePtr->RightStickDeadzonePlus1 =	(unsigned char)(RightStickDeadzone + 1);
 	profilePtr->LeftStickDeadzoneYPlus1 =	(unsigned char)(LeftStickDeadzoneY + 1);
@@ -763,6 +779,8 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)
 			for (i = 0; i < VR_ACT_COUNT && i < 12; i++)
 				profilePtr->VRBindingPlus1[sp][i] = (unsigned char)(VRBinding[sp][i] + 1);
+		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)
+			profilePtr->VRClimbBindingPlus1[sp] = (unsigned char)(VRBinding[sp][VR_ACT_CLIMB] + 1);
 	}
 	profilePtr->PadVertSensitivityPlus1 =	(unsigned char)(PadVertSensitivity + 1);
 	profilePtr->PadHorizSensitivityPlus1 =	(unsigned char)(PadHorizSensitivity + 1);

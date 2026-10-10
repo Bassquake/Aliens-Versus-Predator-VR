@@ -81,8 +81,22 @@ enum VR_ACTION {
        last slot of the profile's VRBindingPlus1[3][12]; profiles written before it
        have a zero there and get the default. */
     VR_ACT_RELOAD,
+    /* Alien wall climb: grab a climbable surface / let go. Appended 2026-10-10. B by
+       default - the SAME control as Jump, which is the one pair allowed to share a
+       binding (VR_ACTIONS_MAY_SHARE): sharing B reproduces the original behaviour, where
+       jump + forward at a wall grabs it. Stored outside VRBindingPlus1[3][12], which this
+       13th action no longer fits - see VRClimbBindingPlus1 in avp_userprofile.h. */
+    VR_ACT_CLIMB,
     VR_ACT_COUNT
 };
+
+/* Two actions that may sit on the same control. Everything else is kept to one action
+   per control (the menu skips a taken control and the profile loader rejects a set with
+   duplicates). CLIMB is exempt with ANY action: it is an extra meaning layered on a
+   control rather than a competing one - grab the wall in front, if there is one - so it
+   can ride on Jump (its default, where pmove.c also wants forward held) or on Crouch's
+   stick click or anything else, and that action still does its own job. */
+#define VR_ACTIONS_MAY_SHARE(a, b) ((a) == VR_ACT_CLIMB || (b) == VR_ACT_CLIMB)
 
 enum VR_SOURCE {
     VR_SRC_NONE = 0,
@@ -157,6 +171,15 @@ extern int VR_Action(int action);
    control, which taps to cycle vision mode and holds to step the zoom. Reading the
    BINDING rather than a fixed button means rebinding moves both together. */
 extern int VR_ActionTapShort(int action);
+
+/* Climb is NEVER a Hold binding (user decision, 2026-10-10). A Hold fights "Climb by
+   keeping button pressed?" - the climb would start half a second into the press and the
+   two notions of "held" overlap - and on a control another action shares it turns that
+   action into a tap-on-release. So the menu does not offer one on the Climb row, in
+   either mode, and this converts an existing one to the same control without Hold -
+   always possible, since Climb may share any control. Called after a profile loads,
+   and when the hold-to-climb option changes (harmless either way). */
+extern void VR_ClimbBindingDropHold(void);
 extern int VR_ActionLong(int action);
 
 /* World Scale, as a menu setting.

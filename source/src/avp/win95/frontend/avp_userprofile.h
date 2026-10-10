@@ -268,7 +268,14 @@ typedef struct
 	   written before the split keeps exactly the deadzone it had on both axes. */
 	unsigned char LeftStickDeadzoneYPlus1;
 	unsigned char RightStickDeadzoneYPlus1;
-	unsigned char ExtReserved[10];
+	/* The 13th VR action, VR_ACT_CLIMB, per species. VRBindingPlus1[3][12] is full, and
+	   growing it would move every field after it. Stored +1 like the others: 0 = never
+	   written -> the default (B for the Alien). */
+	unsigned char VRClimbBindingPlus1[3];
+	/* Alien Controller Configuration "Climb by keeping button pressed?". Stored plain:
+	   the default is No, which is the zero every older profile has here. */
+	unsigned char AlienClimbHoldToClimb;      //0=No (default), 1=Yes
+	unsigned char ExtReserved[6];
 
 } AVP_USER_PROFILE;
 

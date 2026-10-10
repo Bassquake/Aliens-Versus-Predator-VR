@@ -116,6 +116,26 @@ static char FlyModeDebounced = 0;
 static int AlienWallClimbing = 0;   /* currently stuck to a wall/ceiling */
 static int AlienClimbLeftFloor = 0; /* gravity has reoriented off the flat floor */
 static int AlienPrevJump = 0;       /* previous frame's jump request, for edge detection */
+static int AlienPrevClimb = 0;      /* previous frame's climb request, likewise */
+/* The grab WINDOW. A Climb press used to be tested on its one press frame only, inside
+   the on-the-floor movement block - so a frame where walking into the wall had briefly
+   lifted the Alien off the floor, or any other near miss, simply lost the press; and
+   with Climb on Jump's B, a missed grab became a hop that left the Alien airborne for
+   the next try too ("doesn't always work", 2026-10-10). Now a press arms this window and
+   the grab is retried EVERY frame until it lands or the window closes, wherever the
+   Alien is, so it also catches the wall during that hop. */
+#define ALIEN_CLIMB_GRAB_WINDOW (ONE_FIXED/3)
+static int AlienClimbArmTime = 0;          /* time left in the window */
+static int AlienClimbArmNeedsForward = 0;  /* the press was also a Jump: keep the forward rule */
+static int AlienClimbHeldArm = 0;          /* hold-to-climb: window stays open while held */
+static int AlienGrabSpeed = 0;             /* last computed Alien jump speed, for the grab push */
+extern int PlayerClimbRequest;      /* usr_io.c: the Climb control (VR_ACT_CLIMB, or Jump off-VR) */
+/* Alien Controller Configuration "Climb by keeping button pressed?" - 0 = No (default):
+   a Climb press grabs and the climb lasts until let go by another press, a Jump, or
+   reaching the floor. 1 = Yes: the climb lasts only while the Climb control is HELD,
+   and releasing it drops off the surface. Defined here, not under AVP_XR, because the
+   menu table and the profile reference it on every target. */
+int AlienClimbHoldToClimb = 0;
 static int AlienClimbGraceTime = 0; /* time left to reach a grabbed-at-distance wall before the climb cancels */
 
 #if 0
@@ -555,11 +575,28 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 	   rather than repeating every frame the key is held. Tracked every frame
 	   regardless of contact state so a held jump can't re-trigger on landing. */
 	int alienJumpEdge = 0;
+	int alienClimbEdge = 0;   /* the same for Climb, which may be its own control in VR */
 	if (AvP.PlayerType == I_Alien)
 	{
 		int jumpNow = playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump;
 		alienJumpEdge = jumpNow && !AlienPrevJump;
 		AlienPrevJump = jumpNow;
+		alienClimbEdge = PlayerClimbRequest && !AlienPrevClimb;
+		AlienPrevClimb = PlayerClimbRequest;
+
+		/* Arm the grab window on a press made while NOT already climbing (a press while
+		   climbing is a let-go, handled in the jump block). In hold-to-climb mode it
+		   stays open for as long as that press is held, so holding Climb and walking
+		   into a wall grabs it on arrival. */
+		if (alienClimbEdge && !AlienWallClimbing)
+		{
+			AlienClimbArmTime = ALIEN_CLIMB_GRAB_WINDOW;
+			AlienClimbArmNeedsForward = alienJumpEdge;
+			AlienClimbHeldArm = 1;
+		}
+		if (!PlayerClimbRequest) AlienClimbHeldArm = 0;
+		if (AlienClimbHoldToClimb && AlienClimbHeldArm && !AlienWallClimbing)
+			AlienClimbArmTime = ALIEN_CLIMB_GRAB_WINDOW;
 
 	}
 
@@ -756,6 +793,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 		}
 
 		jumpSpeed = MUL_FIXED(jumpSpeed,playerStatusPtr->Encumberance.JumpingMultiple);
+		if (AvP.PlayerType == I_Alien) AlienGrabSpeed = jumpSpeed;   /* for the grab window */
 		
 		/* KJL 17:45:03 9/9/97 - inertia means it's difficult to stop */			
 	  	if (forwardSpeed*playerStatusPtr->ForwardInertia<0) playerStatusPtr->ForwardInertia = 0;
@@ -997,7 +1035,9 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 				dynPtr->LinVelocity.vx = strafeSpeed;
 			}
 
-			if(playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump)
+			/* An Alien's Climb control enters too: in VR it can be on its own button. */
+			if(playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump
+			   || (AvP.PlayerType == I_Alien && PlayerClimbRequest))
 			{
 				COLLISIONREPORT *reportPtr = Player->ObStrategyBlock->DynPtr->CollisionReportPtr;
 				int notTooSteep = 0;
@@ -1086,10 +1126,12 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 
 						if (AlienWallClimbing)
 						{
-							/* Already stuck to a wall/ceiling: a fresh jump press
-							   lets go and pushes off the surface. */
-							if (alienJumpEdge)
+							/* Already stuck to a wall/ceiling: a fresh jump OR climb
+							   press lets go and pushes off the surface. */
+							if (alienJumpEdge || alienClimbEdge)
 							{
+								AlienClimbHeldArm = 0;   /* no instant re-grab off the push */
+								AlienClimbArmTime = 0;
 								AlienWallClimbing = 0;
 								AlienClimbLeftFloor = 0;
 								dynPtr->LinImpulse.vx -= MUL_FIXED(dynPtr->GravityDirection.vx,jumpSpeed);
@@ -1112,8 +1154,15 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 						 * Rqst_Forward is set from the left stick past its deadzone
 						 * (usr_io.c) exactly as it is from the keyboard's forward key, so
 						 * this reads the same on a controller and at a desk. */
-						else if (alienJumpEdge
-						      && playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Forward
+						/* The Climb control grabs. When it is the same press as Jump (the
+						 * default - both on B - and always off-VR), forward is still
+						 * required, for the reason above. On any other control - its own,
+						 * or shared with something else such as Crouch's stick click - the
+						 * press is already an explicit "climb", so forward is not needed
+						 * and a Climb press that finds no surface does nothing - it never
+						 * turns into a jump (the other action still does its own job). */
+						else if (alienClimbEdge
+						      && (playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Forward || !alienJumpEdge)
 						      && AlienFacingClimbableWall(dynPtr,&viewDir,&climbNormal))
 						{
 							/* On the floor, facing a wall: grab it and start
@@ -1125,6 +1174,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 							AlienWallClimbing = 1;
 							AlienClimbLeftFloor = 0;
 							AlienClimbGraceTime = ONE_FIXED; /* ~1 second */
+							AlienClimbArmTime = 0;
 
 							/* Carry the Alien ONTO the surface it just grabbed.
 							 *
@@ -1297,6 +1347,54 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 		   ceilings) is only enabled while climbing. The player starts a climb by
 		   pressing jump while facing a wall (see the jump handling above); the
 		   Alien no longer sticks to walls just by walking into them. */
+		/* The grab window (see ALIEN_CLIMB_GRAB_WINDOW): retry the grab every frame
+		   until it lands or the window runs out - on the floor or not. Same test and
+		   same push onto the surface as the press-frame grab in the jump block. */
+		if (!AlienWallClimbing && AlienClimbArmTime > 0)
+		{
+			AlienClimbArmTime -= NormalFrameTime;
+			if (!AlienClimbArmNeedsForward
+			    || playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Forward)
+			{
+				VECTORCH viewDir, climbNormal = {0,0,0};
+				#ifdef AVP_XR
+				extern int VR_SessionActive(void);
+				if (VR_SessionActive()) {   /* VR: forward is ROW 3 - see the jump block */
+					viewDir.vx = Global_VDB_Ptr->VDB_Mat.mat31;
+					viewDir.vy = Global_VDB_Ptr->VDB_Mat.mat32;
+					viewDir.vz = Global_VDB_Ptr->VDB_Mat.mat33;
+				} else
+				#endif
+				{
+					viewDir.vx = Global_VDB_Ptr->VDB_Mat.mat13;
+					viewDir.vy = Global_VDB_Ptr->VDB_Mat.mat23;
+					viewDir.vz = Global_VDB_Ptr->VDB_Mat.mat33;
+				}
+				if (AlienFacingClimbableWall(dynPtr, &viewDir, &climbNormal))
+				{
+					const int speed = AlienGrabSpeed ? AlienGrabSpeed : JUMPVELOCITY;
+					AlienWallClimbing = 1;
+					AlienClimbLeftFloor = 0;
+					AlienClimbGraceTime = ONE_FIXED;
+					AlienClimbArmTime = 0;
+					if (climbNormal.vx || climbNormal.vy || climbNormal.vz) {
+						dynPtr->LinImpulse.vx -= MUL_FIXED(climbNormal.vx, speed);
+						dynPtr->LinImpulse.vy -= MUL_FIXED(climbNormal.vy, speed);
+						dynPtr->LinImpulse.vz -= MUL_FIXED(climbNormal.vz, speed);
+						dynPtr->TimeNotInContactWithFloor = -1;
+					}
+				}
+			}
+		}
+
+		/* Hold-to-climb: releasing the Climb control lets go. Just a release, no
+		   push-off - the surface-stick gravity switches off below and the Alien drops
+		   away. A Jump still pushes off as in the default mode. */
+		if (AlienWallClimbing && AlienClimbHoldToClimb && !PlayerClimbRequest)
+		{
+			AlienWallClimbing = 0;
+			AlienClimbLeftFloor = 0;
+		}
 		if (AlienWallClimbing)
 		{
 			if (dynPtr->GravityDirection.vy <= 60000)

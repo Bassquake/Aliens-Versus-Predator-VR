@@ -826,6 +826,10 @@ JOYSTICK_CONTROL_METHODS DefaultJoystickControlMethods =
 extern unsigned char KeyboardInput[];
 extern unsigned char DebouncedKeyboardInput[];
 extern int GotJoystick;
+/* The Alien's Climb request this frame (see the Jump handling below), read by pmove.c.
+   A plain global rather than a new Mvt_InputRequests bit - either would do; this keeps
+   the request struct untouched. */
+int PlayerClimbRequest = 0;
 extern int GotMouse;
 
 #ifdef AVP_XR
@@ -850,6 +854,7 @@ void InitPlayerGameInput(STRATEGYBLOCK* sbPtr)
 
 	/* analogue type inputs */
 	playerStatusPtr->Mvt_MotionIncrement = 0;
+	PlayerClimbRequest = 0;
 	playerStatusPtr->Mvt_TurnIncrement = 0;
 	playerStatusPtr->Mvt_PitchIncrement = 0;
 	playerStatusPtr->Mvt_AnalogueTurning = 0;
@@ -966,14 +971,23 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		)
 			playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Crouch = 1;
 		
-		if(KeyboardInput[primaryInput->Jump]
-		 ||KeyboardInput[secondaryInput->Jump]
+		/* Jump, and the Alien's Climb. The keyboard and the pad have no Climb of their
+		   own, so on them Jump still grabs a wall exactly as before; in VR Climb is a
+		   separate binding (VR_ACT_CLIMB, B by default - shared with Jump, which gives
+		   the same result), so it can be moved elsewhere. pmove.c reads both. */
+		{
+			const int jumpOther = KeyboardInput[primaryInput->Jump]
+			                   || KeyboardInput[secondaryInput->Jump]
+			                   || Pad_Action(PAD_ACT_JUMP);
+			int jumpVR = 0, climbVR = 0;
 		#ifdef AVP_XR
-		 ||VR_Action(VR_ACT_JUMP)
+			jumpVR  = VR_Action(VR_ACT_JUMP);
+			climbVR = VR_Action(VR_ACT_CLIMB);
 		#endif
-		 ||Pad_Action(PAD_ACT_JUMP)
-		)
-			playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump = 1;
+			if (jumpOther || jumpVR)
+				playerStatusPtr->Mvt_InputRequests.Flags.Rqst_Jump = 1;
+			PlayerClimbRequest = jumpOther || climbVR;
+		}
 
 		if(KeyboardInput[primaryInput->Operate]
 		 ||KeyboardInput[secondaryInput->Operate]

@@ -1406,7 +1406,8 @@ static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
  * row simply stays put, which is the correct outcome and cannot spin. */
 static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCount,
                                int speciesCount, int lastSource, int holdFlag,
-                               int (*canHold)(int), int (*bindable)(int))
+                               int (*canHold)(int), int (*bindable)(int),
+                               int (*mayShare)(int, int))
 {
 	int order[2 * 64 + 1];
 	int count = 0, pos = 0, idx, sp, act, guard, s;
@@ -1441,7 +1442,8 @@ static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCo
 		if (v != 0)
 		{
 			for (other = 0; other < actCount; other++)
-				if (other != act && table[sp * actCount + other] == v) { taken = 1; break; }
+				if (other != act && table[sp * actCount + other] == v
+				    && !(mayShare && mayShare(act, other))) { taken = 1; break; }
 		}
 		if (!taken) { *valuePtr = v; return 1; }
 	}
@@ -1449,14 +1451,20 @@ static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCo
 }
 
 static int VR_SourceCanHoldFn(int s)  { return VR_SOURCE_CAN_HOLD(s); }
+static int VR_ActionsMayShareFn(int a, int b) { return VR_ACTIONS_MAY_SHARE(a, b); }
 static int Pad_SourceCanHoldFn(int s) { return PAD_SOURCE_CAN_HOLD(s); }
 static int Pad_SourceBindableFn(int s) { return PAD_SOURCE_BINDABLE(s); }
 
+static int VR_SourceNoHoldFn(int s)   { (void)s; return 0; }
+
 static int VR_CycleBinding(int *valuePtr, int maxValue, int forward)
 {
+	/* Climb never offers Hold controls - see VR_ClimbBindingDropHold. */
+	const int climbNoHold = (valuePtr == &VRBinding[I_Alien][VR_ACT_CLIMB]);
 	return CycleBindingInTable(valuePtr, forward, &VRBinding[0][0], VR_ACT_COUNT,
 	                           VR_SPECIES_COUNT, maxValue, VR_BIND_HOLD,
-	                           VR_SourceCanHoldFn, NULL);
+	                           climbNoHold ? VR_SourceNoHoldFn : VR_SourceCanHoldFn,
+	                           NULL, VR_ActionsMayShareFn);
 }
 
 /* The pad counterpart. Start and Back - reserved by the frontend - sit in the middle
@@ -1466,7 +1474,7 @@ static int Pad_CycleBinding(int *valuePtr, int maxValue, int forward)
 {
 	return CycleBindingInTable(valuePtr, forward, &PadBinding[0][0], PAD_ACT_COUNT,
 	                           PAD_SPECIES_COUNT, maxValue, PAD_BIND_HOLD,
-	                           Pad_SourceCanHoldFn, Pad_SourceBindableFn);
+	                           Pad_SourceCanHoldFn, Pad_SourceBindableFn, NULL);
 }
 
 /* Rows that do not apply to the current Turning Mode: greyed out and skipped by the
@@ -3136,6 +3144,13 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 					{
 						*elementPtr->c.SliderValuePtr=elementPtr->b.MaxSliderValue;
 					}
+				}
+
+				/* Turning on hold-to-climb converts a Hold binding on Climb. */
+				{
+					extern int AlienClimbHoldToClimb;
+					if (elementPtr->c.SliderValuePtr == &AlienClimbHoldToClimb)
+						VR_ClimbBindingDropHold();
 				}
 			}
 			break;

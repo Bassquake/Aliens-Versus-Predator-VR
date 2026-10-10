@@ -213,6 +213,12 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_FIREPRIMARY:   return "Primary Fire";
 			case TEXTSTRING_BIND_FIRESECONDARY: return "Secondary Fire";
 			case TEXTSTRING_BIND_JUMP:          return "Jump";
+			case TEXTSTRING_BIND_CLIMB:         return "Trigger Climb";
+			case TEXTSTRING_CLIMBHOLD:          return "Climb By Keeping Button Pressed?";
+			case TEXTSTRING_CLIMBHOLD_HELP:     return "No: press Climb to grab a wall and press again to let go. Yes: you only stay on the wall while the Climb control is held, and letting go of it drops you off.";
+			case TEXTSTRING_CLIMBHOLD_NO:       return "No (Default)";
+			case TEXTSTRING_CLIMBHOLD_YES:      return "Yes";
+			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. Can share a control with any other action, which still does its own job. On the same control as Jump you must also push forward; on any other control it grabs straight away. Hold controls are not offered.";
 			case TEXTSTRING_BIND_CROUCH:        return "Crouch";
 			/* "Operate" to match the keyboard config screens, which is where the
 			   action is named for every species. Shared by the three VR binding

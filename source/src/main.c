@@ -736,7 +736,8 @@ int VR_Reach(int range)
         VR_SRC_R_STICK_CLICK,   /* FLARE          */ \
         VR_SRC_R_STICK_UP,      /* NEXT_WEAPON    */ \
         VR_SRC_R_STICK_DOWN,    /* PREV_WEAPON    */ \
-        VR_SRC_A | VR_BIND_HOLD /* RELOAD - A Hold; A's Use then fires on release */ \
+        VR_SRC_A | VR_BIND_HOLD,/* RELOAD - A Hold; A's Use then fires on release */ \
+        VR_SRC_NONE             /* CLIMB - Alien only */ \
     }, \
     /* [I_Predator] */ { \
         VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
@@ -744,7 +745,8 @@ int VR_Reach(int range)
         VR_SRC_B | VR_BIND_HOLD,/* SPECIAL - recall disc: B Hold; B's Jump then fires on release */ \
         VR_SRC_R_STICK_CLICK,   /* FLARE slot = the Predator's CLOAK (see usr_io.c) */ \
         VR_SRC_R_STICK_UP, VR_SRC_R_STICK_DOWN, \
-        VR_SRC_A | VR_BIND_HOLD /* RELOAD - same as the Marine */ \
+        VR_SRC_A | VR_BIND_HOLD,/* RELOAD - same as the Marine */ \
+        VR_SRC_NONE             /* CLIMB - Alien only */ \
     }, \
     /* [I_Alien] */ { \
         VR_SRC_R_TRIGGER, VR_SRC_R_GRIP, VR_SRC_B, VR_SRC_L_STICK_CLICK, \
@@ -752,11 +754,20 @@ int VR_Reach(int range)
         VR_SRC_NONE,            /* SPECIAL - Marine/Predator only */ \
         VR_SRC_NONE,            /* FLARE   - Marine only */ \
         VR_SRC_NONE, VR_SRC_NONE, /* NEXT/PREV WEAPON - one weapon only, see the pad table */ \
-        VR_SRC_NONE             /* RELOAD - Marine and Predator only */ \
+        VR_SRC_NONE,            /* RELOAD - Marine and Predator only */ \
+        VR_SRC_B                /* CLIMB - shares B with Jump, the original behaviour */ \
     } }
 
 int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;
 const int VRBindingDefault[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;
+
+void VR_ClimbBindingDropHold(void)
+{
+    int *climb = &VRBinding[I_Alien][VR_ACT_CLIMB];
+
+    if (VR_BIND_IS_HOLD(*climb))
+        *climb = VR_BIND_SRC(*climb);   /* Climb may share any control, so this is always free */
+}
 
 #ifndef AVP_XR
 /* -----------------------------------------------------------------------

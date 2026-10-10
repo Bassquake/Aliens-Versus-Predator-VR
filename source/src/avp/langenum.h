@@ -1669,6 +1669,15 @@ enum TEXTSTRING_ID
 	TEXTSTRING_RIGHTSTICKDEADZONE_Y,
 	TEXTSTRING_RIGHTSTICKDEADZONE_Y_HELP,
 
+	/* Alien Controller Configuration "Climb" (VR_ACT_CLIMB). */
+	TEXTSTRING_BIND_CLIMB,
+	TEXTSTRING_BIND_CLIMB_HELP,
+	/* Alien Controller Configuration "Climb by keeping button pressed?" */
+	TEXTSTRING_CLIMBHOLD,
+	TEXTSTRING_CLIMBHOLD_HELP,
+	TEXTSTRING_CLIMBHOLD_NO,   // value 0 (default): must stay immediately before _YES
+	TEXTSTRING_CLIMBHOLD_YES,  // value 1
+
 	MAX_NEW_TEXTSTRINGS
 };
 

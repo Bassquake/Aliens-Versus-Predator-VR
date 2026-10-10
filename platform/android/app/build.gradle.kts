@@ -35,8 +35,8 @@ android {
         // value at this level would be dead config that looks authoritative.
         minSdk = 24
         targetSdk = 32
-        versionCode = 11
-        versionName = "1.1"
+        versionCode = 12
+        versionName = "1.2"
 
         externalNativeBuild {
             cmake {
@@ -85,7 +85,7 @@ android {
     //            is compiled out and the flat windowed render path is used.
     //            applicationId com.bassquake.android.avp.
     //
-    // The flavor name is part of every APK filename (quest -> avpvr-<ver>-quest-<abi>-<type>.apk,
+    // The flavor name is part of every APK filename (quest -> avpvr-<ver>-quest-<abi>-<type>.apk,
     // android -> avp-<ver>-android-<abi>-<type>.apk; the prefix follows the flavor)
     // and of the Gradle task names (assembleAndroidRelease / assembleQuestRelease), so it
     // must match the source-set folder under src/.

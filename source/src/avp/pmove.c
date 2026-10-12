@@ -129,6 +129,9 @@ static int AlienClimbArmTime = 0;          /* time left in the window */
 static int AlienClimbArmNeedsForward = 0;  /* the press was also a Jump: keep the forward rule */
 static int AlienClimbHeldArm = 0;          /* hold-to-climb: window stays open while held */
 static int AlienGrabSpeed = 0;             /* last computed Alien jump speed, for the grab push */
+/* Continuous time climbing with NO surface underfoot - see the wedge release below. */
+static int AlienClimbAirTime = 0;
+#define ALIEN_CLIMB_WEDGE_RELEASE (ONE_FIXED * 3 / 4)
 extern int PlayerClimbRequest;      /* usr_io.c: the Climb control (VR_ACT_CLIMB, or Jump off-VR) */
 /* Alien Controller Configuration "Climb by keeping button pressed?" - 0 = No (default):
    a Climb press grabs and the climb lasts until let go by another press, a Jump, or
@@ -1390,6 +1393,38 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 		/* Hold-to-climb: releasing the Climb control lets go. Just a release, no
 		   push-off - the surface-stick gravity switches off below and the Alien drops
 		   away. A Jump still pushes off as in the default mode. */
+		/* WEDGED: climbing, but touching nothing gravity can settle on (2026-10-12, the
+		   first Alien level's tunnel exit, on flat). Between two FACING surfaces the
+		   surface-stick gravity flips from one to the other and ends up pointing at
+		   neither, so IsInContactWithFloor stays 0 for good - and every way out is gated
+		   on it: movement is cut to the airborne crawl, and the let-go press lives in the
+		   on-floor jump block. Logged: floor=0 and a frozen position for 20+ seconds.
+
+		   So, while climbing: a Jump or Climb press lets go even with no floor under
+		   you, and 3/4 s of continuous no-contact lets go on its own. A
+		   normal climb touches its surface at least every other frame, which resets
+		   the timer, so this only fires when actually stuck. Letting go restores
+		   standard gravity and the Alien drops free. */
+		if (AlienWallClimbing)
+		{
+			if (dynPtr->IsInContactWithFloor) AlienClimbAirTime = 0;
+			else AlienClimbAirTime += NormalFrameTime;
+
+			if (!dynPtr->IsInContactWithFloor && (alienJumpEdge || alienClimbEdge))
+			{
+				AlienWallClimbing = 0;
+				AlienClimbLeftFloor = 0;
+				AlienClimbHeldArm = 0;
+				AlienClimbArmTime = 0;
+			}
+			else if (AlienClimbLeftFloor && AlienClimbAirTime > ALIEN_CLIMB_WEDGE_RELEASE)
+			{
+				AlienWallClimbing = 0;
+				AlienClimbLeftFloor = 0;
+			}
+		}
+		if (!AlienWallClimbing) AlienClimbAirTime = 0;
+
 		if (AlienWallClimbing && AlienClimbHoldToClimb && !PlayerClimbRequest)
 		{
 			AlienWallClimbing = 0;
@@ -1429,6 +1464,7 @@ void ExecuteFreeMovement(STRATEGYBLOCK* sbPtr)
 		   GravityDirection to the contact surface; in open air it reverts to
 		   down after TimeNotInContactWithFloor. */
 		dynPtr->UseStandardGravity = AlienWallClimbing ? 0 : 1;
+
 
 	}
 
@@ -1560,8 +1596,7 @@ static void MaintainPlayerShape(STRATEGYBLOCK* sbPtr)
 {
 	PLAYER_STATUS *playerStatusPtr= (PLAYER_STATUS *) (sbPtr->SBdataptr);
 
-#ifdef AVP_XR
-	/* VR: an Alien on a wall or ceiling is ALWAYS crouched.
+	/* An Alien on a wall or ceiling is ALWAYS crouched - VR and flat alike.
 	 *
 	 * Asked for on the strength of how it plays - a climbing Alien reads as tucked
 	 * against the surface rather than standing off it - and it also makes the tail
@@ -1576,10 +1611,11 @@ static void MaintainPlayerShape(STRATEGYBLOCK* sbPtr)
 	 * made before the grab cannot fire the moment the climb ends; leaving the wall then
 	 * returns to the ordinary state machine, which stands the player up as usual.
 	 *
-	 * VR only, deliberately: this changes how the Alien plays, and the flat game is
-	 * known-good. AlienWallClimbing is this file's own climb flag, set when the player
-	 * grabs a surface and cleared when they let go or fall off. */
-	if (VR_IsIn3DMode() && AlienWallClimbing)
+	 * First VR only, as the flat game was known-good; extended to flat on request
+	 * (2026-10-12) so a climbing Alien plays the same everywhere. AlienWallClimbing is
+	 * this file's own climb flag, set when the player grabs a surface and cleared when
+	 * they let go or fall off. */
+	if (AlienWallClimbing)
 	{
 		if (playerStatusPtr->ShapeState == PMph_Standing
 		    && playerStatusPtr->Encumberance.CanCrouch)
@@ -1590,7 +1626,6 @@ static void MaintainPlayerShape(STRATEGYBLOCK* sbPtr)
 		CrouchKeyDebounced = 1;   /* so the first tap after release is not swallowed */
 		return;
 	}
-#endif
 
 	/* maintain play morphing state */
 	switch (playerStatusPtr->ShapeState)

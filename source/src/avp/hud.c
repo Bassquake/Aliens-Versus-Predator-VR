@@ -84,6 +84,9 @@ extern signed int RequestFadeToBlackLevel;
 extern ACTIVESOUNDSAMPLE ActiveSounds[];
 
 extern int SmartTargetSightX, SmartTargetSightY;
+/* main.c / avpview.c; declared here because the flat Linux build saw only an implicit
+   declaration at its first use below (a warning on GCC, an error on clang). */
+extern int VR_IsIn3DMode(void);
 extern char CurrentlySmartTargetingObject;
 extern DISPLAYBLOCK *SmartTarget_Object;
 extern DISPLAYBLOCK *Old_SmartTarget_Object;

@@ -766,9 +766,18 @@ void D3D_BLTGunSightToHUD_Coloured(int screenX, int screenY, enum GUNSIGHT_SHAPE
 {
   	HUDImageDesc imageDesc;
 	int gunsightSize=13;
+	/* The SMARTGUN's targeting ring (GREENBOX = searching, REDBOX = locked) is scaled
+	   with the rest of the HUD and sampled smoothly. It used to be drawn at a fixed 13
+	   pixels, point-sampled - and in VR the HUD's virtual space is stretched onto the
+	   eye by a non-integer factor (~1.4), so its one-texel ring came out blocky with
+	   texels dropped or doubled (2026-10-12). The ordinary crosshair is left as it was. */
+	const int smartSight = (gunsightShape == GUNSIGHT_GREENBOX || gunsightShape == GUNSIGHT_REDBOX);
+	const int scale = (smartSight && HUDScaleFactor > 0) ? HUDScaleFactor : ONE_FIXED;
+	const int drawnSize = (scale == ONE_FIXED) ? gunsightSize : MUL_FIXED(scale, gunsightSize);
+	extern int HUD_QuadSmooth;
 
-	screenX = (screenX-(gunsightSize/2));
-  	screenY = (screenY-(gunsightSize/2));
+	screenX = (screenX-(drawnSize/2));
+  	screenY = (screenY-(drawnSize/2));
   	
 	imageDesc.ImageNumber = HUDImageNumber;
 	imageDesc.TopLeftX = screenX;
@@ -777,13 +786,15 @@ void D3D_BLTGunSightToHUD_Coloured(int screenX, int screenY, enum GUNSIGHT_SHAPE
 	imageDesc.TopLeftV = 131+(gunsightShape*(gunsightSize+1));
 	imageDesc.Height = gunsightSize;
 	imageDesc.Width = gunsightSize;
-	imageDesc.Scale = ONE_FIXED;
+	imageDesc.Scale = scale;
 	imageDesc.Translucency = 128;
 	imageDesc.Red = red;
 	imageDesc.Green = green;
 	imageDesc.Blue = blue;
 
+	HUD_QuadSmooth = smartSight;
 	Draw_HUDImage(&imageDesc);
+	HUD_QuadSmooth = 0;
 }
 
 void Render_HealthAndArmour(unsigned int health, unsigned int armour)

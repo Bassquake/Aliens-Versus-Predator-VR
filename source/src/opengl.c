@@ -2563,6 +2563,11 @@ int HUD_AtlasUVScale(int imageNumber)
 	return DIV_FIXED((int)tex->w, stockSize);
 }
 
+/* Set around one Draw_HUDImage call to sample that quad bilinearly even from a stock
+   atlas - for art drawn scaled, which point-sampling renders unevenly. Used by the
+   smartgun's targeting ring (D3D_BLTGunSightToHUD_Coloured). */
+int HUD_QuadSmooth = 0;
+
 void D3D_HUDQuad_Output(int imageNumber, struct VertexTag *quadVerticesPtr, unsigned int colour)
 {
 	float RecipW, RecipH;
@@ -2594,8 +2599,15 @@ void D3D_HUDQuad_Output(int imageNumber, struct VertexTag *quadVerticesPtr, unsi
 	{
 		enum FILTERING_MODE_ID hudFilter = (enum FILTERING_MODE_ID)-1;
 
-		if (HUD_AtlasUVScale(imageNumber) != ONE_FIXED)
+		static int lastWasSmooth = 0;
+
+		if (HUD_AtlasUVScale(imageNumber) != ONE_FIXED || HUD_QuadSmooth)
 			hudFilter = FILTERING_BILINEAR_ON;
+		else if (lastWasSmooth)
+			/* -1 would leave the bilinear mode the smooth quad just set, and every
+			   HUD element after it would come out blurred: put point sampling back. */
+			hudFilter = FILTERING_BILINEAR_OFF;
+		lastWasSmooth = HUD_QuadSmooth;
 
 		CheckTriangleBuffer(4, 0, 0, 0, tex, TRANSLUCENCY_GLOWING, hudFilter);
 	}

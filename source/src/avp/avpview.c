@@ -1806,6 +1806,18 @@ static void VR_AlienSwipeUpdate(float unitsPerMetre)
     extern void XR_Haptic_Left(float amplitude, float duration_ms);
     static int   have_prev[2], armed[2] = { 1, 1 }, prev_snap = 0;
     static float prev_rel[2][3], cooldown[2];
+    /* The swing is DETECTED from the raw tracked controller, relative to the headset, in
+       real metres - not from the hand's place in the game world. While the Alien climbs,
+       the view and hands are re-based onto the climbed surface, a rigid turn about the
+       body that happens every time gravity reorients (often every frame or two); measured
+       in the world, that turn read as the hands whipping round and fired swipe after
+       swipe - the swipe sound playing on and on while climbing (2026-10-12). The raw
+       controller-to-head vector only changes when the player actually moves a hand. The
+       game-world motion still supplies the swing's DIRECTION for the hit. */
+    static float prev_raw[2][3];
+    extern int VR_LH_HandsSwapped(void);
+    const int lhSwap = VR_LH_HandsSwapped();
+    float head[3];
     PLAYER_STATUS *ps;
     PLAYER_WEAPON_DATA *wp;
     float dt = NormalFrameTime / 65536.0f;
@@ -1821,12 +1833,18 @@ static void VR_AlienSwipeUpdate(float unitsPerMetre)
     wp = &ps->WeaponSlot[ps->SelectedWeaponSlot];
     snapped = (xr_snap_yaw != prev_snap);
     prev_snap = xr_snap_yaw;
+    if (!xr_views) { have_prev[0] = have_prev[1] = 0; return; }
+    head[0] = (xr_views[0].pose.position.x + xr_views[1].pose.position.x) * 0.5f;
+    head[1] = (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f;
+    head[2] = (xr_views[0].pose.position.z + xr_views[1].pose.position.z) * 0.5f;
 
     for (h = 0; h < 2; h++) {
         int valid = h ? vr_left_hand_valid : vr_right_hand_valid;
         const VECTORCH *hw = h ? &vr_left_hand_world : &vr_right_hand_world;
         const MATRIXCH *hm = h ? &vr_left_hand_mat : &vr_right_hand_mat;
-        float rel[3], v[3], speed, fwd[3], flen;
+        float rel[3], v[3], speed, fwd[3], flen, raw[3], rv[3], wspeed;
+        /* h 0 is the weapon hand: the left controller in Left Handed mode. */
+        const XrPosef *gp = (h == 0) == !lhSwap ? &xr_grip_pose_right : &xr_grip_pose_left;
 
         if (cooldown[h] > 0.0f) cooldown[h] -= dt;
         if (!valid) { have_prev[h] = 0; continue; }
@@ -1834,16 +1852,25 @@ static void VR_AlienSwipeUpdate(float unitsPerMetre)
         rel[0] = (hw->vx - Player->ObWorld.vx) / unitsPerMetre;
         rel[1] = (hw->vy - Player->ObWorld.vy) / unitsPerMetre;
         rel[2] = (hw->vz - Player->ObWorld.vz) / unitsPerMetre;
+        raw[0] = gp->position.x - head[0];
+        raw[1] = gp->position.y - head[1];
+        raw[2] = gp->position.z - head[2];
         if (!have_prev[h] || snapped) {
             prev_rel[h][0] = rel[0]; prev_rel[h][1] = rel[1]; prev_rel[h][2] = rel[2];
+            prev_raw[h][0] = raw[0]; prev_raw[h][1] = raw[1]; prev_raw[h][2] = raw[2];
             have_prev[h] = 1;
             continue;
         }
         v[0] = (rel[0] - prev_rel[h][0]) / dt;
         v[1] = (rel[1] - prev_rel[h][1]) / dt;
         v[2] = (rel[2] - prev_rel[h][2]) / dt;
+        rv[0] = (raw[0] - prev_raw[h][0]) / dt;
+        rv[1] = (raw[1] - prev_raw[h][1]) / dt;
+        rv[2] = (raw[2] - prev_raw[h][2]) / dt;
         prev_rel[h][0] = rel[0]; prev_rel[h][1] = rel[1]; prev_rel[h][2] = rel[2];
-        speed = SDL_sqrtf(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        prev_raw[h][0] = raw[0]; prev_raw[h][1] = raw[1]; prev_raw[h][2] = raw[2];
+        speed  = SDL_sqrtf(rv[0]*rv[0] + rv[1]*rv[1] + rv[2]*rv[2]);   /* the real swing */
+        wspeed = SDL_sqrtf(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);         /* for its direction */
 
         if (speed < VR_SWIPE_REARM_MPS) armed[h] = 1;
         if (!armed[h] || cooldown[h] > 0.0f || speed < VR_SWIPE_SPEED_MPS) continue;
@@ -1863,9 +1890,15 @@ static void VR_AlienSwipeUpdate(float unitsPerMetre)
             tip.vx = hw->vx + (int)(fwd[0] * tipu);
             tip.vy = hw->vy + (int)(fwd[1] * tipu);
             tip.vz = hw->vz + (int)(fwd[2] * tipu);
-            dir.vx = (int)(v[0] / speed * 65536.0f);
-            dir.vy = (int)(v[1] / speed * 65536.0f);
-            dir.vz = (int)(v[2] / speed * 65536.0f);
+            if (wspeed > 0.001f) {
+                dir.vx = (int)(v[0] / wspeed * 65536.0f);
+                dir.vy = (int)(v[1] / wspeed * 65536.0f);
+                dir.vz = (int)(v[2] / wspeed * 65536.0f);
+            } else {   /* no world motion to go by: along the claws */
+                dir.vx = (int)(fwd[0] / flen * 65536.0f);
+                dir.vy = (int)(fwd[1] / flen * 65536.0f);
+                dir.vz = (int)(fwd[2] / flen * 65536.0f);
+            }
             if (VR_AlienSwipeHit(&tip, &dir, (int)(VR_SWIPE_REACH_M * unitsPerMetre))) {
                 if (h) XR_Haptic_Left(1.0f, 80.0f);
                 else   XR_Haptic_Right(1.0f, 80.0f);

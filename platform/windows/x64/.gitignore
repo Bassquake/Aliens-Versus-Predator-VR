@@ -8,3 +8,4 @@
 !*.filters
 !*.user
 !*.sln
+!*.cmake

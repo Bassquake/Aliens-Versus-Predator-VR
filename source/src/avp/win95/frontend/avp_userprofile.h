@@ -259,7 +259,7 @@ typedef struct
 	unsigned char DisableJetpackCheat;
 	/* VR Configuration "Hold Weapon with Left Grip if close to it". Stored INVERTED - it
 	   defaults to Yes, and a zero byte must decode to the default. 0 = Yes, 1 = No. */
-	unsigned char TwoHandProximityOff;
+	unsigned char ReservedWasTwoHandProximityOff; //"Opposing Grip Works Only If Controllers Are Close", replaced 2026-10-12 - byte kept so the blob layout does not shift
 	/* VR Configuration "Left Handed". 0 = No (default), 1 = Yes. */
 	unsigned char LeftHanded;
 	/* VR Controls / Joystick Configuration Y-axis deadzones. The X ones are the older
@@ -275,7 +275,11 @@ typedef struct
 	/* Alien Controller Configuration "Climb by keeping button pressed?". Stored plain:
 	   the default is No, which is the zero every older profile has here. */
 	unsigned char AlienClimbHoldToClimb;      //0=No (default), 1=Yes
-	unsigned char ExtReserved[6];
+	/* VR Controls "Grip Weapon With Opposing Grip Button". Stored INVERTED - it defaults
+	   to Yes, and the zero every older profile has here must decode to that. A fresh byte
+	   rather than reusing the proximity option's, whose No meant something else. */
+	unsigned char OpposingGripOff;            //0=Yes (default), 1=No
+	unsigned char ExtReserved[5];
 
 } AVP_USER_PROFILE;
 

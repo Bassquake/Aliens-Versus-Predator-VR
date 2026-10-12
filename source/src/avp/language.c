@@ -371,8 +371,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AUTOTWOHANDED_HELP: return "Bring your left hand to the front of the Pulse Rifle, Smart Gun, Grenade Launcher, Flamethrower or Predator Rifle and it takes hold of the weapon. Move it away to let go.";
 			case TEXTSTRING_AUTOTWOHANDED_OFF:  return "Off";
 			case TEXTSTRING_AUTOTWOHANDED_ON:   return "On (Default)";
-			case TEXTSTRING_TWOHANDPROXIMITY:      return "Opposing Grip Works Only If Controllers Are Close";
-			case TEXTSTRING_TWOHANDPROXIMITY_HELP: return "Yes: hold the grip on your other controller with it near the front of a two-handed weapon to take hold of it. No: holding that grip takes hold wherever the controller is.";
+			case TEXTSTRING_TWOHANDPROXIMITY:      return "Grip Weapon With Opposing Grip Button";
+			case TEXTSTRING_TWOHANDPROXIMITY_HELP: return "Yes: hold the grip on your other controller to hold a two-handed weapon with both hands; the weapon then aims along the line between your controllers. The Marine cannot bind that grip to anything but its Jetpack; the Alien and Predator can, and an action there takes priority over holding the weapon. No: that grip is an ordinary control you can bind to anything.";
 			case TEXTSTRING_TWOHANDPROXIMITY_NO:   return "No";
 			case TEXTSTRING_TWOHANDPROXIMITY_YES:  return "Yes (Default)";
 			case TEXTSTRING_LEFTHANDED:      return "Left-Handed Mode";

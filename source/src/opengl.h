@@ -180,6 +180,11 @@ extern int VR_ActionTapShort(int action);
    always possible, since Climb may share any control. Called after a profile loads,
    and when the hold-to-climb option changes (harmless either way). */
 extern void VR_ClimbBindingDropHold(void);
+
+/* "Grip Weapon With Opposing Grip Button": whether Left Grip may be bound to this
+   species' action, and the clean-up when the option is on (main.c). */
+extern int  VR_LeftGripBindable(int species, int action);
+extern void VR_DropLeftGripBindings(void);
 extern int VR_ActionLong(int action);
 
 /* World Scale, as a menu setting.

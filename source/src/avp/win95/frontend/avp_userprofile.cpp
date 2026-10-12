@@ -66,7 +66,7 @@ extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int AutoTwoHandedWeapons;
-extern int TwoHandProximityGrip;
+extern int OpposingGripHoldsWeapon;
 extern int VRLeftHanded;
 extern int AlienClimbHoldToClimb;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
@@ -411,7 +411,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRClimbVignetteStrength = 5;
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
 	AutoTwoHandedWeapons = 1; /* left hand takes the grip when brought to it */
-	TwoHandProximityGrip = 1; /* the left hand must be near the weapon to take hold */
+	OpposingGripHoldsWeapon = 1; /* the left grip holds a two-handed weapon */
 	VRLeftHanded = 0;         /* right-handed */
 	AlienClimbHoldToClimb = 0; /* a Climb press grabs; no need to keep holding it */
 	LeftStickDeadzone = 2;
@@ -564,7 +564,7 @@ extern void GetSettingsFromUserProfile(void)
 	/* Stored inverted so a zeroed Padding byte in an older profile reads as On. */
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
 	AutoTwoHandedWeapons =			!UserProfilePtr->AutoTwoHandedDisabled;
-	TwoHandProximityGrip =			UserProfilePtr->TwoHandProximityOff ? 0 : 1;
+	OpposingGripHoldsWeapon =		UserProfilePtr->OpposingGripOff ? 0 : 1;
 	VRLeftHanded =					UserProfilePtr->LeftHanded ? 1 : 0;
 	AlienClimbHoldToClimb =			UserProfilePtr->AlienClimbHoldToClimb ? 1 : 0;
 	LeftStickDeadzone =			UserProfilePtr->LeftStickDeadzonePlus1
@@ -631,6 +631,8 @@ extern void GetSettingsFromUserProfile(void)
 		}
 		/* AlienClimbHoldToClimb is read above, so the hold-mode rule can apply now. */
 		VR_ClimbBindingDropHold();
+		/* Likewise OpposingGripHoldsWeapon: with it on, Left Grip is the weapon grip. */
+		VR_DropLeftGripBindings();
 	}
 	/* Game controller. Same all-or-nothing validation as the VR bindings above: an
 	   out-of-range or duplicated set is rejected wholesale rather than half-applied,
@@ -766,7 +768,8 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRClimbVignetteStrengthPlus1 = (unsigned char)(VRClimbVignetteStrength + 1);
 	profilePtr->MarineLeftArmHidden =	!MarineLeftArmVisible;
 	profilePtr->AutoTwoHandedDisabled =	(unsigned char)(AutoTwoHandedWeapons ? 0 : 1);
-	profilePtr->TwoHandProximityOff =	(unsigned char)(TwoHandProximityGrip ? 0 : 1);
+	profilePtr->ReservedWasTwoHandProximityOff = 0;
+	profilePtr->OpposingGripOff =		(unsigned char)(OpposingGripHoldsWeapon ? 0 : 1);
 	profilePtr->LeftHanded =		(unsigned char)(VRLeftHanded ? 1 : 0);
 	profilePtr->AlienClimbHoldToClimb =	(unsigned char)(AlienClimbHoldToClimb ? 1 : 0);
 	profilePtr->LeftStickDeadzonePlus1 =	(unsigned char)(LeftStickDeadzone + 1);

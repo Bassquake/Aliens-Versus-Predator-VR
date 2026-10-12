@@ -1253,7 +1253,7 @@ SECTION_DATA *VR_FindRightHandSection(HMODELCONTROLLER *hmc)
    VR_RenderWeaponSplitHands below. */
 float vr_left_anim_blend = 0.0f;
 
-/* Two-handed weapons: HOLD THE LEFT GRIP with the left controller near the gun.
+/* Two-handed weapons: HOLD THE LEFT GRIP to take hold of the gun with the left hand.
  *
  * This used to be automatic ("Auto Two-Handed Weapons", a VR Configuration option),
  * which took hold whenever the hand merely came close. It now needs the left grip held
@@ -1261,48 +1261,63 @@ float vr_left_anim_blend = 0.0f;
  * AutoTwoHandedWeapons survives only because the user profile still carries its byte -
  * nothing reads it any more.
  *
- * On a two-handed weapon, bringing the left controller up to where the left hand sits
- * on the gun snaps the left arm onto the weapon's own grip - the pose the model was
- * authored with - and holds it there until the controller is pulled away again. It is
- * the same handover the animations use (vr_left_anim_blend): at 1 the left rig's root
- * matches the primary's and its palm lands on the primary's palm, so the arm is drawn
- * exactly as an un-split rig would draw it, on the RIGHT controller's weapon.
+ * On a two-handed weapon, holding the left grip snaps the left arm onto the weapon's
+ * own grip - the pose the model was authored with - wherever the left controller is,
+ * and holds it there until the grip is released. It is the same handover the animations
+ * use (vr_left_anim_blend): at 1 the left rig's root matches the primary's and its palm
+ * lands on the primary's palm, so the arm is drawn exactly as an un-split rig would draw
+ * it, on the RIGHT controller's weapon.
  *
- * The distance is measured from where the left palm WOULD be drawn on the controller
- * (grip plus this weapon's trim) to that authored palm position, so "close" means
- * close to the foregrip of this particular gun, wherever its model puts it. Hysteresis
- * keeps it from chattering at the edge. Distances are physical, via vr_y_scale. */
+ * There used to be a PROXIMITY requirement (the controller within 20 cm of the
+ * foregrip) and a release when the two-hand line swung more than 55 degrees off the
+ * right controller. Both were removed on 2026-10-12 with the option that governed them:
+ * the grip now always takes hold, and the weapon always aims at the left controller. */
 int AutoTwoHandedWeapons = 1;   /* profile byte only - see above */
 
-/* VR Configuration "Hold Weapon with Left Grip if close to it".
- *   0 = No: holding the left grip takes hold of the weapon wherever the left
- *       hand is. Two-handed AIMING still needs the hands at least VR_TWO_HAND_MIN_SEP_M
- *       apart and within VR_TWO_HAND_MAX_DEG of the gun's line; outside that the hand
- *       stays on the gun and the right controller keeps aiming.
- *   1 = Yes (default): the left hand must also be near the gun (VR_TWO_HAND_ENGAGE_M of
- *       the detection point) to take hold, and a hand position that cannot aim lets go. */
-int TwoHandProximityGrip = 1;
+/* VR Controls "Grip Weapon With Opposing Grip Button" (2026-10-12; replaced "Opposing
+ * Grip Works Only If Controllers Are Close").
+ *   1 = Yes (default): holding the left grip takes hold of a two-handed weapon wherever
+ *       the left hand is, and the weapon AIMS along the line to the left controller at
+ *       any angle. Only hands closer than VR_TWO_HAND_MIN_SEP_M, which give no usable
+ *       line, leave the aim to the right controller. Left Grip is then reserved: it is
+ *       not offered in the Controller Configuration lists, except for the Marine's
+ *       Jetpack, which keeps it (VR_TwoHandGripHeld stands down while the jetpack is
+ *       equipped) - see VR_LeftGripBindable in main.c.
+ *   0 = No: the left grip never takes hold of the weapon, and Left Grip is an ordinary
+ *       bindable control. */
+int OpposingGripHoldsWeapon = 1;
 extern int xr_left_squeeze_gameplay_pressed;   /* main.c: left grip held, gameplay only */
 
-/* Is the left grip asking for a two-handed hold? Not for a Marine with the jetpack: the
-   jetpack is on the left grip by default, so a hold there means "fly", and taking hold of
-   the gun as well would tie the two together. */
+/* Is the left grip asking for a two-handed hold? Not for a Marine with the jetpack ON
+   that grip (its default): a hold there means "fly", and taking hold of the gun as well
+   would tie the two together. */
 static int VR_TwoHandGripHeld(void)
 {
+    if (!OpposingGripHoldsWeapon) return 0;   /* Left Grip is an ordinary binding then */
     if (!xr_left_squeeze_gameplay_pressed) return 0;
-    if (AvP.PlayerType == I_Marine && Player && Player->ObStrategyBlock) {
-        PLAYER_STATUS *ps = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
-        if (ps && ps->JetpackEnabled) return 0;
+    /* An ACTION on Left Grip (plain or Hold) takes priority over holding the weapon.
+       The Marine's Jetpack only while it is equipped; anything else the Alien or the
+       Predator put there, always - only the Marine has Left Grip withheld from its
+       binding lists (VR_LeftGripBindable, main.c). Moved to another control, nothing
+       competes and the grip holds the gun (2026-10-12). */
+    {
+        int sp = (int)AvP.PlayerType, a;
+        if (sp >= 0 && sp < VR_SPECIES_COUNT)
+            for (a = 0; a < VR_ACT_COUNT; a++) {
+                if (VRBinding[sp][a] == VR_SRC_NONE
+                    || VR_BIND_SRC(VRBinding[sp][a]) != VR_SRC_L_GRIP) continue;
+                if (sp == I_Marine && a == VR_ACT_SPECIAL) {
+                    PLAYER_STATUS *ps = (Player && Player->ObStrategyBlock)
+                        ? (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr : NULL;
+                    if (ps && ps->JetpackEnabled) return 0;
+                } else {
+                    return 0;
+                }
+            }
     }
     return 1;
 }
-#define VR_TWO_HAND_ENGAGE_M   0.20f   /* within 20 cm of the grip: take hold */
-#define VR_TWO_HAND_RELEASE_M  0.30f   /* beyond 30 cm: let go */
 #define VR_TWO_HAND_BLEND_SECS 0.12f   /* ease on and off */
-/* Where the grab is DETECTED: this far back from the gun's foregrip, along the line to
-   the right hand (never past it), so the left hand need not reach all the way out.
-   Detection only - the hand is still drawn on the foregrip once it takes hold. */
-#define VR_TWO_HAND_DETECT_BACK_M 0.10f
 static float vr_two_hand_units_per_m = (float)GAME_UNITS_PER_METRE;  /* set per frame */
 
 static int VR_WeaponIsTwoHanded(int weaponID)
@@ -1356,10 +1371,6 @@ static float vr_two_hand_grip_local[3];
 static int   vr_two_hand_grip_weapon = -1;
 static float vr_two_hand_blend_out   = 0.0f;  /* smoothstepped grip blend, last frame */
 static int   vr_two_hand_blend_frame = -1;    /* frame it was last advanced on */
-/* Set by VR_ApplyTwoHandedAim when the two-hand line has swung too far from where the
-   right controller is pointing (or the hands are almost on top of each other): the grip
-   is released, so the gun cannot be dragged round to point somewhere silly. */
-static int   vr_two_hand_pose_ok     = 1;
 
 /* WHERE THE REAL HAND IS ON THE MODEL'S HAND.
  *
@@ -1530,7 +1541,6 @@ static void VR_SectionLocal(const SECTION_DATA *sd, VECTORCH w, float l[3])
         l[i] = (n2 > 0.000001f) ? (r[i][0]*d[0] + r[i][1]*d[1] + r[i][2]*d[2]) / n2 : 0.0f;
     }
 }
-#define VR_TWO_HAND_MAX_DEG  55.0f     /* beyond this off the right controller's aim: let go */
 #define VR_TWO_HAND_MIN_SEP_M 0.10f    /* hands closer than this give no usable line */
 
 /* Where the left palm is drawn relative to the left controller: the grip plus this
@@ -1558,14 +1568,7 @@ static float VR_TwoHandGripBlend(int weaponID, float distUnits)
             engaged = 0;
             t = 0.0f;
         }
-        if (distUnits < 0.0f || (TwoHandProximityGrip && !vr_two_hand_pose_ok))
-            engaged = 0;
-        else if (!TwoHandProximityGrip)
-            engaged = 1;                   /* the grip alone takes hold */
-        else if (engaged)
-            engaged = (distUnits < VR_TWO_HAND_RELEASE_M * vr_two_hand_units_per_m);
-        else
-            engaged = (distUnits < VR_TWO_HAND_ENGAGE_M * vr_two_hand_units_per_m);
+        engaged = (distUnits >= 0.0f);     /* the grip alone takes hold */
 
         if (engaged) { t += step; if (t > 1.0f) t = 1.0f; }
         else         { t -= step; if (t < 0.0f) t = 0.0f; }
@@ -1881,8 +1884,6 @@ static void VR_ApplyTwoHandedAim(float unitsPerMetre)
     VECTORCH lt;
     float trim_scale;
 
-    vr_two_hand_pose_ok = 1;
-
     /* Only while the grip is genuinely held THIS frame: the blend is advanced by the
        split draw, so if that did not run last frame (weapon released for a reload,
        left hand lost, a non-two-handed weapon) the stored value is stale - not 0. */
@@ -1915,7 +1916,7 @@ static void VR_ApplyTwoHandedAim(float unitsPerMetre)
     w[1] = (float)(lt.vy - vr_right_hand_world.vy);
     w[2] = (float)(lt.vz - vr_right_hand_world.vz);
     len = SDL_sqrtf(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
-    if (len < VR_TWO_HAND_MIN_SEP_M * unitsPerMetre) { vr_two_hand_pose_ok = 0; return; }
+    if (len < VR_TWO_HAND_MIN_SEP_M * unitsPerMetre) return;   /* no usable line: right hand aims */
     w[0] /= len; w[1] /= len; w[2] /= len;
 
     len = SDL_sqrtf(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
@@ -1926,7 +1927,10 @@ static void VR_ApplyTwoHandedAim(float unitsPerMetre)
     if (dot >  1.0f) dot =  1.0f;
     if (dot < -1.0f) dot = -1.0f;
     ang = SDL_acosf(dot);
-    if (ang > VR_TWO_HAND_MAX_DEG * (SDL_PI_F / 180.0f)) { vr_two_hand_pose_ok = 0; return; }
+    /* No angle limit: the weapon follows the left controller wherever it goes. A 55
+       degree let-go used to sit here, and past it the left HAND MODEL stayed on the gun
+       while the gun went back to the right controller alone (2026-10-12). Only the
+       degenerate near-180 case, with no unique rotation axis, falls through below. */
 
     blend = vr_two_hand_blend_out;
     if (blend <= 0.0f || ang < 0.0001f) return;
@@ -2239,29 +2243,9 @@ static void VR_RenderWeaponSplitHands(const VR_LEFT_ARM_DESC *desc, int weaponID
            larger of the two blends wins, so neither can pull the arm off the other. */
         float leftBlend = vr_left_anim_blend;
         {
-            float distUnits = -1.0f;
-            if (VR_TwoHandGripHeld() && VR_WeaponIsTwoHanded(weaponID) && larmR
-                && !TwoHandProximityGrip) {
-                distUnits = 0.0f;   /* no proximity test: the grip alone takes hold */
-            } else if (VR_TwoHandGripHeld() && VR_WeaponIsTwoHanded(weaponID) && larmR) {
-                /* The detection point: the foregrip, pulled back toward the right hand
-                   by VR_TWO_HAND_DETECT_BACK_M. */
-                float px = (float)gripPoint.vx, py = (float)gripPoint.vy, pz = (float)gripPoint.vz;
-                float bx = (float)vr_right_hand_world.vx - px;
-                float by = (float)vr_right_hand_world.vy - py;
-                float bz = (float)vr_right_hand_world.vz - pz;
-                float bl = SDL_sqrtf(bx*bx + by*by + bz*bz);
-                float back = VR_TWO_HAND_DETECT_BACK_M * vr_two_hand_units_per_m;
-                float dx, dy, dz;
-                if (bl > 1.0f) {
-                    if (back > bl) back = bl;
-                    px += bx / bl * back; py += by / bl * back; pz += bz / bl * back;
-                }
-                dx = (float)leftRef.vx - px;
-                dy = (float)leftRef.vy - py;
-                dz = (float)leftRef.vz - pz;
-                distUnits = SDL_sqrtf(dx*dx + dy*dy + dz*dz);
-            }
+            /* No proximity test: the grip alone takes hold (see OpposingGripHoldsWeapon). */
+            float distUnits = (VR_TwoHandGripHeld() && VR_WeaponIsTwoHanded(weaponID) && larmR)
+                            ? 0.0f : -1.0f;
             {
                 float grip = VR_TwoHandGripBlend(weaponID, distUnits);
                 if (grip > leftBlend) leftBlend = grip;

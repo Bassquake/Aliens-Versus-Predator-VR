@@ -1407,7 +1407,8 @@ static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
 static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCount,
                                int speciesCount, int lastSource, int holdFlag,
                                int (*canHold)(int), int (*bindable)(int),
-                               int (*mayShare)(int, int))
+                               int (*mayShare)(int, int),
+                               int (*rowBindable)(int species, int action, int source))
 {
 	int order[2 * 64 + 1];
 	int count = 0, pos = 0, idx, sp, act, guard, s;
@@ -1423,6 +1424,7 @@ static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCo
 	for (s = 1; s <= lastSource && s < 64; s++)
 	{
 		if (bindable && !bindable(s)) continue;   /* reserved (the pad's Start/Back) */
+		if (rowBindable && !rowBindable(sp, act, s)) continue;   /* reserved for this row */
 		order[count++] = s;
 		if (canHold(s)) order[count++] = s | holdFlag;
 	}
@@ -1452,6 +1454,11 @@ static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCo
 
 static int VR_SourceCanHoldFn(int s)  { return VR_SOURCE_CAN_HOLD(s); }
 static int VR_ActionsMayShareFn(int a, int b) { return VR_ACTIONS_MAY_SHARE(a, b); }
+/* Left Grip is the weapon grip while "Grip Weapon With Opposing Grip Button" is on. */
+static int VR_RowBindableFn(int sp, int act, int s)
+{
+	return s != VR_SRC_L_GRIP || VR_LeftGripBindable(sp, act);
+}
 static int Pad_SourceCanHoldFn(int s) { return PAD_SOURCE_CAN_HOLD(s); }
 static int Pad_SourceBindableFn(int s) { return PAD_SOURCE_BINDABLE(s); }
 
@@ -1464,7 +1471,7 @@ static int VR_CycleBinding(int *valuePtr, int maxValue, int forward)
 	return CycleBindingInTable(valuePtr, forward, &VRBinding[0][0], VR_ACT_COUNT,
 	                           VR_SPECIES_COUNT, maxValue, VR_BIND_HOLD,
 	                           climbNoHold ? VR_SourceNoHoldFn : VR_SourceCanHoldFn,
-	                           NULL, VR_ActionsMayShareFn);
+	                           NULL, VR_ActionsMayShareFn, VR_RowBindableFn);
 }
 
 /* The pad counterpart. Start and Back - reserved by the frontend - sit in the middle
@@ -1474,7 +1481,7 @@ static int Pad_CycleBinding(int *valuePtr, int maxValue, int forward)
 {
 	return CycleBindingInTable(valuePtr, forward, &PadBinding[0][0], PAD_ACT_COUNT,
 	                           PAD_SPECIES_COUNT, maxValue, PAD_BIND_HOLD,
-	                           Pad_SourceCanHoldFn, Pad_SourceBindableFn, NULL);
+	                           Pad_SourceCanHoldFn, Pad_SourceBindableFn, NULL, NULL);
 }
 
 /* Rows that do not apply to the current Turning Mode: greyed out and skipped by the
@@ -3152,6 +3159,12 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 					if (elementPtr->c.SliderValuePtr == &AlienClimbHoldToClimb)
 						VR_ClimbBindingDropHold();
 				}
+				/* Turning on the opposing-grip weapon hold frees Left Grip. */
+				{
+					extern int OpposingGripHoldsWeapon;
+					if (elementPtr->c.SliderValuePtr == &OpposingGripHoldsWeapon)
+						VR_DropLeftGripBindings();
+				}
 			}
 			break;
 		}
@@ -4093,6 +4106,23 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 				{
 					bindingIsHold = VR_BIND_IS_HOLD(sliderValue);
 					sliderValue   = VR_BIND_SRC(sliderValue);
+					/* Left Handed swaps the two controllers' TRIGGERS and GRIPS at the
+					   input poll (main.c), so a binding stored as "Right Grip" is pressed
+					   with the LEFT controller's grip. Name what the player actually
+					   presses. Display only - the stored value and "(Default)" are
+					   unchanged, and face buttons and sticks do not swap. */
+					{
+						extern int VRLeftHanded;
+						if (VRLeftHanded) {
+							switch (sliderValue) {
+								case VR_SRC_R_TRIGGER: sliderValue = VR_SRC_L_TRIGGER; break;
+								case VR_SRC_L_TRIGGER: sliderValue = VR_SRC_R_TRIGGER; break;
+								case VR_SRC_R_GRIP:    sliderValue = VR_SRC_L_GRIP;    break;
+								case VR_SRC_L_GRIP:    sliderValue = VR_SRC_R_GRIP;    break;
+								default: break;
+							}
+						}
+					}
 				}
 				else if (val >= padFirst && val < padFirst + PAD_SPECIES_COUNT*PAD_ACT_COUNT)
 				{

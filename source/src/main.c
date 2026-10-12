@@ -761,6 +761,33 @@ int VR_Reach(int range)
 int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;
 const int VRBindingDefault[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;
 
+/* With "Grip Weapon With Opposing Grip Button" = Yes, Left Grip holds the weapon and is
+   not offered as a binding to the MARINE - except to its Jetpack, which shares it as it
+   always has (the gun-grip stands down while the jetpack is equipped and on that grip).
+   The Alien and the Predator keep it bindable (user, 2026-10-12): they have no jetpack,
+   and an action they put there takes priority over the weapon grip - see
+   VR_TwoHandGripHeld (avpview.c). */
+int VR_LeftGripBindable(int species, int action)
+{
+    extern int OpposingGripHoldsWeapon;
+    if (!OpposingGripHoldsWeapon || species != I_Marine) return 1;
+    return action == VR_ACT_SPECIAL;
+}
+
+/* Turning that option on (or loading a profile with it on) unbinds any action other
+   than the Marine's Jetpack that sits on Left Grip, plain or Hold. Unbound rather than
+   moved: there is no free control that is right for every action. */
+void VR_DropLeftGripBindings(void)
+{
+    int sp, a;
+    for (sp = 0; sp < VR_SPECIES_COUNT; sp++)
+        for (a = 0; a < VR_ACT_COUNT; a++)
+            if (VR_BIND_SRC(VRBinding[sp][a]) == VR_SRC_L_GRIP
+                && VRBinding[sp][a] != VR_SRC_NONE
+                && !VR_LeftGripBindable(sp, a))
+                VRBinding[sp][a] = VR_SRC_NONE;
+}
+
 void VR_ClimbBindingDropHold(void)
 {
     int *climb = &VRBinding[I_Alien][VR_ACT_CLIMB];
@@ -793,7 +820,7 @@ int VRClimbVignetteOn   = 1;
 int VRClimbVignetteStrength = 5;
 int MarineLeftArmVisible = 1;
 int AutoTwoHandedWeapons = 1;   /* defined in avpview.c on VR builds; inert here */
-int TwoHandProximityGrip = 1;   /* defined in avpview.c on VR builds; inert here */
+int OpposingGripHoldsWeapon = 1;   /* defined in avpview.c on VR builds; inert here */
 int VRLeftHanded = 0;           /* defined in avpview.c on VR builds; inert here */
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;

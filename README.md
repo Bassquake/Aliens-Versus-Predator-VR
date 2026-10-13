@@ -3,28 +3,17 @@
 This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below.
 
 > [!TIP]
-> Check the new 1.1 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
+> Check the new 1.2 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
 
-## What's new in 1.1?
-- Fix Alien view getting stuck on zoomed in when eat heads.
-- Change Alien wall walking to be crouching instead. Its still walk to wall and press B to activate wall walking.
-- Add deadzones for joysticks on both VR controllers and gamepads.
-- Add option to enlarge Mission Objectives text. Go to Audio/Visual Options and turn on Enlarge Messages Text.
-- Have changed the background in menus to match Steam. You can turn it off and have the starry background back by going to Audio/Visual Options and change Use Video Background for Menu to Off.
-- Add joysticks and dpad and 'hold' options in the Controls configuration options.
-- Manual Reload is now Hold A button as removed the touch controllers.
-- Fix for Jetpack bug in movement stop working.
-- Stop head clipping through ceiling with Jetpack.
-- Adjusted sizes of hands/arms/weapons so they’re less comical in VR.
-- Reduce jittering on Predator arms in VR.
-- Changed Predator Recall Disc to Hold B button. NOTE: Its a good idea to Reset to Defaults the key mapping so any new changes gets updated in your profile. You will need to re-edit your mapping.
-- Left-Handed Mode added to Controls > General VR Configuration. Edit button mappings to adjust how you want.
-- Two-handed weapons is done by holding the opposing grip trigger. You can have it work if grip controller is close to the other controller or not. Set it in General VR Configuration at Opposing Grip Works Only If Controllers Are Close.
-- NOTE: Two-handed weapons won't work if have Jetpack which is in Bonus Missions. Think of it as one of your hands occupied by controlling Jetpack!
-- You can now physically punch and attack using Predator Wristblades. Hold down secondary fire to power up your punch!
-- Can also physically scratch as Alien.
-- Reordered menus and wording slightly.
-- Fix to read Mad Max profile. Can be found [here](https://www.moddb.com/mods/aliens-versus-predator-classic-redux/downloads/complete-profile).
+## What's new in 1.2?
+- Preliminary RTX Remix code for flat x86 version.
+- Fix deadzone for joysticks.
+- Add separate deadzones for X and Y axis.
+- Added 2 more steps for Adjust HUD Elements to bring them in to field of view more.
+- Refine Alien climb options. Can hold button down for climbing as an option or change to any other button. Reset to defaults your current key mapped settings to avoid conflicts. Then make your changes.
+- Adjust attack range when swiping with controllers for Alien and Predator.
+- Removed 55° limit on gripping weapon. Option to disable gripping weapon is in Controls > VR Controls to free it up if want to use it for something else. Opposing grip is always overrides weapon grip if Marine has a - Jetpack. Can change jetpack button if you prefer.
+- Fix getting stuck on walls as Alien. Possibly fixed jetpack issue on certain angled ceilings as well.
 
 > [!TIP]
 > Re-center your view (hold Meta button) while standing before starting a level so things aren’t small!

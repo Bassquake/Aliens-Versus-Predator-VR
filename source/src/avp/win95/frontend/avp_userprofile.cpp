@@ -75,6 +75,7 @@ extern int RightStickDeadzone;
 extern int LeftStickDeadzoneY;
 extern int RightStickDeadzoneY;
 extern int VRWorldScaleIndex;
+extern int VREyeSeparationIndex;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
@@ -423,6 +424,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	PadInvertVertical = 0;
 	Pad_ResetBindings();
 	VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
+	VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;
 	/* Bindings keep whatever main.c initialised them to: those ARE the defaults. */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
@@ -581,6 +583,12 @@ extern void GetSettingsFromUserProfile(void)
 					: VR_WORLD_SCALE_DEFAULT_INDEX;
 	if (VRWorldScaleIndex < 0 || VRWorldScaleIndex > VR_WORLD_SCALE_MAX_INDEX)
 		VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
+	VREyeSeparationIndex =		UserProfilePtr->VREyeSeparationIndexPlus1
+					? UserProfilePtr->VREyeSeparationIndexPlus1 - 1 : VR_EYE_SEP_DEFAULT_INDEX;
+	if (VREyeSeparationIndex > VR_EYE_SEP_MAX_INDEX) VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;   /* untrusted blob */
+	/* The menu row is hidden, so a saved value could never be changed back: hold 100%
+	   while it stays hidden. Remove this line along with un-hiding the row. */
+	VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;
 	{
 		/* Stored as source+1; 0 means the profile predates the bindings, so that
 		   action keeps its default rather than becoming unbound. */
@@ -714,7 +722,9 @@ extern void GetSettingsFromUserProfile(void)
 	VRVignetteStrength =			UserProfilePtr->VRVignetteStrength;
 	GiveAllWeaponsCheatEnabled =		UserProfilePtr->GiveAllWeaponsCheat;
 	GodModeCheatEnabled =			UserProfilePtr->GodModeCheat;
-	DisableJetpackCheatEnabled =	UserProfilePtr->DisableJetpackCheat ? 1 : 0;
+	/* The Disable Jetpack row was removed from Extra Cheats, so a profile that saved it
+	   on must not strand the player without a jetpack and no way to turn it back. */
+	DisableJetpackCheatEnabled =	0;
 	/* Stored as (10 - speed) so a fresh/old profile (0) loads as full speed (10). */
 	EnemySpeedAlien =			10 - UserProfilePtr->EnemySpeedAlien;
 	EnemySpeedMarine =			10 - UserProfilePtr->EnemySpeedMarine;
@@ -777,6 +787,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->LeftStickDeadzoneYPlus1 =	(unsigned char)(LeftStickDeadzoneY + 1);
 	profilePtr->RightStickDeadzoneYPlus1 =	(unsigned char)(RightStickDeadzoneY + 1);
 	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);
+	profilePtr->VREyeSeparationIndexPlus1 =	(unsigned char)(VREyeSeparationIndex + 1);
 	{
 		int sp, i;
 		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)

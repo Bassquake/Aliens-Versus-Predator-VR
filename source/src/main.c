@@ -693,6 +693,7 @@ int Joystick_DeadZoneUnits(int isLookStick, int axisY)
     return (int)(StickDeadzoneFraction(isLookStick, axisY) * 65536.0f);
 }
 int VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
+int VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;   /* VR Comfort & Display "Eye Separation" */
 
 
 
@@ -4392,6 +4393,7 @@ int axes, balls, hats;
                 extern float vr_world_scale;
                 extern void  VR_WorldTuneAdjust(float delta);
                 extern void  VR_WorldTuneReset(void);
+                extern void  VR_EyeSepTuneAdjust(float delta);
                 extern int   xr_left_thumbstick_click_pressed;
                 extern int   xr_a_button_pressed;
                 extern int   xr_y_button_gameplay_pressed;
@@ -4412,12 +4414,13 @@ int axes, balls, hats;
 
                 if (vr_world_tune_active) {
                     Uint64 now = SDL_GetTicks();
-                    /* Y resets to 1.0 - quick way back to a known state. */
+                    /* Y resets both to the menu settings - the point to compare against. */
                     if (xr_y_button_gameplay_pressed) VR_WorldTuneReset();
+                    /* Up/down: Eye Separation in 10% steps, one per push. */
                     if (ry > 0.6f || ry < -0.6f) {
                         if (wt_coarse_armed) {
                             wt_coarse_armed = false;
-                            VR_WorldTuneAdjust(ry > 0.0f ? 0.10f : -0.10f);
+                            VR_EyeSepTuneAdjust(ry > 0.0f ? 0.10f : -0.10f);
                         }
                     } else {
                         wt_coarse_armed = true;

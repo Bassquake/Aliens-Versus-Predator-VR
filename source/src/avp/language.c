@@ -237,6 +237,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. A Hold option fires after holding the control for half a second, so one control can do two things. X and the stick directions cannot be held. A stick direction given an action stops moving or turning that way.";
 			case TEXTSTRING_VRWORLDSCALE:       return "World Scale (Default: 1.30)";
 			case TEXTSTRING_VRWORLDSCALE_HELP:  return "How large the world feels. Higher values make one real step cover more ground, so the world seems smaller.";
+			case TEXTSTRING_VREYESEPARATION:      return "Eye Separation (Default: 100%)";
+			case TEXTSTRING_VREYESEPARATION_HELP: return "Lower values make things look larger, higher values smaller, without changing your height. Combine with World Scale.";
 			case TEXTSTRING_LEFTSTICKDEADZONE:     return "Left Joystick X Deadzone";
 			case TEXTSTRING_LEFTSTICKDEADZONE_Y:   return "Left Joystick Y Deadzone";
 			case TEXTSTRING_LEFTSTICKDEADZONE_Y_HELP:return "How far the left stick must be pushed forward or back before it registers. Applies to VR controllers and to a gamepad, and stays with the left stick if the sticks are swapped.";

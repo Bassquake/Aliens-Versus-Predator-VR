@@ -4559,6 +4559,14 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 			   number is the whole point - "about a third along" is not something you
 			   can set deliberately or report back. Matched by the value POINTER, as
 			   the binding rows are, rather than by row position. */
+			if (elementPtr->c.SliderValuePtr == &VREyeSeparationIndex)
+			{
+				static char sepText[16];
+				snprintf(sepText, sizeof(sepText), "%d%%",
+				         (int)(VR_EyeSepFromIndex(*elementPtr->c.SliderValuePtr) * 100.0f + 0.5f));
+				RenderText(sepText, MENU_CENTREX+MENU_ELEMENT_SPACING+225, y,
+				           elementPtr->Brightness, AVPMENUFORMAT_LEFTJUSTIFIED);
+			}
 			if (elementPtr->c.SliderValuePtr == &VRWorldScaleIndex)
 			{
 				static char scaleText[16];

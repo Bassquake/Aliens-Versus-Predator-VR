@@ -909,6 +909,18 @@ void VR_TuneRenderHUD(void)
  * The value is live only - nothing is persisted. This shortens the loop for finding a
  * number; baking it in is a separate, deliberate edit. */
 int vr_world_tune_active = 0;
+/* Live Eye Separation override from the tuner; negative = follow the menu setting.
+   Same 0-200% range as the menu. */
+float vr_eye_sep_live = -1.0f;
+
+void VR_EyeSepTuneAdjust(float delta)
+{
+    if (vr_eye_sep_live < 0.0f) vr_eye_sep_live = VR_EyeSepFromIndex(VREyeSeparationIndex);
+    vr_eye_sep_live += delta;
+    if (vr_eye_sep_live < 0.0f) vr_eye_sep_live = 0.0f;
+    if (vr_eye_sep_live > 2.0f) vr_eye_sep_live = 2.0f;
+    SDL_Log("VRWORLD eye separation = %.0f%%", vr_eye_sep_live * 100.0f);
+}
 
 void VR_WorldTuneAdjust(float delta)
 {
@@ -921,19 +933,27 @@ void VR_WorldTuneAdjust(float delta)
 
 void VR_WorldTuneReset(void)
 {
-    vr_world_scale = 1.0f;
-    SDL_Log("VRWORLD scale reset to 1.000");
+    /* Back to the menu's values, not to 1.0 - so the reset is the point you compare
+       against. */
+    vr_world_scale  = VR_WorldScaleFromIndex(VRWorldScaleIndex);
+    vr_eye_sep_live = -1.0f;
+    SDL_Log("VRWORLD reset to the menu settings: scale %.2f, eye separation %.0f%%",
+            vr_world_scale, VR_EyeSepFromIndex(VREyeSeparationIndex) * 100.0f);
 }
 
 void VR_WorldTuneRenderHUD(void)
 {
     char line[80];
     if (!vr_world_tune_active) return;
-    RenderString("VR WORLD SCALE  (stick: left/right fine, up/down coarse)",
+    RenderString("VR TUNER  R stick: L/R world scale, U/D eye sep, Y resets",
                  20, 210, 0xFF00FFFF);
-    SDL_snprintf(line, sizeof(line), "  scale %.3f   (%.0f units/metre)",
+    SDL_snprintf(line, sizeof(line), "  world scale %.2f   (%.0f units/metre)",
                  vr_world_scale, vr_world_scale * (float)GAME_UNITS_PER_METRE);
     RenderString(line, 20, 226, 0xFFFFFF00);
+    SDL_snprintf(line, sizeof(line), "  eye separation %.0f%%",
+                 (vr_eye_sep_live >= 0.0f ? vr_eye_sep_live
+                                          : VR_EyeSepFromIndex(VREyeSeparationIndex)) * 100.0f);
+    RenderString(line, 20, 242, 0xFFFFFF00);
 }
 #else
 #define VR_WorldTuneRenderHUD() ((void)0)
@@ -4147,7 +4167,7 @@ void AvpShowViewsVR(void)
                     xr_space_name,
                     ref_head_y, game_eye_to_floor, cached_vr_y_scale,
                     GAME_UNITS_PER_METRE, vr_world_scale,
-                    ipd * 1000.0f, ipd * vr_y_scale);
+                    ipd * 1000.0f, ipd * vr_y_scale * VR_EyeSepFromIndex(VREyeSeparationIndex));
             /* Per-eye, because everything that can break stereo while leaving the
              * menus alone lives in these numbers: the pose the eye is placed at, the
              * frustum it is rendered with, and the target it is rendered into. Printed
@@ -4647,15 +4667,37 @@ void AvpShowViewsVR(void)
     int vr_view_is_dead = (vr_death_ps && !vr_death_ps->IsAlive && !MultiplayerObservedPlayer);
     #define VR_DEATH_MIN_HEAD_HEIGHT (GAME_UNITS_PER_METRE / 10) /* ~10 cm above the floor */
 
+    /* Eye Separation: the factor each eye's offset from the mid-eye point is scaled by. */
+    float vr_eye_sep_k = VR_EyeSepFromIndex(VREyeSeparationIndex);
+#if AVP_VR_WORLD_TUNER
+    if (vr_eye_sep_live >= 0.0f) vr_eye_sep_k = vr_eye_sep_live;
+#endif
+
     for (int eye = 0; eye < (int)view_count; eye++) {
+
+        /* This eye's position, pulled toward the mid-eye point by Eye Separation.
+         * Only the stereo baseline narrows: the mid-eye point, and so the head
+         * position, the hands (built from the raw grips), the HUD and the audio
+         * listener, are untouched. A narrower baseline is read by the eyes as a
+         * larger world, while the eye height above the floor stays the same. Every
+         * read of the eye position below goes through ep. */
+        XrVector3f ep = xr_views[eye].pose.position;
+        if ((vr_eye_sep_k < 0.999f || vr_eye_sep_k > 1.001f) && view_count >= 2) {
+            const float mx = (xr_views[0].pose.position.x + xr_views[1].pose.position.x) * 0.5f;
+            const float my = (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f;
+            const float mz = (xr_views[0].pose.position.z + xr_views[1].pose.position.z) * 0.5f;
+            ep.x = mx + (ep.x - mx) * vr_eye_sep_k;
+            ep.y = my + (ep.y - my) * vr_eye_sep_k;
+            ep.z = mz + (ep.z - mz) * vr_eye_sep_k;
+        }
 
         /* X/Z: room-scale delta relative to where we started (ref_head_x/z).
          * Y: absolute STAGE height — Player->ObWorld.vy is the game floor (feet),
          *    so camera = game_floor - physical_eye_height, aligning game floor with
          *    the VR environment floor regardless of game character height.
          * After a snap turn the X/Z delta is rotated into game coordinates. */
-        float phys_dx = xr_views[eye].pose.position.x - ref_head_x;
-        float phys_dz = xr_views[eye].pose.position.z - ref_head_z;
+        float phys_dx = ep.x - ref_head_x;
+        float phys_dz = ep.z - ref_head_z;
         if (xr_snap_yaw != 0) {
             float snap_rad = (float)xr_snap_yaw * SDL_PI_F / 2048.0f;
             float snap_s   = SDL_sinf(snap_rad);
@@ -4670,7 +4712,7 @@ void AvpShowViewsVR(void)
         Global_VDB_Ptr->VDB_World.vx = base_world.vx
             + (int)(phys_dx * vr_y_scale);
         Global_VDB_Ptr->VDB_World.vy = Player->ObWorld.vy
-            - (int)(VR_STAGE_Y(xr_views[eye].pose.position.y) * vr_y_scale)
+            - (int)(VR_STAGE_Y(ep.y) * vr_y_scale)
             + vr_crouch_drop;
         /* Dead: keep the head ~10 cm above the feet/floor (smaller vy = higher up)
          * so the collapsed death-drop scale can't sink the view through the floor. */
@@ -4684,7 +4726,7 @@ void AvpShowViewsVR(void)
         {
             /* Same truncation as the hands; see vr_eye_frac. */
             float fx = phys_dx * vr_y_scale;
-            float fy = VR_STAGE_Y(xr_views[eye].pose.position.y) * vr_y_scale;
+            float fy = VR_STAGE_Y(ep.y) * vr_y_scale;
             float fz = phys_dz * vr_y_scale;
             vr_eye_frac[0] =   fx - (float)(int)fx;
             vr_eye_frac[1] = -(fy - (float)(int)fy);
@@ -4760,7 +4802,7 @@ void AvpShowViewsVR(void)
              * standing geometry rather than to the collapsing live one. */
             VECTORCH off;
             off.vx =  (int)(phys_dx * vr_y_scale);
-            off.vy =  (int)((ref_head_y - VR_STAGE_Y(xr_views[eye].pose.position.y)) * vr_y_scale);
+            off.vy =  (int)((ref_head_y - VR_STAGE_Y(ep.y)) * vr_y_scale);
             off.vz = -(int)(phys_dz * vr_y_scale);
             RotateVector(&off, &climb_RT);          /* off = R * off */
             Global_VDB_Ptr->VDB_World.vx = base_world.vx + off.vx;

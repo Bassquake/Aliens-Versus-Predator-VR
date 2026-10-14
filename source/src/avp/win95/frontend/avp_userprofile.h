@@ -279,7 +279,10 @@ typedef struct
 	   to Yes, and the zero every older profile has here must decode to that. A fresh byte
 	   rather than reusing the proximity option's, whose No meant something else. */
 	unsigned char OpposingGripOff;            //0=Yes (default), 1=No
-	unsigned char ExtReserved[5];
+	/* VR Comfort & Display "Eye Separation", index + 1 (VR_EyeSepFromIndex: 10% a step).
+	   0 = unset -> VR_EYE_SEP_DEFAULT_INDEX (100%). */
+	unsigned char VREyeSeparationIndexPlus1;
+	unsigned char ExtReserved[4];
 
 } AVP_USER_PROFILE;
 

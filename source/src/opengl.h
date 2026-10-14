@@ -213,6 +213,16 @@ extern int VR_ActionLong(int action);
 extern int   VRWorldScaleIndex;   /* menu-editable, profile-stored */
 extern float vr_world_scale;      /* what the eye pass actually multiplies by */
 
+/* "Eye Separation" (VR Comfort & Display): narrows the two eye cameras about the
+ * mid-eye point and moves nothing else. World Scale sets eye separation, eye height and
+ * movement together; this splits the stereo cue off, so the world can look larger while
+ * the player stays the same height. 0% to 200% in 10% steps; the default is index 10
+ * (100%), stored +1 in the profile so a zero byte decodes to the default. */
+#define VR_EYE_SEP_MAX_INDEX          20        /* 20 * 10% = 200% */
+#define VR_EYE_SEP_DEFAULT_INDEX      10        /* 100% */
+#define VR_EyeSepFromIndex(i)         ((i) * 0.10f)
+extern int   VREyeSeparationIndex;  /* menu-editable, profile-stored */
+
 /* VR render diagnostics, compiled IN. Same dev-tool pattern as the two tuners: set to 1,
  * rebuild, and the diagnostics are on with no launch argument and no config file.
  *

@@ -223,6 +223,11 @@ extern float vr_world_scale;      /* what the eye pass actually multiplies by */
 #define VR_EyeSepFromIndex(i)         ((i) * 0.10f)
 extern int   VREyeSeparationIndex;  /* menu-editable, profile-stored */
 
+/* "Sitting Mode" (VR Comfort & Display): 0 = off (default), 1 = on. Lifts a seated head
+ * to a standing eye height and keeps the world scale at its standing value; see
+ * VR_SittingLiftFor in avpview.c. Profile byte SittingMode. */
+extern int   VRSittingMode;
+
 /* VR render diagnostics, compiled IN. Same dev-tool pattern as the two tuners: set to 1,
  * rebuild, and the diagnostics are on with no launch argument and no config file.
  *

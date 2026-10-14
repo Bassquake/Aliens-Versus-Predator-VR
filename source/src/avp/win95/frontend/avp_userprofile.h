@@ -282,7 +282,9 @@ typedef struct
 	/* VR Comfort & Display "Eye Separation", index + 1 (VR_EyeSepFromIndex: 10% a step).
 	   0 = unset -> VR_EYE_SEP_DEFAULT_INDEX (100%). */
 	unsigned char VREyeSeparationIndexPlus1;
-	unsigned char ExtReserved[4];
+	/* VR Comfort & Display "Sitting Mode": 0 = off (default), 1 = on. */
+	unsigned char SittingMode;
+	unsigned char ExtReserved[3];
 
 } AVP_USER_PROFILE;
 

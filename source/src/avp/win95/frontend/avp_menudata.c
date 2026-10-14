@@ -78,6 +78,7 @@ extern int LeftStickDeadzoneY;
 extern int RightStickDeadzoneY;
 extern int VRWorldScaleIndex;
 extern int VREyeSeparationIndex;
+extern int VRSittingMode;
 extern int HUDInsetLevel;
 /* "Swap Joysticks" - one setting, shown on General VR Configuration and on the flat
    Joystick Configuration screen. A single global rather than an array indexed by
@@ -288,6 +289,7 @@ static const AVPMENU_ELEMENT AvPMenu_VRConfig2Master[] =
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH}, {10}, {&VRClimbVignetteStrength},	{0},	TEXTSTRING_VRCLIMBVIGNETTE_STRENGTH_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_MARINELEFTARM},	{1}, {&MarineLeftArmVisible},	{TEXTSTRING_MARINELEFTARM_OFF},	TEXTSTRING_MARINELEFTARM_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRWORLDSCALE},	{VR_WORLD_SCALE_MAX_INDEX}, {&VRWorldScaleIndex},	{0},	TEXTSTRING_VRWORLDSCALE_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRSITTINGMODE},	{1}, {&VRSittingMode},	{TEXTSTRING_VRSITTINGMODE_OFF},	TEXTSTRING_VRSITTINGMODE_HELP},
 	/* Eye Separation row hidden (2026-10-14): the setting still loads, saves and applies,
 	   it just is not offered. Restore this line to bring it back.
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VREYESEPARATION},	{VR_EYE_SEP_MAX_INDEX}, {&VREyeSeparationIndex},	{0},	TEXTSTRING_VREYESEPARATION_HELP},

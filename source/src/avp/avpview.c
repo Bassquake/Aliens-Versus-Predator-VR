@@ -59,7 +59,30 @@ extern int         xr_view_pose_valid;
  * "VR scale", "VR eye" and "VR rig" lines below - kept because they are what resolved
  * the VR render bugs, off by default because some fire per weapon-state change. */
 extern int         vr_diag_enabled;
-#define VR_STAGE_Y(raw_y) ((raw_y) + xr_space_floor_offset_y)
+/* Sitting Mode lift, in metres: how far a SEATED head is raised to reach a standing eye
+ * height. Lives inside VR_STAGE_Y so the eyes, the hands and the head point all rise
+ * together - anything placed as (feet - height * vr_y_scale) has to get it, and every such
+ * site already goes through this macro. 0 when Sitting Mode is off. Recomputed per frame at
+ * the top of the eye pass in AvpShowViewsVR. */
+static float vr_sitting_lift_y = 0.0f;
+#define VR_STAGE_Y(raw_y) ((raw_y) + xr_space_floor_offset_y + vr_sitting_lift_y)
+
+/* The standing eye height a seated player is lifted to. Matches VR_NOMINAL_EYE_HEIGHT_M,
+ * the height the weapon reference is normalised to, so arm size is the same seated. */
+#define VR_SITTING_EYE_HEIGHT_M 1.65f
+
+/* The lift for a recentred head height (metres, without any lift). Only ever raises: a
+ * player already above the standing height keeps their own eye height. The 0.80 floor is
+ * the same band VR_REF_HEAD_MIN_M applies to the scale. */
+extern int VRSittingMode;   /* declared in opengl.h too, which is included further down */
+static float VR_SittingLiftFor(float unlifted_head_y)
+{
+    float lift;
+    if (!VRSittingMode || unlifted_head_y <= 0.01f) return 0.0f;
+    if (unlifted_head_y < 0.80f) unlifted_head_y = 0.80f;
+    lift = VR_SITTING_EYE_HEIGHT_M - unlifted_head_y;
+    return lift > 0.0f ? lift : 0.0f;
+}
 extern bool        xr_enabled;
 extern int         xr_session_running;
 extern VRSwapchain *vr_swapchains;
@@ -3934,6 +3957,21 @@ void AvpShowViewsVR(void)
     CheckIfMirroringIsRequired();
 #endif
 
+    /* SITTING MODE. The seated head height captured at recentre (without any lift) is
+     * kept in ref_head_y_unlifted; while the option is on, the gap between it and a
+     * standing eye height is added to every located Y (VR_STAGE_Y). Because ref_head_y
+     * is lifted by the same amount, the world scale (game_eye_to_floor / ref_head_y)
+     * comes out as it would standing, and the resting eye lands at the character's full
+     * eye height.
+     *
+     * Lifting the eye WITHOUT lifting ref_head_y is the trap the 2026-07 attempt fell
+     * into: vr_y_scale grows by the inverse of the lift and the eyeline comes back down
+     * by almost exactly the amount it was raised.
+     *
+     * Computed BEFORE eye_mid_y so the menu toggle takes effect on the same frame. */
+    static float ref_head_y_unlifted = 0.0f;   /* 0 = not captured yet */
+    vr_sitting_lift_y = VR_SittingLiftFor(ref_head_y_unlifted);
+
     /* Head centre — used for room-scale X/Z reference. */
     float eye_mid_x = 0.0f, eye_mid_y = 0.0f, eye_mid_z = 0.0f;
     if (view_count >= 2) {
@@ -3972,9 +4010,17 @@ void AvpShowViewsVR(void)
      * simply defers the capture by a frame or two when it is not. */
     if (!ref_captured && view_count > 0 && xr_view_pose_valid) {
         ref_head_x   = eye_mid_x;
-        ref_head_y   = eye_mid_y;
         ref_head_z   = eye_mid_z;
         ref_captured = true;
+        /* Keep the height WITHOUT the sitting lift (eye_mid_y carries the lift from the
+           previous capture), then work out the new lift from it. ref_head_y itself is
+           set just below, every frame. */
+        ref_head_y_unlifted = eye_mid_y - vr_sitting_lift_y;
+        {
+            float lift = VR_SittingLiftFor(ref_head_y_unlifted);
+            eye_mid_y += lift - vr_sitting_lift_y;
+            vr_sitting_lift_y = lift;
+        }
 
         /* Align VR heading: set xr_snap_yaw so the player's current physical
          * forward maps to the game's intended starting facing direction.
@@ -4008,6 +4054,10 @@ void AvpShowViewsVR(void)
                     xr_snap_yaw);
         }
     }
+    /* Every frame rather than only at capture, so switching Sitting Mode in the menu
+       moves the scale with the eye instead of waiting for a recentre. */
+    if (ref_captured)
+        ref_head_y = ref_head_y_unlifted + vr_sitting_lift_y;
 
     /* Scale STAGE Y so the user's physical standing height maps to the game
      * character's eye height.  Player->ObWorld is the feet (Bottom=0 in extents),

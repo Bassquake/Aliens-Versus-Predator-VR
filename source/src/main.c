@@ -694,6 +694,7 @@ int Joystick_DeadZoneUnits(int isLookStick, int axisY)
 }
 int VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 int VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;   /* VR Comfort & Display "Eye Separation" */
+int VRSittingMode = 0;                                 /* VR Comfort & Display "Sitting Mode" */
 
 
 

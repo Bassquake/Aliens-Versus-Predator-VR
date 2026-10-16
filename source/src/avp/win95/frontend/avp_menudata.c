@@ -1,3 +1,5 @@
+#include <ctype.h>
+#include <string.h>
 #include "3dc.h"
 #include "module.h"
 #include "inline.h"
@@ -21,6 +23,10 @@
 #include "detaillevels.h"
 #include "cd_player.h"
 #include "opengl.h"   /* VR_ACTION / VR_SOURCE and the VRBinding table */
+#include "relay_proto.h" /* RELAY_SERVER_LEN */
+
+extern char NetRelayServer[];  /* net.c: the Relay Server setting */
+extern AVPMENU AvPMenusData[];  /* defined further down */
 
 #define MPLAYER_SUPPORT 0
 
@@ -725,6 +731,8 @@ static AVPMENU_ELEMENT AvPMenu_Multiplayer[]=
 	{AVPMENU_ELEMENT_TEXTFIELD, 	{TEXTSTRING_MULTIPLAYER_PLAYERNAME},	{NET_PLAYERNAMELENGTH-1},	{(int*)MP_PlayerName},	{0},	TEXTSTRING_MULTIPLAYER_PLAYERNAME_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU, 	{TEXTSTRING_MULTIPLAYER_STARTGAME},	{AVPMENU_MULTIPLAYER_CONFIG},	{0},	{0},	TEXTSTRING_MULTIPLAYER_STARTGAME_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU, 	{TEXTSTRING_MULTIPLAYER_JOINGAME},	{AVPMENU_MULTIPLAYERJOINGAME},	{0},	{0},	TEXTSTRING_MULTIPLAYER_JOINGAME_HELP},
+	/* Saved to config.cfg when the player leaves this page (Relay_SaveIfChanged). */
+	{AVPMENU_ELEMENT_TEXTFIELD, 	{TEXTSTRING_MULTIPLAYER_RELAYSERVER},	{RELAY_SERVER_LEN-1},	{(int*)NetRelayServer},	{0},	TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP},
 
 	{AVPMENU_ELEMENT_ENDOFMENU}
 
@@ -1049,11 +1057,45 @@ static AVPMENU_ELEMENT AvPMenu_Multiplayer_DeleteConfig[] =
 };
 
 
+/* MakeJoiningMenu turns this into a _POINTER slider over JoiningStatusText, so it
+   can also show why an internet join failed - a reason the 1999 strings (indexed
+   by joiningGameStatus) have no entry for. */
 static AVPMENU_ELEMENT AvPMenu_Multiplayer_Joining[] =
 {
 	{AVPMENU_ELEMENT_DUMMYTEXTSLIDER, 	{TEXTSTRING_BLANK},	{1},	{&netGameData.joiningGameStatus},	{TEXTSTRING_MULTIPLAYER_WAITSTART},	TEXTSTRING_MULTIPLAYER_WAIT_HELP},
 	{AVPMENU_ELEMENT_ENDOFMENU}
 };
+static char *JoiningStatusText[JOINNETGAME_RELAYERROR + 1];
+static char  JoinFailedText[64];
+
+/* Called every frame the Joining screen is up. error: why the join failed, or NULL
+   while it is still in progress. A failure stays on screen, and Back - which goes
+   nowhere while joining - returns to the Multiplayer page. */
+void MakeJoiningMenu(const char *error)
+{
+	AVPMENU_ELEMENT *e = &AvPMenu_Multiplayer_Joining[0];
+	int i;
+
+	for (i = JOINNETGAME_WAITFORSTART; i <= JOINNETGAME_DONTHAVELEVEL; i++)
+		JoiningStatusText[i] = GetTextString(TEXTSTRING_MULTIPLAYER_WAITSTART + i);
+	JoiningStatusText[JOINNETGAME_RELAYERROR] = JoinFailedText;
+	e->ElementID = AVPMENU_ELEMENT_DUMMYTEXTSLIDER_POINTER;
+	e->d.TextSliderStringPointer = JoiningStatusText;
+
+	if (error) {
+		strncpy(JoinFailedText, error, sizeof JoinFailedText - 1);
+		JoinFailedText[sizeof JoinFailedText - 1] = '\0';
+		JoinFailedText[0] = (char)toupper((unsigned char)JoinFailedText[0]);
+		netGameData.joiningGameStatus = JOINNETGAME_RELAYERROR;
+		e->HelpString = TEXTSTRING_MULTIPLAYER_JOINFAILED_HELP;
+		AvPMenusData[AVPMENU_MULTIPLAYER_JOINING].ParentMenu = AVPMENU_MULTIPLAYER;
+	} else {
+		if (netGameData.joiningGameStatus == JOINNETGAME_RELAYERROR)
+			netGameData.joiningGameStatus = JOINNETGAME_WAITFORSTART;
+		e->HelpString = TEXTSTRING_MULTIPLAYER_WAIT_HELP;
+		AvPMenusData[AVPMENU_MULTIPLAYER_JOINING].ParentMenu = AVPMENU_MULTIPLAYER_JOINING;
+	}
+}
 
 
 
@@ -1797,6 +1839,16 @@ void MakeConnectionSelectMenu()
 		pos=1;			
 	}
 	AvPMenu_MultiplayerConnection[pos].ElementID = AVPMENU_ELEMENT_ENDOFMENU;
+}
+
+/* The connection type when MakeConnectionSelectMenu offered exactly one, else -1.
+   The page is DirectPlay's choice of TCP/IP, IPX, modem or serial, and net.c only
+   ever offers TCP/IP, so it is normally skipped (SetupNewMenu). */
+int OnlyConnectionChoice(void)
+{
+	if (AvPMenu_MultiplayerConnection[0].ElementID != AVPMENU_ELEMENT_CONNECTIONCHOICE) return -1;
+	if (AvPMenu_MultiplayerConnection[1].ElementID != AVPMENU_ELEMENT_ENDOFMENU) return -1;
+	return AvPMenu_MultiplayerConnection[0].c.Value;
 }
 
 /* Drop the "Video Card & Resolution" row from the main-menu AV options.

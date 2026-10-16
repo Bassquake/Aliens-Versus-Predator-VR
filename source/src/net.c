@@ -21,6 +21,7 @@
 #include "pldnet.h"
 #include "net.h"
 #include "avp_menus.h"   /* SESSION_DESC / SessionData for the join session list */
+#include "relay_proto.h"
 
 
 DPID AVPDPNetID;
@@ -57,6 +58,14 @@ int glpDP; /* directplay object */
  * Sockets are pumped on demand from DpExtRecv(), which the engine calls every
  * frame ([Minimal]NetCollectMessages), so no thread is needed.
  *
+ * Internet play goes through a relay server (tools/relay), configured with
+ * Net_SetRelayServer. The relay only forwards, so everything above runs end to end
+ * through it unchanged. A peer reached through it gets a VIRTUAL address -
+ * 0.0.0.0 with its relay tag in the port (the host is tag 0) - which no real
+ * datagram can come from. Only net_sendto and net_read_all know about the relay:
+ * they wrap and unwrap the envelope and translate between the two. A relayed host
+ * still answers LAN discovery and direct joins, so one game can have both.
+ *
  * Liveness: any packet counts as a sign of life; an idle link sends a PING once a
  * second. The timeout is long (NET_TIMEOUT_MS) because the game does not pump
  * during a level load, and a slow load must not read as a dropped player. A clean
@@ -75,6 +84,7 @@ typedef SOCKET NetSocket;
 #include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -227,6 +237,29 @@ static NetJoinState net_join_state = NET_JS_NONE;
 static uint32_t     net_join_start = 0;
 static uint32_t     net_join_hello_ms = 0;
 
+/* internet relay */
+/* "host[:port]"; blank = LAN only. The frontend's Relay Server field edits this
+   buffer directly, and config.cfg's #RELAY line seeds it (main.c). */
+char             NetRelayServer[RELAY_SERVER_LEN] = RELAY_DEFAULT_SERVER;
+static int       net_relay_heard = 0;                /* anything at all came back from the relay */
+static int       net_relay_on    = 0;                /* this session uses the relay */
+static struct sockaddr_in net_relay_addr;
+static unsigned  net_relay_code  = 0;                /* host: room code once open; client: code joined */
+static int       net_relay_open  = 0;                /* host: RELAY_ROOM received */
+static int       net_relay_err   = 0;                /* last RELAY_ERR_*, or a NET_RELAY_ERR_* below */
+static uint32_t  net_relay_tx_ms = 0;
+static int       net_relay_asks  = 0;                /* host: RELAY_HOST sent without an answer */
+static unsigned  net_disc_code[MAX_NO_OF_SESSIONS];  /* browse entry is a relay room (0 = LAN host) */
+#define NET_RELAY_ERR_NOANSWER  (-1)                 /* the relay never replied */
+#define NET_RELAY_ERR_NOHOST    (-2)                 /* the relay replied, the host did not */
+
+/* Is a relay set at all? A field of spaces counts as blank. */
+static int net_relay_configured(void) {
+	const char *p;
+	for (p = NetRelayServer; *p; p++) if (*p != ' ') return 1;
+	return 0;
+}
+
 static void net_wr32(unsigned char *p, int32_t v) {
 	p[0]=(unsigned char)v; p[1]=(unsigned char)(v>>8);
 	p[2]=(unsigned char)(v>>16); p[3]=(unsigned char)(v>>24);
@@ -247,6 +280,16 @@ static void net_setnonblock(NetSocket s) {
 
 static int net_same_addr(const struct sockaddr_in *a, const struct sockaddr_in *b) {
 	return a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
+}
+
+/* A peer behind the relay (see the header comment). */
+static int net_is_relayed(const struct sockaddr_in *a) { return a->sin_addr.s_addr == 0; }
+static struct sockaddr_in net_relay_peer(uint32_t tag) {
+	struct sockaddr_in a;
+	memset(&a, 0, sizeof a);
+	a.sin_family = AF_INET;
+	a.sin_port   = htons((unsigned short)tag);
+	return a;
 }
 
 /* ---------------------------------------------------------------------------
@@ -318,8 +361,28 @@ static void net_hdr(unsigned char *p, int kind, int flags, uint32_t seq, uint32_
 	net_wr32(p + 20, to);
 }
 
+static void net_relay_send(int op, uint32_t val, const unsigned char *payload, int plen) {
+	unsigned char buf[RELAY_HDR + NET_MTU];
+	if (net_sock == NET_BAD || plen > NET_MTU) return;
+	net_wr32(buf, (int32_t)RELAY_MAGIC);
+	buf[4] = (unsigned char)op;
+	buf[5] = RELAY_VERSION;
+	buf[6] = buf[7] = 0;
+	net_wr32(buf + 8, (int32_t)val);
+	if (plen > 0) memcpy(buf + RELAY_HDR, payload, (size_t)plen);
+	sendto(net_sock, (const char *)buf, RELAY_HDR + plen, 0,
+	       (const struct sockaddr *)&net_relay_addr, sizeof net_relay_addr);
+	net_relay_tx_ms = net_now_ms();
+}
+
 static void net_sendto(const struct sockaddr_in *addr, const unsigned char *pkt, int len) {
 	if (net_sock == NET_BAD) return;
+	if (net_is_relayed(addr)) {
+		/* host: addressed by the client's tag; client: by the room it is in */
+		if (net_relay_on)
+			net_relay_send(RELAY_DATA, net_role == NET_HOST ? ntohs(addr->sin_port) : net_relay_code, pkt, len);
+		return;
+	}
 	sendto(net_sock, (const char *)pkt, len, 0, (const struct sockaddr *)addr, sizeof *addr);
 }
 
@@ -624,13 +687,70 @@ static void net_on_hello(const struct sockaddr_in *from, const unsigned char *pk
 		if (nlen > NET_PLAYERNAMELENGTH - 1) nlen = NET_PLAYERNAMELENGTH - 1;
 		memcpy(nm, pkt + NET_HDR, (size_t)nlen);
 		nm[nlen] = '\0';
-		fprintf(stderr, "net: client %s:%d joined, assigned DPID %d (%d players)\n",
-			inet_ntoa(from->sin_addr), ntohs(from->sin_port), (int)id, net_nconns + 1);
+		if (net_is_relayed(from))
+			fprintf(stderr, "net: client relay tag %d joined, assigned DPID %d (%d players)\n",
+				ntohs(from->sin_port), (int)id, net_nconns + 1);
+		else
+			fprintf(stderr, "net: client %s:%d joined, assigned DPID %d (%d players)\n",
+				inet_ntoa(from->sin_addr), ntohs(from->sin_port), (int)id, net_nconns + 1);
 		net_enqueue_create(id, nm);
 	} else {
 		c = net_conns[ci];
 	}
 	net_send_ctrl(c, PK_WELCOME, (uint32_t)c->dpid, 0, NULL, 0);
+}
+
+static const char *net_relay_errstr(int e) {
+	switch (e) {
+	case RELAY_ERR_NOROOM:  return "no game with that code";
+	case RELAY_ERR_FULL:    return "that game is full";
+	case RELAY_ERR_BUSY:    return "the relay has no free rooms";
+	case RELAY_ERR_VERSION: return "the relay runs a different version";
+	case NET_RELAY_ERR_NOANSWER: return "no answer from the relay server";
+	case NET_RELAY_ERR_NOHOST:   return "the host did not answer";
+	default:                return "unknown relay error";
+	}
+}
+
+/* A datagram from the relay. Returns 1 if it carried a game packet, which has been
+   unwrapped in place: *n shrinks and *from becomes the sender's virtual address. */
+static int net_on_relay(unsigned char *pkt, int *n, struct sockaddr_in *from) {
+	uint32_t val;
+	if (*n < RELAY_HDR || (uint32_t)net_rd32(pkt) != RELAY_MAGIC) return 0;
+	net_relay_heard = 1;
+	val = (uint32_t)net_rd32(pkt + 8);
+	switch (pkt[4]) {
+	case RELAY_DATA:
+		*n -= RELAY_HDR;
+		memmove(pkt, pkt + RELAY_HDR, (size_t)*n);
+		*from = net_relay_peer(net_role == NET_HOST ? val : 0);
+		return 1;
+	case RELAY_ROOM:
+		if (net_role == NET_HOST) {
+			char code[RELAY_CODE_LEN + 1];
+			if (!net_relay_open || net_relay_code != val) {
+				relay_code_to_str(val, code);
+				fprintf(stderr, "net: internet game open, code %s\n", code);
+			}
+			net_relay_code = val;
+			net_relay_open = 1;
+			net_relay_err  = 0;
+		}
+		return 0;
+	case RELAY_ERROR:
+		if (net_relay_err != (int)val)
+			fprintf(stderr, "net: relay: %s\n", net_relay_errstr((int)val));
+		net_relay_err = (int)val;
+		/* A joiner fails at once instead of waiting out the timeout. Once joined, a
+		   NOROOM means the relay restarted. That game is lost - the relay would give
+		   this client a new tag, which the host treats as a stranger - but the link's
+		   own timeout reports it, so it is not acted on here. */
+		if (net_role == NET_CLIENT && net_join_state == NET_JS_HANDSHAKE)
+			net_join_state = NET_JS_FAILED;
+		return 0;
+	default:
+		return 0;
+	}
 }
 
 /* Read every waiting datagram. */
@@ -642,6 +762,7 @@ static void net_read_all(void) {
 		int n = (int)recvfrom(net_sock, (char *)pkt, sizeof pkt, 0, (struct sockaddr *)&from, &fl);
 		int kind, ci;
 		if (n < 0) break;                             /* would block, or an ICMP error: done */
+		if (net_relay_on && net_same_addr(&from, &net_relay_addr) && !net_on_relay(pkt, &n, &from)) continue;
 		if (n < NET_HDR || net_rd32(pkt) != (int32_t)NET_MAGIC || pkt[6] != NET_VERSION) continue;
 		kind = pkt[4];
 
@@ -712,11 +833,39 @@ static void net_service_links(void) {
 
 static void net_udp_respond(void);   /* forward decl (defined below) */
 
-/* Read the socket and service every link. Cheap to call often. */
+/* Host: open the room, and keep it open. Resent quickly until the relay answers,
+   then as a slow keepalive - which also gets the room back, under the same code, if
+   the relay has restarted.
+ *
+ * "No answer" is counted in unanswered ASKS, not elapsed time. The first ask goes
+ * out from the menu and then the level loads, which can take longer than the whole
+ * timeout without the game reading the socket once - a clock would call that
+ * silence while the answer sat unread in the receive buffer. Asks are only sent
+ * while the game is pumping, so they measure time actually spent listening. */
+static void net_relay_host_pump(void) {
+	uint32_t now = net_now_ms();
+	if (!net_relay_on || net_role != NET_HOST) return;
+	if (!net_relay_open) {
+		if (net_relay_err > 0) return;                         /* refused: stop asking */
+		if (net_relay_err == 0 && net_relay_asks >= RELAY_HOST_TIMEOUT_MS / RELAY_HOST_RESEND_MS) {
+			fprintf(stderr, "net: no answer from relay %s\n", NetRelayServer);
+			net_relay_err = NET_RELAY_ERR_NOANSWER;            /* reported, but keep trying */
+		}
+	}
+	if (now - net_relay_tx_ms >= (net_relay_open ? RELAY_HOST_REFRESH_MS : RELAY_HOST_RESEND_MS)) {
+		net_relay_send(RELAY_HOST, net_relay_code, NULL, 0);
+		if (!net_relay_open) net_relay_asks++;
+	}
+}
+
+/* Read the socket and service every link. Cheap to call often. Reading comes
+   first, so anything that arrived during a load is seen before any timeout is
+   judged. */
 static void net_pump(void) {
 	if (net_role == NET_OFF || net_sock == NET_BAD) return;
 	if (net_role == NET_HOST) net_udp_respond();
 	net_read_all();
+	if (net_role == NET_HOST) net_relay_host_pump();
 	net_service_links();
 }
 
@@ -731,6 +880,12 @@ static void net_teardown(void) {
 		net_conns[i] = NULL;
 	}
 	net_nconns = 0;
+	if (net_relay_on) {                           /* free the room / our slot in it now */
+		int op = net_role == NET_HOST ? RELAY_CLOSE : RELAY_LEAVE;
+		net_relay_send(op, 0, NULL, 0);
+		net_relay_send(op, 0, NULL, 0);
+	}
+	net_relay_on = 0; net_relay_open = 0; net_relay_code = 0;   /* err kept: the menu reports it */
 	if (net_sock != NET_BAD) { net_closesock(net_sock); net_sock = NET_BAD; }
 	if (net_udp != NET_BAD)  { net_closesock(net_udp);  net_udp  = NET_BAD; }
 	net_join_state = NET_JS_NONE;
@@ -815,11 +970,52 @@ static void net_udp_open_host(void) {
 	net_setnonblock(net_udp);
 }
 
+/* Resolve NetRelayServer into net_relay_addr. Blocking DNS, but it is called
+   once, from a menu, when hosting or joining starts. */
+static int net_relay_resolve(void) {
+	char host[128];
+	char *colon;
+	int port = RELAY_PORT;
+	struct addrinfo hints, *res = NULL;
+	const char *src = NetRelayServer;
+	size_t len;
+	if (!net_relay_configured()) return 0;
+	while (*src == ' ') src++;                     /* typed text: trim it */
+	strncpy(host, src, sizeof host - 1);
+	host[sizeof host - 1] = '\0';
+	len = strlen(host);
+	while (len && host[len - 1] == ' ') host[--len] = '\0';
+	colon = strrchr(host, ':');
+	if (colon) { port = atoi(colon + 1); *colon = '\0'; }
+	if (port <= 0 || port > 65535) port = RELAY_PORT;
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family   = AF_INET;
+	hints.ai_socktype = SOCK_DGRAM;
+	if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) {
+		fprintf(stderr, "net: cannot resolve relay '%s'\n", host);
+		return 0;
+	}
+	memcpy(&net_relay_addr, res->ai_addr, sizeof net_relay_addr);
+	net_relay_addr.sin_port = htons((unsigned short)port);
+	freeaddrinfo(res);
+	return 1;
+}
+
 static int net_start_host(void) {
 	net_teardown();
 	net_winsock_init();
 	net_sock = net_open_game_socket(NET_PORT);
+	/* Internet hosting does not need the fixed port, so a second copy of the game
+	   on this machine (or anything else on 27015) does not stop it. */
+	if (net_sock == NET_BAD && net_relay_configured()) net_sock = net_open_game_socket(0);
 	if (net_sock == NET_BAD) return 0;
+	net_relay_err = 0;
+	net_relay_heard = 0;
+	if (net_relay_resolve()) {
+		net_relay_on = 1;
+		net_relay_asks = 1;
+		net_relay_send(RELAY_HOST, 0, NULL, 0);
+	}
 	net_role = NET_HOST;
 	net_next_dpid = NET_HOST_DPID + 1;
 	AVPDPNetID = NET_HOST_DPID;
@@ -840,14 +1036,23 @@ static void net_send_hello(void) {
 
 /* Start joining a host. Never blocks: HELLO is resent by net_join_pump() each
    frame until the WELCOME arrives, so the game loop keeps running throughout. */
-static void net_begin_connect(const struct sockaddr_in *addr) {
+static void net_begin_connect(const struct sockaddr_in *addr, unsigned room) {
 	NetConn *c;
+	struct sockaddr_in target = *addr;
 	net_teardown();
 	net_winsock_init();
 	net_join_state = NET_JS_FAILED;
 	net_sock = net_open_game_socket(0);
 	if (net_sock == NET_BAD) return;
-	c = net_conn_new(addr, NET_HOST_DPID);
+	net_relay_err = 0;
+	net_relay_heard = 0;
+	if (room) {                                    /* an internet game: the host is relay tag 0 */
+		if (!net_relay_resolve()) { net_closesock(net_sock); net_sock = NET_BAD; return; }
+		net_relay_on   = 1;
+		net_relay_code = room;
+		target = net_relay_peer(0);
+	}
+	c = net_conn_new(&target, NET_HOST_DPID);
 	if (!c) { net_closesock(net_sock); net_sock = NET_BAD; return; }
 	net_conns[0] = c;
 	net_nconns = 1;
@@ -857,7 +1062,13 @@ static void net_begin_connect(const struct sockaddr_in *addr) {
 	net_send_hello();
 	net_join_start = net_now_ms();
 	net_join_state = NET_JS_HANDSHAKE;
-	fprintf(stderr, "net: joining %s:%d...\n", inet_ntoa(addr->sin_addr), ntohs(addr->sin_port));
+	if (room) {
+		char code[RELAY_CODE_LEN + 1];
+		relay_code_to_str(room, code);
+		fprintf(stderr, "net: joining game %s via relay %s...\n", code, NetRelayServer);
+	} else {
+		fprintf(stderr, "net: joining %s:%d...\n", inet_ntoa(addr->sin_addr), ntohs(addr->sin_port));
+	}
 }
 
 /* Advance the join one step (no blocking). Returns the current state. */
@@ -868,6 +1079,10 @@ static int net_join_pump(void) {
 		net_join_state = NET_JS_DONE;
 	} else if (net_nconns < 1 || net_now_ms() - net_join_start > NET_JOIN_TIMEOUT_MS) {
 		fprintf(stderr, "net: no answer from host\n");
+		/* Through the relay, say which end was silent: a wrong relay address and a
+		   host stuck loading look the same otherwise. */
+		if (net_relay_on && net_relay_err == 0)
+			net_relay_err = net_relay_heard ? NET_RELAY_ERR_NOHOST : NET_RELAY_ERR_NOANSWER;
 		net_join_state = NET_JS_FAILED;
 	} else if (net_now_ms() - net_join_hello_ms > NET_HELLO_EVERY_MS) {
 		net_send_hello();                          /* HELLO or WELCOME may have been lost */
@@ -945,8 +1160,18 @@ static void net_start_browse(void) {
 		struct sockaddr_in a;
 		memset(&a, 0, sizeof a);
 		a.sin_family = AF_INET; a.sin_port = htons(NET_PORT);
-		if (IPAddressString[0] && inet_pton(AF_INET, IPAddressString, &a.sin_addr) == 1) {
+		unsigned room = net_relay_configured() ? relay_code_from_str(IPAddressString) : 0;
+		if (room) {
+			/* The address field holds a room code: offer the internet game. */
+			char code[RELAY_CODE_LEN + 1];
+			relay_code_to_str(room, code);
+			net_disc_addr[0] = net_relay_peer(0);
+			net_disc_code[0] = room;
+			snprintf(net_disc_names[0], sizeof net_disc_names[0], "Internet game %s", code);
+			net_disc_count = 1;
+		} else if (IPAddressString[0] && inet_pton(AF_INET, IPAddressString, &a.sin_addr) == 1) {
 			net_disc_addr[0] = a;
+			net_disc_code[0] = 0;
 			strncpy(net_disc_names[0], IPAddressString, sizeof net_disc_names[0] - 1);
 			net_disc_names[0][sizeof net_disc_names[0] - 1] = '\0';
 			net_disc_count = 1;
@@ -977,11 +1202,12 @@ static int net_pump_browse(void) {
 		if (n < NET_DISC_HDR) continue;
 		if (net_rd32(pkt) != (int32_t)NET_DISC_MAGIC || net_rd32(pkt + 4) != NETDISC_REPLY) continue;
 		for (i = 0; i < net_disc_count; i++)
-			if (net_disc_addr[i].sin_addr.s_addr == from.sin_addr.s_addr) { slot = i; break; }
+			if (!net_disc_code[i] && net_disc_addr[i].sin_addr.s_addr == from.sin_addr.s_addr) { slot = i; break; }
 		if (slot < 0 && net_disc_count < MAX_NO_OF_SESSIONS) {
 			int port = net_rd32(pkt + 8);
 			slot = net_disc_count++;
 			net_disc_addr[slot] = from;
+			net_disc_code[slot] = 0;
 			net_disc_addr[slot].sin_port = htons((unsigned short)(port ? port : NET_PORT));
 			changed = 1;
 			fprintf(stderr, "net: found host at %s\n", inet_ntoa(from.sin_addr));
@@ -1001,6 +1227,8 @@ BOOL DpExtInit(DWORD cGrntdBufs, DWORD cBytesPerBuf, BOOL bErrChcks)
 {
 	fprintf(stderr, "DpExtInit(%d, %d, %d)\n", cGrntdBufs, cBytesPerBuf, bErrChcks);
 	net_winsock_init();
+	/* AVP_RELAY=host[:port] overrides the Relay Server setting, for testing. */
+	if (getenv("AVP_RELAY")) Net_SetRelayServer(getenv("AVP_RELAY"));
 	return TRUE;
 }
 
@@ -1169,6 +1397,7 @@ int DirectPlay_ConnectToSession(int sessionNumber, char *playerName)
 	   frame to finish the handshake and become a joining peer. Nothing here blocks
 	   the game loop. */
 	struct sockaddr_in target;
+	unsigned room;
 	fprintf(stderr, "DirectPlay_ConnectToSession(%d, %s)\n", sessionNumber, playerName);
 
 	if (sessionNumber < 0 || sessionNumber >= net_disc_count) {
@@ -1176,13 +1405,14 @@ int DirectPlay_ConnectToSession(int sessionNumber, char *playerName)
 		return 0;
 	}
 	target = net_disc_addr[sessionNumber];   /* copy before net_begin_connect tears down browse */
+	room   = net_disc_code[sessionNumber];
 
 	memset(&AVPDPplayerName, 0, sizeof(AVPDPplayerName));
 	AVPDPplayerName.dwSize = sizeof(DPNAME);
 	AVPDPplayerName.lpszShortNameA = playerName;
 	AVPDPplayerName.lpszLongNameA  = playerName;
 
-	net_begin_connect(&target);
+	net_begin_connect(&target, room);
 	if (net_join_state == NET_JS_FAILED) {   /* couldn't even create/start the socket */
 		fprintf(stderr, "net: could not start connect\n");
 		return 0;
@@ -1204,6 +1434,36 @@ HRESULT IDirectPlayX_GetPlayerName(int glpDP, DPID id, void *data, void *size)
 	fprintf(stderr, "IDirectPlayX_GetPlayerName(%d, %d, %p, %p)\n", glpDP, id, data, size);
 
 	return 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * Internet relay: configuration and status, for the frontend
+ * ------------------------------------------------------------------------- */
+
+/* "host[:port]", or empty for LAN only. Takes effect at the next host or join. */
+void Net_SetRelayServer(const char *hostport)
+{
+	strncpy(NetRelayServer, hostport ? hostport : "", sizeof NetRelayServer - 1);
+	NetRelayServer[sizeof NetRelayServer - 1] = '\0';
+}
+
+/* 1 and the code in 'out' while this machine is in an internet game: the host once
+   the relay has opened the room, a client once it has joined. 0 otherwise. */
+int Net_RelayRoomCode(char out[RELAY_CODE_LEN + 1])
+{
+	if (!net_relay_on || !net_relay_code) return 0;
+	if (net_role == NET_HOST && !net_relay_open) return 0;
+	if (net_role == NET_CLIENT && net_join_state != NET_JS_DONE) return 0;
+	relay_code_to_str(net_relay_code, out);
+	return 1;
+}
+
+/* The relay's last complaint as text, or NULL. Survives the teardown of a failed
+   join, so the menu can still say why. */
+const char *Net_RelayError(void)
+{
+	if (net_relay_err == 0) return NULL;
+	return net_relay_errstr(net_relay_err);
 }
 
 /* End of Linux-related junk */

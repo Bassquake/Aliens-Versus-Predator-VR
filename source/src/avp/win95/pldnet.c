@@ -27,6 +27,7 @@
 #include "pfarlocs.h"
 #include "avpview.h"
 #include "net.h"
+#include "relay_proto.h"
 #include "los.h"
 #include "maths.h"
 #include "opengl.h"
@@ -284,6 +285,19 @@ extern int LastHand;  // For alien claws and two pistols
 
 extern void CreateSpearPossiblyWithFragment(DISPLAYBLOCK *dispPtr, VECTORCH *spearPositionPtr, VECTORCH *spearDirectionPtr);
 extern void NewOnScreenMessage(unsigned char *messagePtr);
+#include "messagehistory.h"
+
+/* A network event shown on screen AND kept in the message history, so the mission
+   log key (Quest: hold the left Menu button) can step back through kills, chat,
+   joins and leaves. The 1999 history only ever held mission text, which a
+   multiplayer level has none of, so the key did nothing at all in a network game.
+   Things that only matter in the moment - the respawn countdown - stay on plain
+   NewOnScreenMessage. */
+static void NetLoggedMessage(const char *text)
+{
+	NewOnScreenMessage((unsigned char *)text);
+	MessageHistory_AddText(text);
+}
 /*----------------------------------------------------------------------
   Some protoypes for this file
   ----------------------------------------------------------------------*/
@@ -1043,7 +1057,7 @@ static void ProcessSystemMessage(char *msgP,unsigned int msgSize)
 		case DPSYS_SESSIONLOST:
 		{
 			/* Aha. I have lost my connection. Time to exit the game gracefully.*/
-			NewOnScreenMessage("Session lost!!");
+			NetLoggedMessage("Session lost!!");
 			/*
 			if((netGameData.myGameState==NGS_StartUp)||(netGameData.myGameState==NGS_Joining)||(netGameData.myGameState==NGS_Playing))
 			{
@@ -1723,7 +1737,7 @@ void NetSendMessages(void)
 							break; 
 						
 						case DPERR_CONNECTIONLOST :
-							NewOnScreenMessage("Connection lost!!");
+							NetLoggedMessage("Connection lost!!");
 							break;
 						
 						case DPERR_INVALIDPARAMS  :
@@ -4238,7 +4252,7 @@ void AddNetMsg_ChatBroadcast(char *string,BOOL same_species_only)
 	
 	{
 		sprintf(OnScreenMessageBuffer,"%s: %s",netGameData.playerData[PlayerIdInPlayerList(AVPDPNetID)].name,string);
-		NewOnScreenMessage(OnScreenMessageBuffer);
+		NetLoggedMessage(OnScreenMessageBuffer);
 	}
 
 }
@@ -7213,7 +7227,7 @@ static char *ProcessNetMsg_ChatBroadcast(char *subMessagePtr, DPID senderId)
 		}
 		
 		sprintf(OnScreenMessageBuffer,"%s: %s",netGameData.playerData[playerIndex].name,subMessagePtr+1);
-		NewOnScreenMessage(OnScreenMessageBuffer);
+		NetLoggedMessage(OnScreenMessageBuffer);
 	
 		/* KJL 99/2/5 - play 'incoming message' sound */
 		switch(netGameData.playerData[playerIndex].characterType)
@@ -9857,7 +9871,7 @@ static void Inform_PlayerHasConnected(DPID player)
 
 static void Inform_NewHost(void)
 {
-	NewOnScreenMessage(GetTextString(TEXTSTRING_MULTIPLAYERCONSOLE_NEWHOST));
+	NetLoggedMessage(GetTextString(TEXTSTRING_MULTIPLAYERCONSOLE_NEWHOST));
 }
 
 
@@ -10446,7 +10460,7 @@ static void NetworkGameConsoleMessage(enum TEXTSTRING_ID stringID,const char* na
 	}
 	*messageptr=0;
 
-	NewOnScreenMessage(OnScreenMessageBuffer);
+	NetLoggedMessage(OnScreenMessageBuffer);
 }
 
 static void NetworkGameConsoleMessageWithWeaponIcon(enum TEXTSTRING_ID stringID,const char* name1,const char* name2,const char* weaponSymbol)
@@ -10488,7 +10502,7 @@ static void NetworkGameConsoleMessageWithWeaponIcon(enum TEXTSTRING_ID stringID,
 		strcat(OnScreenMessageBuffer,weaponSymbol);
 	}
 
-	NewOnScreenMessage(OnScreenMessageBuffer);
+	NetLoggedMessage(OnScreenMessageBuffer);
 }
 
 static int CharacterTypesAvailable[NUM_PC_TYPES];
@@ -11304,6 +11318,17 @@ void DoMultiplayerEndGameScreen(void)
 	}
 
 	
+	/* An internet game's code, so anyone in it can pass it on. Ahead of the block
+	   below, which can return early. */
+	{
+		char code[RELAY_CODE_LEN + 1];
+		if (Net_RelayRoomCode(code))
+		{
+			sprintf(text,"Internet game code: %s",code);
+			RenderStringCentred(text,ScreenDescriptorBlock.SDB_Width/2,ScreenDescriptorBlock.SDB_Height-40,0xffffffff);
+		}
+	}
+
 	if(netGameData.myGameState==NGS_EndGameScreen)
 	{
 		if(AvP.Network==I_Host)
@@ -11384,6 +11409,37 @@ void DoMultiplayerSpecificHud()
 	int scoreVisible = (ShowMultiplayerScoreTimer>0 ||
 		netGameData.myGameState==NGS_EndGameScreen ||
 		(!playerStatusPtr->IsAlive && !MultiplayerObservedPlayer));
+
+	/* Host of an internet game: say the code once the relay has opened the room,
+	   or why it could not. Once each - the scores keep showing the code. */
+	if(AvP.Network==I_Host)
+	{
+		static char announced[RELAY_CODE_LEN + 1];
+		static const char *announcedError;
+		char code[RELAY_CODE_LEN + 1];
+		const char *error = Net_RelayError();
+
+		if(Net_RelayRoomCode(code))
+		{
+			if(strcmp(code,announced))
+			{
+				sprintf(text,"Internet game code: %s (also shown on the scores)",code);
+				NetLoggedMessage(text);
+				strcpy(announced,code);
+			}
+			announcedError = NULL;
+		}
+		else
+		{
+			announced[0] = '\0';
+			if(error && error != announcedError)
+			{
+				sprintf(text,"Internet game unavailable: %s",error);
+				NetLoggedMessage(text);
+			}
+			announcedError = error;
+		}
+	}
 
 	if(scoreVisible)
 	{

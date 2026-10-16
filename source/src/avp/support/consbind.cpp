@@ -38,6 +38,7 @@ extern "C" void VideoMode_WriteConfigLine(FILE *pFile);
 extern "C" void DesktopMirror_WriteConfigLine(FILE *pFile);
 extern "C" void IntroMovies_WriteConfigLine(FILE *pFile);
 extern "C" void MenuVideo_WriteConfigLine(FILE *pFile);
+extern "C" void Relay_WriteConfigLine(FILE *pFile);
 
 /* Version settings ************************************************/
 
@@ -422,6 +423,7 @@ void KeyBinding :: WriteToConfigFile(char* Filename)
 	DesktopMirror_WriteConfigLine(pFile);
 	IntroMovies_WriteConfigLine(pFile);
 	MenuVideo_WriteConfigLine(pFile);
+	Relay_WriteConfigLine(pFile);
 
 	fclose(pFile);
 

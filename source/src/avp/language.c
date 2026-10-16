@@ -218,6 +218,9 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CLIMBHOLD_HELP:     return "No: press Climb to grab a wall and press again to let go. Yes: you only stay on the wall while the Climb control is held, and letting go of it drops you off.";
 			case TEXTSTRING_CLIMBHOLD_NO:       return "No (Default)";
 			case TEXTSTRING_CLIMBHOLD_YES:      return "Yes";
+			case TEXTSTRING_MULTIPLAYER_RELAYSERVER:      return "Relay Server";
+			case TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP: return "The internet relay server, as an address or name with an optional :port. Leave it blank for local network games only. When it is set, hosting also opens an internet game; its code is shown in the game and on the scores.";
+			case TEXTSTRING_MULTIPLAYER_JOINFAILED_HELP:  return "Could not join the internet game. Go back to try again.";
 			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. Can share a control with any other action, which still does its own job. On the same control as Jump you must also push forward; on any other control it grabs straight away. Hold controls are not offered.";
 			case TEXTSTRING_BIND_CROUCH:        return "Crouch";
 			/* "Operate" to match the keyboard config screens, which is where the
@@ -401,6 +404,23 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 #else
 		return "Classic 2000";
 #endif
+
+	/* The join address field also takes an internet game's code, which the
+	   original wording ("Open IP Address", "IP Address") hides: on Quest the code
+	   entry went unnoticed and only Find Local Servers looked usable (2026-10-16). */
+	switch (stringID)
+	{
+		case TEXTSTRING_MULTIPLAYER_OPENADDRESS:
+			return "Enter Game Code or IP Address";
+		case TEXTSTRING_MULTIPLAYER_OPENADDRESS_HELP:
+			return "Join an internet game by its 5-character code, or any game by the host's IP address.";
+		case TEXTSTRING_MULTIPLAYER_ADDRESS:
+			return "Code or IP Address";
+		case TEXTSTRING_MPHELP_IPADDRESS:
+			return "Type the 5-character code of an internet game (needs a Relay Server, set on the Multiplayer page), or the host's IP address.";
+		default:
+			break;
+	}
 
 	LOCALASSERT(stringID<MAX_NO_OF_TEXTSTRINGS);
 	if (stringID < MAX_NO_OF_TEXTSTRINGS) {

@@ -1686,6 +1686,11 @@ enum TEXTSTRING_ID
 	TEXTSTRING_CLIMBHOLD_NO,   // value 0 (default): must stay immediately before _YES
 	TEXTSTRING_CLIMBHOLD_YES,  // value 1
 
+	/* Multiplayer "Relay Server" (internet games through tools/relay). */
+	TEXTSTRING_MULTIPLAYER_RELAYSERVER,
+	TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP,
+	TEXTSTRING_MULTIPLAYER_JOINFAILED_HELP,
+
 	MAX_NEW_TEXTSTRINGS
 };
 

@@ -11,4 +11,10 @@ int DirectPlay_ConnectingToSession();
 int DirectPlay_ConnectingToLobbiedGame(char* playerName);
 void DirectPlay_EnumConnections();
 
+/* internet relay (tools/relay) */
+void Net_SetRelayServer(const char *hostport);
+extern char NetRelayServer[];        /* the Relay Server setting; see relay_proto.h */
+int Net_RelayRoomCode(char out[6]);
+const char *Net_RelayError(void);
+
 #endif

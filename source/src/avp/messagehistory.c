@@ -1,3 +1,4 @@
+#include <string.h>
 #include "3dc.h"
 #include "module.h"
 #include "inline.h"
@@ -19,6 +20,15 @@ struct MessageHistory
 };
 
 static struct MessageHistory MessageHistoryStore[MAX_NO_OF_MESSAGES_IN_HISTORY];
+
+/* Multiplayer messages are built at run time (player names, chat), so there is no
+   string id to store. Their text lives in this parallel array, and the entry's
+   StringID is MESSAGE_HISTORY_IS_TEXT - an id no real string has. Kept out of
+   struct MessageHistory on purpose: the save game writes that struct as a raw
+   block, and a network game is never saved, so the text never needs to be. */
+#define MESSAGE_HISTORY_TEXT_LENGTH 256
+#define MESSAGE_HISTORY_IS_TEXT     MAX_NEW_TEXTSTRINGS
+static char MessageHistoryText[MAX_NO_OF_MESSAGES_IN_HISTORY][MESSAGE_HISTORY_TEXT_LENGTH];
 static int NumberOfEntriesInMessageHistory;
 static int EntryToNextShow;
 static int MessageHistoryAccessedTimer;
@@ -42,9 +52,36 @@ void MessageHistory_Add(enum TEXTSTRING_ID stringID)
 	}
 }
 
+/* A multiplayer message, as shown on screen. A long game says far more than the
+   history holds, so a full history drops its OLDEST entry, where mission messages
+   (MessageHistory_Add) stop being recorded instead - a level has a fixed number. */
+void MessageHistory_AddText(const char *text)
+{
+	struct MessageHistory *entry;
+
+	if (!text || !text[0]) return;
+	if (NumberOfEntriesInMessageHistory == MAX_NO_OF_MESSAGES_IN_HISTORY)
+	{
+		memmove(&MessageHistoryStore[0], &MessageHistoryStore[1],
+		        (MAX_NO_OF_MESSAGES_IN_HISTORY - 1) * sizeof MessageHistoryStore[0]);
+		memmove(MessageHistoryText[0], MessageHistoryText[1],
+		        (MAX_NO_OF_MESSAGES_IN_HISTORY - 1) * sizeof MessageHistoryText[0]);
+		NumberOfEntriesInMessageHistory--;
+		if (EntryToNextShow > 0) EntryToNextShow--;   /* still the same message */
+	}
+	entry = &MessageHistoryStore[NumberOfEntriesInMessageHistory];
+	entry->StringID = MESSAGE_HISTORY_IS_TEXT;
+	entry->Hours    = AvP.ElapsedHours;
+	entry->Minutes  = AvP.ElapsedMinutes;
+	entry->Seconds  = AvP.ElapsedSeconds/65536;
+	strncpy(MessageHistoryText[NumberOfEntriesInMessageHistory], text, MESSAGE_HISTORY_TEXT_LENGTH - 1);
+	MessageHistoryText[NumberOfEntriesInMessageHistory][MESSAGE_HISTORY_TEXT_LENGTH - 1] = '\0';
+	NumberOfEntriesInMessageHistory++;
+}
+
 void MessageHistory_DisplayPrevious(void)
 {
-	if (EntryToNextShow) 
+	if (EntryToNextShow)
 	{
 		unsigned char buffer[1024];
 
@@ -58,7 +95,9 @@ void MessageHistory_DisplayPrevious(void)
 			MessageHistoryStore[EntryToNextShow].Hours,
 			MessageHistoryStore[EntryToNextShow].Minutes,
 			MessageHistoryStore[EntryToNextShow].Seconds,
-			GetTextString(MessageHistoryStore[EntryToNextShow].StringID)
+			MessageHistoryStore[EntryToNextShow].StringID == MESSAGE_HISTORY_IS_TEXT
+				? MessageHistoryText[EntryToNextShow]
+				: GetTextString(MessageHistoryStore[EntryToNextShow].StringID)
 		);
 		NewOnScreenMessage(buffer);
 		MessageHistoryAccessedTimer = 65536*4;

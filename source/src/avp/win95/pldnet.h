@@ -40,6 +40,7 @@ extern "C" {
 #define JOINNETGAME_WAITFORDESC 1
 #define JOINNETGAME_WRONGAVPVERSION 2
 #define JOINNETGAME_DONTHAVELEVEL 3
+#define JOINNETGAME_RELAYERROR 4      /* internet join refused; text from Net_RelayError (net.c) */
 
 /* ---------------------------------------------------------------------
   Enum of message types

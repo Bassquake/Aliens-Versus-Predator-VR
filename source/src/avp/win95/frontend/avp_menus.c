@@ -83,6 +83,9 @@ extern int DirectPlay_HostGame(char *playerName, char *sessionName,int species,i
 extern int DirectPlay_JoinGame(void);
 extern int DirectPlay_ConnectToSession(int sessionNumber, char *playerName);
 extern int DirectPlay_Disconnect(void);
+extern void MakeJoiningMenu(const char *error);
+extern const char *Net_RelayError(void);
+extern void Relay_SaveIfChanged(void);
 
 extern void ShowSplashScreens(void);
 extern void Show_WinnerScreen(void);
@@ -767,10 +770,24 @@ extern void AvP_UpdateMenus(void)
 			retval=DirectPlay_ConnectingToSession();
 			if(!retval)
 			{
-				//player has aborted , go back a menu
-				SetupNewMenu(AVPMENU_MULTIPLAYER);
-				return ;
-			}	
+				/* An internet join that the relay refused, or that nobody
+				   answered, stays here and says why; Back leaves. Anything else
+				   goes back a menu, as it always has. */
+				if (Net_RelayError())
+				{
+					MakeJoiningMenu(Net_RelayError());
+				}
+				else
+				{
+					//player has aborted , go back a menu
+					SetupNewMenu(AVPMENU_MULTIPLAYER);
+					return ;
+				}
+			}
+			else
+			{
+				MakeJoiningMenu(NULL);
+			}
 		}
 
 		if(retval==AVPMENU_MULTIPLAYER_CONFIG_JOIN)
@@ -928,6 +945,11 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 {
 	enum AVPMENU_ID previousMenuID = AvPMenus.CurrentMenu;
 	AvPMenus.CurrentMenu = menuID;
+
+	/* The Relay Server field has no "Use these settings": keep it when the player
+	   leaves its page, whichever way they go. */
+	if (previousMenuID == AVPMENU_MULTIPLAYER && menuID != AVPMENU_MULTIPLAYER)
+		Relay_SaveIfChanged();
 
 	/* The "abort and save" intent only survives the hop from the Save progress?
 	   screen to the Save Game slot picker. Opening any other menu (e.g. backing
@@ -1106,6 +1128,22 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 			
 			DirectPlay_EnumConnections();
 			MakeConnectionSelectMenu();
+
+			/* A page with one choice asks nothing: take it and go on. Back from
+			   the Multiplayer page must then skip this page too, or it would land
+			   here and be sent straight forward again. */
+			{
+				extern int OnlyConnectionChoice(void);
+				int only = OnlyConnectionChoice();
+				if (only >= 0 && only != CONN_Mplayer)
+				{
+					netGameData.connectionType = only;
+					AvPMenusData[AVPMENU_MULTIPLAYER].ParentMenu = AvPMenusData[AVPMENU_MULTIPLAYER_CONNECTION].ParentMenu;
+					SetupNewMenu(AVPMENU_MULTIPLAYER);
+					return;
+				}
+				AvPMenusData[AVPMENU_MULTIPLAYER].ParentMenu = AVPMENU_MULTIPLAYER_CONNECTION;
+			}
 			break;
 		}
 

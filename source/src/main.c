@@ -96,6 +96,7 @@
 #include "scrshot.hpp"
 #include "version.h"
 #include "fmv.h"
+#include "relay_proto.h"
 
 #if defined(__APPLE__)
 #include <strings.h>
@@ -5517,6 +5518,15 @@ const int TotalVideoModes = sizeof(VideoModeList) / sizeof(VideoModeList[0]);
    so only OFF is written. */
 #define MENUVIDEO_CONFIG_TAG "#MENUVIDEO"
 
+/* The multiplayer Relay Server, for internet games (net.c, tools/relay). Not a
+   profile setting at all, so config.cfg is its only home. Written only when it
+   differs from RELAY_DEFAULT_SERVER; "-" stands for blank, so a player can turn a
+   built-in default off. */
+#define RELAY_CONFIG_TAG "#RELAY"
+extern char NetRelayServer[];
+void SaveDeviceAndVideoModePreferences(void);
+static char RelayServerSaved[RELAY_SERVER_LEN] = RELAY_DEFAULT_SERVER;   /* what config.cfg holds */
+
 /* Does this line carry our setting? Case-insensitive so a hand-edited file
    works either way; the console uppercases everything it reads, we don't. */
 static int ConfigLineHasTag(const char *line, const char *tag)
@@ -5549,12 +5559,18 @@ static int MenuVideoConfigLine(const char *line)
     return ConfigLineHasTag(line, MENUVIDEO_CONFIG_TAG);
 }
 
+static int RelayConfigLine(const char *line)
+{
+    return ConfigLineHasTag(line, RELAY_CONFIG_TAG);
+}
+
 /* Any of the lines this file owns. Everything else in config.cfg belongs to the
    game and has to survive a rewrite untouched. */
 static int OurConfigLine(const char *line)
 {
     return VideoModeConfigLine(line) || MirrorConfigLine(line)
-        || IntroMoviesConfigLine(line) || MenuVideoConfigLine(line);
+        || IntroMoviesConfigLine(line) || MenuVideoConfigLine(line)
+        || RelayConfigLine(line);
 }
 
 /* Seed DesktopMirrorIndex from config.cfg. Leaves it alone if there is no line,
@@ -5617,6 +5633,54 @@ void LoadMenuVideoPreference(void)
         if (v == 0 || v == 1) MenuBackgroundVideoEnabled = v;   /* a later line wins */
     }
     fclose(fp);
+}
+
+/* Seed NetRelayServer from config.cfg. Left at RELAY_DEFAULT_SERVER if there is
+   no line. */
+void LoadRelayPreference(void)
+{
+    FILE *fp;
+    char line[256];
+
+    fp = OpenGameFile(VIDEOMODE_CONFIG_FILE, FILEMODE_READONLY, FILETYPE_CONFIG);
+    if (fp == NULL) return;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        char *v, *e;
+
+        if (!RelayConfigLine(line)) continue;
+        v = line + sizeof(RELAY_CONFIG_TAG) - 1;
+        while (*v == ' ' || *v == '\t') v++;
+        e = v + strlen(v);
+        while (e > v && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' ' || e[-1] == '\t')) *--e = '\0';
+        if (strcmp(v, "-") == 0) *v = '\0';
+        strncpy(NetRelayServer, v, RELAY_SERVER_LEN - 1);   /* a later line wins */
+        NetRelayServer[RELAY_SERVER_LEN - 1] = '\0';
+    }
+    fclose(fp);
+    strcpy(RelayServerSaved, NetRelayServer);
+}
+
+/* Append the relay setting. Same contract as the lines below, including being
+   called from KeyBinding::WriteToConfigFile. The default writes no line. */
+void Relay_WriteConfigLine(FILE *fp)
+{
+    if (fp == NULL) return;
+    if (strcmp(NetRelayServer, RELAY_DEFAULT_SERVER) == 0) return;
+
+    fprintf(fp, "%s %s\n", RELAY_CONFIG_TAG, NetRelayServer[0] ? NetRelayServer : "-");
+}
+
+/* The Relay Server field is edited in place, with no "Use these settings" behind
+   it, so the frontend calls this when the player leaves its page. Rewrites
+   config.cfg only if the field actually changed. */
+void Relay_SaveIfChanged(void)
+{
+    char *e = NetRelayServer + strlen(NetRelayServer);
+    while (e > NetRelayServer && e[-1] == ' ') *--e = '\0';   /* typed text: trim it */
+    if (strcmp(NetRelayServer, RelayServerSaved) == 0) return;
+    SaveDeviceAndVideoModePreferences();
+    strcpy(RelayServerSaved, NetRelayServer);
 }
 
 /* Append the menu-video setting. Same contract as IntroMovies_WriteConfigLine,
@@ -5888,6 +5952,7 @@ void SaveDeviceAndVideoModePreferences()
     DesktopMirror_WriteConfigLine(fp);
     IntroMovies_WriteConfigLine(fp);
     MenuVideo_WriteConfigLine(fp);
+    Relay_WriteConfigLine(fp);
     fclose(fp);
 
     /* The setting lives in config.cfg now; retire the file it used to be in. */
@@ -6139,6 +6204,7 @@ int InitSDL()
     LoadDesktopMirrorPreference();
     LoadIntroMoviesPreference();
     LoadMenuVideoPreference();
+    LoadRelayPreference();
 
 #ifdef AVP_XR
     /* On VR builds, always enable controller input and configure left-stick

@@ -4,5 +4,6 @@
 void MessageHistory_DisplayPrevious(void);
 void MessageHistory_Initialise(void);
 void MessageHistory_Maintain(void);
+void MessageHistory_AddText(const char *text);   /* multiplayer: kills, chat, joins */
 
 #endif

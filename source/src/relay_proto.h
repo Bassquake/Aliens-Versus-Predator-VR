@@ -58,7 +58,10 @@ enum {
 	RELAY_ERR_VERSION         /* a different relay protocol version */
 };
 
-#define RELAY_ROOM_CLIENTS     8             /* matches net.c's NET_MAXCONNS */
+/* One more than the game's own limit (net.c's NET_MAXCONNS, 7): the spare covers a
+   player who dropped without a goodbye and holds a place until RELAY_IDLE_MS. The
+   host turns an 8th client away itself, with a reason. */
+#define RELAY_ROOM_CLIENTS     8
 
 /* Room codes: 5 characters from 32, no 0/O or 1/I, so they can be read out loud.
    The value is a 25-bit number plus one, so 0 always means "no code". */

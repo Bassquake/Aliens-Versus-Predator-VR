@@ -110,7 +110,10 @@ static uint32_t net_now_ms(void) {
 typedef enum { NET_JS_NONE = 0, NET_JS_CONNECTING, NET_JS_HANDSHAKE, NET_JS_DONE, NET_JS_FAILED } NetJoinState;
 
 #define NET_PORT        27015       /* UDP port the host listens on */
-#define NET_MAXCONNS    8           /* host: max simultaneous clients */
+/* host: max simultaneous clients. The game has NET_MAXPLAYERS slots and the host
+   takes one; a link past that would connect but never get a slot, so the host
+   answers its HELLO with PK_FULL instead. */
+#define NET_MAXCONNS    (NET_MAXPLAYERS - 1)
 #define NET_HOST_DPID   1           /* host's fixed player id */
 #define NET_FRAMEMAX    (16*1024)   /* max single (reliable) message payload */
 
@@ -123,14 +126,15 @@ typedef enum { NET_JS_NONE = 0, NET_JS_CONNECTING, NET_JS_HANDSHAKE, NET_JS_DONE
  *            flags = fragment index | count << 4 (a state message spans at most 15)
  *   ACK      seq = next REL seq expected         aux   = bitmask: bit i => seq+1+i received
  *   HELLO    payload = player name
- *   WELCOME  seq = DPID assigned to the joiner */
+ *   WELCOME  seq = DPID assigned to the joiner
+ *   FULL     host -> joiner: every player slot is taken */
 #define NET_MAGIC       0x55505641  /* 'AVPU' */
 #define NET_VERSION     1
 #define NET_HDR         24
 #define NET_MTU         1200        /* datagram ceiling: safely under any internet path MTU */
 #define NET_SEG         (NET_MTU - NET_HDR)
 
-enum { PK_REL = 1, PK_UNREL, PK_ACK, PK_HELLO, PK_WELCOME, PK_PING, PK_BYE };
+enum { PK_REL = 1, PK_UNREL, PK_ACK, PK_HELLO, PK_WELCOME, PK_PING, PK_BYE, PK_FULL };
 #define PKF_FIRST       1
 #define PKF_LAST        2
 /* UNREL flags: fragment index in the low nibble, fragment count in the high one.
@@ -677,7 +681,14 @@ static void net_on_hello(const struct sockaddr_in *from, const unsigned char *pk
 		char nm[NET_PLAYERNAMELENGTH];
 		int nlen = len - NET_HDR;
 		DPID id;
-		if (net_nconns >= NET_MAXCONNS) return;
+		if (net_nconns >= NET_MAXCONNS) {
+			/* Say so, rather than leave the joiner to time out. Sent per HELLO,
+			   so a lost one is simply answered again. */
+			unsigned char full[NET_HDR];
+			net_hdr(full, PK_FULL, 0, 0, 0, 0, 0);
+			net_sendto(from, full, NET_HDR);
+			return;
+		}
 		id = net_next_dpid++;
 		if (id == DPID_SYSMSG || id == DPID_ALLPLAYERS) id = net_next_dpid++;   /* skip reserved */
 		c = net_conn_new(from, id);
@@ -785,6 +796,16 @@ static void net_read_all(void) {
 		case PK_BYE:
 			fprintf(stderr, "net: DPID %d said goodbye\n", (int)net_conns[ci]->dpid);
 			net_conn_close(ci, 1);
+			break;
+		case PK_FULL:
+			/* Reported through the relay-error slot, which is what the Joining
+			   screen shows - the reason reads the same whichever way the join
+			   went (LAN, IP or code). */
+			if (net_role == NET_CLIENT && net_join_state == NET_JS_HANDSHAKE) {
+				fprintf(stderr, "net: the game is full\n");
+				net_relay_err  = RELAY_ERR_FULL;
+				net_join_state = NET_JS_FAILED;
+			}
 			break;
 		default: break;                               /* PING: last_rx_ms was all it needed */
 		}

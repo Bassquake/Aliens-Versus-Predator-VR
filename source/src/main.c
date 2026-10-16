@@ -1536,12 +1536,36 @@ int vr_suppress_edges_frames = 0;
  *
  * Called on every exit from 2D mode. Debounced entries go too, or a stale edge is
  * delivered to the first gameplay frame. */
+/* Which of those key slots the CONTROLLER is holding down. The 2D menu block must
+ * never simply assign a slot: a real keyboard writes the same slots from its key
+ * events, and assigning the controller's state - zero whenever it is not being
+ * touched - wiped every real key press before the menu saw it. On PCVR that left
+ * the keyboard dead from the first menu after the session started (it worked during
+ * the startup films, which run before the session does). The flat gamepad code hit
+ * and fixed the same thing; see padMenuKeys in ReadJoysticks.
+ *
+ * So the controller SETS a slot while it presses it, and only ever CLEARS a slot it
+ * set itself. Edges stay with the callers, which each have their own rules. */
+static unsigned char vr_menu_key_owned[MAX_NUMBER_OF_INPUT_KEYS];
+static int vr_menu_button_esc;   /* left Menu button held in 2D mode: one of Escape's three sources */
+
+static void VR_MenuKeyLevel(int key, int pressed)
+{
+    if (pressed)
+        KeyboardInput[key] = 1;
+    else if (vr_menu_key_owned[key])
+        KeyboardInput[key] = 0;          /* released, and it was ours: hand it back */
+    vr_menu_key_owned[key] = pressed ? 1 : 0;
+}
+
 static void VR_ReleaseMenuSyntheticKeys(void)
 {
-    static const int keys[] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_CR };
+    static const int keys[] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_CR,
+                                KEY_ESCAPE, KEY_BACKSPACE };
     size_t i;
     for (i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
-        KeyboardInput[keys[i]] = 0;
+        if (vr_menu_key_owned[keys[i]]) KeyboardInput[keys[i]] = 0;   /* a real key held stays held */
+        vr_menu_key_owned[keys[i]] = 0;
         DebouncedKeyboardInput[keys[i]] = 0;
     }
 }
@@ -5006,15 +5030,17 @@ int axes, balls, hats;
             const float  MENU_LONG_PRESS_SECS = 0.5f;
 
             if (xr_2d_mode) {
-                /* Menus: unchanged immediate ESC/back. */
+                /* Menus: unchanged immediate ESC/back. The level is merged with Y and B
+                   in the menu block below (VR_MenuKeyLevel), not written here. */
                 if (menu_pressed && !KeyboardInput[KEY_ESCAPE])
                     DebouncedKeyboardInput[KEY_ESCAPE] = 1;
-                KeyboardInput[KEY_ESCAPE] = menu_pressed;
+                vr_menu_button_esc = menu_pressed;
                 menu_hold_secs  = 0.0f;
                 menu_long_fired = 0;
             } else {
                 /* Gameplay: tap = pause (on release), long hold = message history. */
                 KeyboardInput[KEY_ESCAPE] = 0; /* don't hold ESC; pulse Debounced on a tap */
+                vr_menu_button_esc = 0;
                 if (menu_pressed && !menu_prev) {
                     menu_hold_secs  = 0.0f;
                     menu_long_fired = 0;
@@ -5081,17 +5107,19 @@ int axes, balls, hats;
                 if (xr_x_pause_latch)
                     x_pressed = 0;
 #endif
-                KeyboardInput[KEY_CR] = x_pressed | a_pressed;
-                if (KeyboardInput[KEY_CR] && !prev_cr) {
+                if ((x_pressed | a_pressed) && !prev_cr) {
                     DebouncedKeyboardInput[KEY_CR] = 1;
                     DebouncedGotAnyKey = 1;
                 }
-                if (KeyboardInput[KEY_CR]) GotAnyKey = 1;
+                VR_MenuKeyLevel(KEY_CR, x_pressed | a_pressed);
+                if (x_pressed | a_pressed) GotAnyKey = 1;
             }
 
             /* Y button → back (Escape).
              * Menu reads DebouncedKeyboardInput[KEY_ESCAPE] so set that on the press edge,
              * and keep KeyboardInput in sync so repeated reads stay consistent. */
+            /* levels; written once the Menu button, Y and B are all read */
+            int menu_esc = vr_menu_button_esc, menu_backspace = 0;
             if (xr_y_button_action) {
                 bget.action = xr_y_button_action;
                 int y_pressed = 0;
@@ -5104,7 +5132,7 @@ int axes, balls, hats;
                     y_pressed = 0;
                 if (y_pressed && !KeyboardInput[KEY_ESCAPE])
                     DebouncedKeyboardInput[KEY_ESCAPE] = 1;
-                KeyboardInput[KEY_ESCAPE] = y_pressed;
+                menu_esc |= y_pressed;
             }
 
             /* B button → back (mirrors Y, right controller), EXCEPT on the
@@ -5129,11 +5157,12 @@ int axes, balls, hats;
                 if (b_pressed && !b_prev)
                     DebouncedKeyboardInput[b_delete ? KEY_BACKSPACE : KEY_ESCAPE] = 1;
                 /* Keep the level state in sync so held reads stay consistent. */
-                KeyboardInput[KEY_BACKSPACE] = (b_pressed &&  b_delete) ? 1 : 0;
-                if (b_pressed && !b_delete)
-                    KeyboardInput[KEY_ESCAPE] |= 1;
+                menu_backspace = (b_pressed &&  b_delete) ? 1 : 0;
+                menu_esc      |= (b_pressed && !b_delete) ? 1 : 0;
                 b_prev = b_pressed;
             }
+            VR_MenuKeyLevel(KEY_ESCAPE,    menu_esc);
+            VR_MenuKeyLevel(KEY_BACKSPACE, menu_backspace);
 
             /* Both sticks → navigate up/down/left/right.
              * IDemandGoForward/GoBackward read KEY_UP/DOWN; IDemandTurnLeft/Right read KEY_LEFT/RIGHT.
@@ -5180,10 +5209,10 @@ int axes, balls, hats;
                 if (down  && !KeyboardInput[KEY_DOWN])  DebouncedKeyboardInput[KEY_DOWN]  = 1;
                 if (left  && !KeyboardInput[KEY_LEFT])  DebouncedKeyboardInput[KEY_LEFT]  = 1;
                 if (right && !KeyboardInput[KEY_RIGHT]) DebouncedKeyboardInput[KEY_RIGHT] = 1;
-                KeyboardInput[KEY_UP]    = up;
-                KeyboardInput[KEY_DOWN]  = down;
-                KeyboardInput[KEY_LEFT]  = left;
-                KeyboardInput[KEY_RIGHT] = right;
+                VR_MenuKeyLevel(KEY_UP,    up);
+                VR_MenuKeyLevel(KEY_DOWN,  down);
+                VR_MenuKeyLevel(KEY_LEFT,  left);
+                VR_MenuKeyLevel(KEY_RIGHT, right);
             }
         }
         return;

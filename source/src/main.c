@@ -2587,6 +2587,14 @@ static bool init_xr_instance(void)
                         (unsigned)XR_VERSION_MAJOR(props.runtimeVersion),
                         (unsigned)XR_VERSION_MINOR(props.runtimeVersion),
                         (unsigned)XR_VERSION_PATCH(props.runtimeVersion));
+#ifdef AVP_PCVR
+                {
+                    /* Only SteamVR gets its own keyboard for menu text fields; see
+                       steamvr_keyboard.c. */
+                    extern void SteamVRKeyboard_SetRuntimeName(const char *name);
+                    SteamVRKeyboard_SetRuntimeName(props.runtimeName);
+                }
+#endif
             }
         }
     }

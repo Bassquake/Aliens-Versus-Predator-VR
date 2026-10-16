@@ -90,7 +90,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -110,10 +110,10 @@
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -121,7 +121,7 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avpvr_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avpvr_x64.exe	Copying openvr_api.dll next to avpvr_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Debug
 if %errorlevel% neq 0 goto :cmEnd
@@ -142,6 +142,15 @@ exit /b %1
 if %errorlevel% neq 0 goto :VCEnd
 setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenXR/lib/windows/x64/openxr_loader.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Debug
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenVR/lib/windows/x64/openvr_api.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Debug
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -195,7 +204,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -216,10 +225,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -227,7 +236,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avpvr_x64.exe	Copying OpenAL runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avpvr_x64.exe	Copying FFmpeg runtime DLLs next to avpvr_x64.exe	Pruning stale FFmpeg runtime DLLs next to avpvr_x64.exe	Updating assets next to avpvr_x64.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avpvr_x64.exe	Copying OpenAL runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avpvr_x64.exe	Copying openvr_api.dll next to avpvr_x64.exe	Copying FFmpeg runtime DLLs next to avpvr_x64.exe	Pruning stale FFmpeg runtime DLLs next to avpvr_x64.exe	Updating assets next to avpvr_x64.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Release
 if %errorlevel% neq 0 goto :cmEnd
@@ -248,6 +257,15 @@ exit /b %1
 if %errorlevel% neq 0 goto :VCEnd
 setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenXR/lib/windows/x64/openxr_loader.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Release
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenVR/lib/windows/x64/openvr_api.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/Release
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -301,7 +319,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -322,10 +340,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -333,7 +351,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avpvr_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avpvr_x64.exe	Copying openvr_api.dll next to avpvr_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/MinSizeRel
 if %errorlevel% neq 0 goto :cmEnd
@@ -354,6 +372,15 @@ exit /b %1
 if %errorlevel% neq 0 goto :VCEnd
 setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenXR/lib/windows/x64/openxr_loader.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/MinSizeRel
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenVR/lib/windows/x64/openvr_api.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/MinSizeRel
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -407,7 +434,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -427,10 +454,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;AVP_XR;AVP_PCVR;AVP_PCVR_WIN32;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenVR\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -438,7 +465,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avpvr_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
+      <Message>Copying SDL3 runtime DLL next to avp.exe	Copying OpenAL runtime DLL next to avpvr_x64.exe	Copying openxr_loader.dll next to avpvr_x64.exe	Copying openvr_api.dll next to avpvr_x64.exe	Copying FFmpeg runtime DLLs next to avp.exe	Pruning stale FFmpeg runtime DLLs next to avp.exe	Updating assets next to avp.exe</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy K:/Coding/Aliens-Versus-Predator-VR/source/extern/SDL3/lib/windows/x64/SDL3.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/RelWithDebInfo
 if %errorlevel% neq 0 goto :cmEnd
@@ -459,6 +486,15 @@ exit /b %1
 if %errorlevel% neq 0 goto :VCEnd
 setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenXR/lib/windows/x64/openxr_loader.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/RelWithDebInfo
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different K:/Coding/Aliens-Versus-Predator-VR/source/extern/OpenVR/lib/windows/x64/openvr_api.dll K:/Coding/Aliens-Versus-Predator-VR/build/windows/x64vr/RelWithDebInfo
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -789,6 +825,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\cdplayer.c" />
     <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\menus.c" />
     <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\main.c" />
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\steamvr_keyboard.c" />
     <ResourceCompile Include="K:\Coding\Aliens-Versus-Predator-VR\platform\windows\Resource.rc" />
   </ItemGroup>
   <ItemGroup />

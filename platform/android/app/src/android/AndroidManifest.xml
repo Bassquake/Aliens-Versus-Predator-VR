@@ -21,6 +21,7 @@
     <uses-feature android:name="com.oculus.feature.OPENXR" tools:node="remove" />
     <uses-feature android:name="com.oculus.feature.PASSTHROUGH" tools:node="remove" />
     <uses-feature android:name="oculus.software.handtracking" tools:node="remove" />
+    <uses-feature android:name="oculus.software.overlay_keyboard" tools:node="remove" />
 
     <application>
         <!-- Oculus/OpenXR-only runtime hints, meaningless on a phone. -->

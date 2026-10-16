@@ -448,6 +448,24 @@ if (AVP_ENABLE_PCVR)
         add_definitions(-DAVP_PCVR_XLIB)
         message(STATUS "AVP: PCVR (OpenXR) build enabled -> avpvr_${ARCH_DIR}")
     endif()
+
+    # OpenVR, for SteamVR's keyboard on menu text fields (src/steamvr_keyboard.c).
+    # OPTIONAL, unlike the OpenXR loader: it is loaded at run time, never linked, and
+    # without it the game types with its controller grid. So a missing library is a
+    # warning here, not an error. Only the C API header is needed to build.
+    include_directories("${CMAKE_SOURCE_DIR}/extern/OpenVR/include")
+    if (WIN32)
+        set(AVP_OPENVR_LIB "${CMAKE_SOURCE_DIR}/extern/OpenVR/lib/windows/${ARCH_DIR}/openvr_api.dll")
+    else()
+        set(AVP_OPENVR_LIB "${CMAKE_SOURCE_DIR}/extern/OpenVR/lib/linux/${ARCH_DIR}/libopenvr_api.so")
+    endif()
+    if (NOT EXISTS "${AVP_OPENVR_LIB}")
+        message(WARNING
+            "PCVR build: no ${AVP_OPENVR_LIB} - SteamVR's keyboard will not be "
+            "offered, and menu text fields use the controller grid. Copy openvr_api "
+            "for ${ARCH_DIR} from github.com/ValveSoftware/openvr releases to enable it.")
+        unset(AVP_OPENVR_LIB)
+    endif()
 endif()
     MESSAGE(WARNING "SDL 3.0 support is STABLE.")
 
@@ -896,6 +914,9 @@ LIST(APPEND source src/main.c)
 if (AVP_ENABLE_PCVR AND AVP_LINUX)
     LIST(APPEND source src/xr_linux_glx.c)
 endif()
+if (AVP_ENABLE_PCVR)
+    LIST(APPEND source src/steamvr_keyboard.c)
+endif()
 
 ### build all source as C++
 ### (not normally used)
@@ -1268,6 +1289,14 @@ elseif (WIN32)
                     "$<TARGET_FILE_DIR:avp>"
             COMMENT "Copying openxr_loader.dll next to ${AVP_EXE_NAME}.exe"
             VERBATIM)
+        if (AVP_OPENVR_LIB)
+            add_custom_command(TARGET avp POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${AVP_OPENVR_LIB}"
+                        "$<TARGET_FILE_DIR:avp>"
+                COMMENT "Copying openvr_api.dll next to ${AVP_EXE_NAME}.exe"
+                VERBATIM)
+        endif()
     endif()
 
     # 1b2. RTX Remix: stage the Remix runtime (d3d9.dll + .trex/) next to the exe when it
@@ -1476,6 +1505,9 @@ elseif (AVP_LINUX)
     # libopenxr_loader.so.1 that dlopen asks for next to the binary.
     if (AVP_ENABLE_PCVR)
         avp_stage_linux_lib("${AVP_OPENXR_LOADER}")
+        if (AVP_OPENVR_LIB)
+            avp_stage_linux_lib("${AVP_OPENVR_LIB}")   # dlopened by filename (no SONAME)
+        endif()
     endif()
 
     # Same stale-file problem as Windows, made worse by SONAMEs: an FFmpeg major bump

@@ -55,6 +55,11 @@
     <uses-feature android:name="oculus.software.handtracking" android:required="false" />
     <uses-feature android:name="com.oculus.feature.PASSTHROUGH" android:required="false" />
     <uses-feature android:name="com.oculus.feature.OPENXR" android:required="true" />
+    <!-- Lets Horizon OS show its own keyboard over this immersive app when a menu text
+         field asks for one (Platform_SetTextInputActive -> SDL_StartTextInput). Without
+         it the request is silently ignored in VR, which is why the stick-and-A grid
+         exists. Needs focusaware (below), since the keyboard takes input focus. -->
+    <uses-feature android:name="oculus.software.overlay_keyboard" android:required="false" />
 
     <!-- OpenXR runtime/layer queries -->
     <queries>

@@ -664,6 +664,9 @@
     <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="K:\Coding\Aliens-Versus-Predator-VR\source\src\steamvr_keyboard.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="K:\Coding\Aliens-Versus-Predator-VR\source\CMakeLists.txt" />

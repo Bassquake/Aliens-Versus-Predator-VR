@@ -407,4 +407,13 @@ void ScanSaveSlots(void);
 #define AVP_MENU_VR 1
 #endif
 
+/* The controller-driven letter grid for menu text fields: PCVR ONLY. On Quest the
+ * system keyboard appears over the game instead (the manifest's
+ * oculus.software.overlay_keyboard, user-verified 2026-10-16), so the grid was
+ * redundant there. On PCVR, SteamVR's own keyboard replaces it when SteamVR is the
+ * runtime (steamvr_keyboard.c); the grid remains for every other PC runtime. */
+#if defined(AVP_MENU_VR) && !defined(__ANDROID__)
+#define AVP_MENU_OSK_GRID 1
+#endif
+
 #endif

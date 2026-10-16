@@ -158,11 +158,16 @@ static void KeyboardEntryQueue_StartProcessing(void);
 /* Show/hide the system on-screen keyboard for menu text entry (defined in main.c). */
 extern void Platform_SetTextInputActive(int active);
 
-#ifdef AVP_MENU_VR
-/* VR controller-driven on-screen keyboard (defined further down). Headset only —
-   the phone flavor types on the Android system keyboard instead. */
+#ifdef AVP_MENU_OSK_GRID
+/* VR controller-driven on-screen keyboard (defined further down). PCVR only — the
+   phone and the Quest type on the Android system keyboard instead. */
 static void OnScreenKeyboard_HandleInput(void);
 static void OnScreenKeyboard_Render(void);
+/* Under SteamVR, its own keyboard replaces the grid (steamvr_keyboard.c). */
+static int  OnScreenKeyboard_TrySteamVR(void);
+static void OnScreenKeyboard_SteamVR(void);
+static int  OSK_FieldOpen;   /* a field was being edited last frame */
+static int  OSK_SteamVR;     /* SteamVR's keyboard has this field, not the grid */
 #endif
 
 static void PasteFromClipboard(char* Text,int MaxTextLength);
@@ -932,9 +937,9 @@ extern void AvP_UpdateMenus(void)
 			break;
 		}
 	}
-#ifdef AVP_MENU_VR
+#ifdef AVP_MENU_OSK_GRID
 	/* Draw the VR on-screen keyboard over the menu while a field is being edited. */
-	if (AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber)
+	if ((AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber) && !OSK_SteamVR)
 		OnScreenKeyboard_Render();
 #endif
 	ActUponUsersInput();
@@ -2431,10 +2436,10 @@ static void GenerateRandomName(char* dest, size_t maxLength)
 	dest[maxLength - 1] = '\0';
 }
 
-#ifdef AVP_MENU_VR
+#ifdef AVP_MENU_OSK_GRID
 /* ================= VR on-screen keyboard ==================================
- * Headset builds only (AVP_MENU_VR, not AVP_XR): the non-VR phone flavor has no
- * controller to drive this and raises the Android system keyboard instead.
+ * PCVR only (AVP_MENU_OSK_GRID): the phone and the Quest raise the Android system
+ * keyboard instead, and SteamVR offers none the game can call up.
  * In VR there is no physical keyboard, so menu text / number fields (profile
  * name, multiplayer IP + details) are typed with the controller: the thumbstick
  * moves the highlight and A presses the highlighted key. Pressed characters are
@@ -2592,7 +2597,86 @@ static void OnScreenKeyboard_Render(void)
 		startY + (OSK_NUM_CHAR_ROWS + 1) * rowH + 4, ONE_FIXED,
 		AVPMENUFORMAT_CENTREJUSTIFIED, ONE_FIXED, ONE_FIXED, ONE_FIXED);
 }
-#endif /* AVP_MENU_VR */
+
+/* ---- SteamVR's keyboard (steamvr_keyboard.c) in place of the grid ---- */
+extern int SteamVRKeyboard_Open(const char *existing, int maxChars, const char *title);
+extern int SteamVRKeyboard_Poll(char *out, int outSize);
+extern void SteamVRKeyboard_Close(void);
+
+/* Open SteamVR's keyboard over the field being edited, prefilled with its value.
+   0 means the runtime has none, and the grid takes the field instead. */
+static int OnScreenKeyboard_TrySteamVR(void)
+{
+	AVPMENU_ELEMENT *elementPtr = &AvPMenus.MenuElements[AvPMenus.CurrentlySelectedElement];
+	char existing[256];
+	const char *title = "";
+	int maxChars;
+
+	if (AvPMenus.UserEnteringText)
+	{
+		strncpy(existing, elementPtr->c.TextPtr, sizeof existing - 1);
+		existing[sizeof existing - 1] = 0;
+		maxChars = elementPtr->b.MaxTextLength;
+	}
+	else
+	{
+		sprintf(existing, "%d", *elementPtr->c.NumberPtr);
+		maxChars = 10;
+	}
+	if (elementPtr->a.TextDescription != TEXTSTRING_BLANK)
+		title = GetTextString(elementPtr->a.TextDescription);
+	return SteamVRKeyboard_Open(existing, maxChars, title);
+}
+
+/* Each frame while SteamVR's keyboard has the field. The controller is the
+   keyboard's while it is up, so the menu sees none of its presses except Back,
+   which closes it and leaves the field as it was. Done writes the text in and
+   confirms the field, all in one frame - the field handler below then ends it. */
+static void OnScreenKeyboard_SteamVR(void)
+{
+	AVPMENU_ELEMENT *elementPtr = &AvPMenus.MenuElements[AvPMenus.CurrentlySelectedElement];
+	char text[256];
+	int result;
+
+	DebouncedKeyboardInput[KEY_UP]    = 0;
+	DebouncedKeyboardInput[KEY_DOWN]  = 0;
+	DebouncedKeyboardInput[KEY_LEFT]  = 0;
+	DebouncedKeyboardInput[KEY_RIGHT] = 0;
+	DebouncedKeyboardInput[KEY_CR]    = 0;
+
+	if (DebouncedKeyboardInput[KEY_ESCAPE])
+	{
+		SteamVRKeyboard_Close();   /* Escape itself ends the field below */
+		OSK_SteamVR = 0;
+		return;
+	}
+
+	result = SteamVRKeyboard_Poll(text, sizeof text);
+	if (result == 0) return;
+
+	if (result > 0)
+	{
+		if (AvPMenus.UserEnteringText)
+		{
+			int len = (int)strlen(text);
+			if (len > elementPtr->b.MaxTextLength) len = elementPtr->b.MaxTextLength;
+			memcpy(elementPtr->c.TextPtr, text, (size_t)len);
+			elementPtr->c.TextPtr[len] = 0;
+			AvPMenus.PositionInTextField = len;
+		}
+		else
+		{
+			int v = atoi(text);
+			if (v < 0) v = 0;
+			if (v > elementPtr->b.MaxValue) v = elementPtr->b.MaxValue;
+			*elementPtr->c.NumberPtr = v;
+		}
+	}
+	/* Done or closed, the field is finished; closed keeps what it had. */
+	DebouncedKeyboardInput[KEY_CR] = 1;
+	OSK_SteamVR = 0;
+}
+#endif /* AVP_MENU_OSK_GRID */
 
 static void ActUponUsersInput(void)
 {
@@ -2619,12 +2703,42 @@ static void ActUponUsersInput(void)
 	   much as a headset does — it is the only way to type on a phone. */
 	Platform_SetTextInputActive(AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber);
 #endif
-#ifdef AVP_MENU_VR
+#ifdef AVP_MENU_OSK_GRID
 	/* Controller-driven on-screen keyboard: turns stick/A into characters and
 	   backspace/confirm before the field handler below runs. Headset only — on a
 	   phone there is no controller, and the system keyboard above covers it. */
 	if (AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber)
-		OnScreenKeyboard_HandleInput();
+	{
+		/* A field just opened: SteamVR's keyboard if the runtime has one, else the grid. */
+		if (!OSK_FieldOpen)
+		{
+			OSK_FieldOpen = 1;
+			OSK_SteamVR   = OnScreenKeyboard_TrySteamVR();
+		}
+		if (OSK_SteamVR)
+			OnScreenKeyboard_SteamVR();
+		else
+			OnScreenKeyboard_HandleInput();
+	}
+	else if (OSK_FieldOpen)
+	{
+		extern void SteamVRKeyboard_Close(void);
+		OSK_FieldOpen = 0;
+		if (OSK_SteamVR) SteamVRKeyboard_Close();   /* the field ended some other way */
+		OSK_SteamVR = 0;
+	}
+#elif defined(AVP_MENU_VR)
+	/* Quest: the system keyboard does the typing. The stick still arrives as arrow
+	   keys, and the field handler below takes LEFT as backspace - which the grid
+	   used to swallow - so a nudge of the stick would delete characters. Drop the
+	   arrows while a field is open; A still confirms it (KEY_CR). */
+	if (AvPMenus.UserEnteringText || AvPMenus.UserEnteringNumber)
+	{
+		DebouncedKeyboardInput[KEY_UP]    = 0;
+		DebouncedKeyboardInput[KEY_DOWN]  = 0;
+		DebouncedKeyboardInput[KEY_LEFT]  = 0;
+		DebouncedKeyboardInput[KEY_RIGHT] = 0;
+	}
 #endif
 
 	if (AvPMenus.UserEnteringText)

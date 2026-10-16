@@ -29,18 +29,38 @@ DPNAME AVPDPplayerName;
 int glpDP; /* directplay object */
 
 /* ============================================================================
- * LAN multiplayer transport  (milestone 1: raw framed TCP, host/join, relay).
+ * Multiplayer transport: UDP, two delivery classes, host relay.
  *
- * Star topology: the host binds+listens; clients connect. Every message is
- * length-framed. When a client sends to DPID_ALLPLAYERS the host relays it to
- * all OTHER clients and enqueues a local copy, reproducing DirectPlay's "one
- * send reaches everyone but the sender" behaviour over point-to-point sockets.
+ * Star topology: the host binds a UDP port; clients send to it. When a client
+ * sends to DPID_ALLPLAYERS the host relays it to all OTHER clients and enqueues
+ * a local copy, reproducing DirectPlay's "one send reaches everyone but the
+ * sender" behaviour.
+ *
+ * Every message is one of two classes, chosen by the DpExtSend flags exactly as
+ * DirectPlay chose them:
+ *
+ *   DPSEND_GUARANTEED  RELIABLE + ORDERED. Acked, retransmitted, fragmented to fit
+ *                      a datagram, delivered in send order. Kills, damage, chat,
+ *                      scores, game start/end - anything the game applies once.
+ *
+ *   0                  UNRELIABLE STATE. Usually one datagram, may be lost. Each is
+ *                      superseded by the next tick's, so a late one is DROPPED
+ *                      rather than applied: it is dropped if a newer state from the
+ *                      same peer has been seen, or if a reliable message sent AFTER
+ *                      it has already been delivered (so a stale "alive" state can
+ *                      never undo a kill). pldnet.c builds these in its own buffer.
+ *
+ * The point of splitting them: under TCP one lost packet held up everything
+ * behind it until it was retransmitted, so a single Wi-Fi drop froze every other
+ * player. Now only the reliable channel waits, and state keeps flowing.
  *
  * Sockets are pumped on demand from DpExtRecv(), which the engine calls every
- * frame ([Minimal]NetCollectMessages), so no reader thread is needed yet.
+ * frame ([Minimal]NetCollectMessages), so no thread is needed.
  *
- * This milestone just moves bytes + establishes connections. Player roster and
- * DPSYS_CREATE/DESTROY system messages are milestone 2.
+ * Liveness: any packet counts as a sign of life; an idle link sends a PING once a
+ * second. The timeout is long (NET_TIMEOUT_MS) because the game does not pump
+ * during a level load, and a slow load must not read as a dropped player. A clean
+ * exit sends BYE, so ordinary leaving is still noticed at once.
  * ========================================================================== */
 #include <stdint.h>
 
@@ -50,17 +70,13 @@ int glpDP; /* directplay object */
 typedef SOCKET NetSocket;
 #define NET_BAD INVALID_SOCKET
 #define net_closesock closesocket
-static int net_wouldblock(void) { return WSAGetLastError() == WSAEWOULDBLOCK; }
-static int net_inprogress(void) { return WSAGetLastError() == WSAEWOULDBLOCK; }
 #else
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <poll.h>
 #include <errno.h>
 #include <time.h>
 #include <ifaddrs.h>
@@ -68,12 +84,7 @@ static int net_inprogress(void) { return WSAGetLastError() == WSAEWOULDBLOCK; }
 typedef int NetSocket;
 #define NET_BAD (-1)
 #define net_closesock close
-static int net_wouldblock(void) { return errno == EWOULDBLOCK || errno == EAGAIN; }
-static int net_inprogress(void) { return errno == EINPROGRESS; }
 #endif
-
-#define NET_CONNECT_TIMEOUT_MS   2000   /* async connect: give up after this */
-#define NET_HANDSHAKE_TIMEOUT_MS 3000   /* async connect: WELCOME must arrive within this */
 
 static uint32_t net_now_ms(void) {
 #ifdef _WIN32
@@ -88,14 +99,44 @@ static uint32_t net_now_ms(void) {
 /* Asynchronous join state (driven each frame by DirectPlay_ConnectingToSession). */
 typedef enum { NET_JS_NONE = 0, NET_JS_CONNECTING, NET_JS_HANDSHAKE, NET_JS_DONE, NET_JS_FAILED } NetJoinState;
 
-#define NET_PORT        27015       /* TCP port used for host/join */
+#define NET_PORT        27015       /* UDP port the host listens on */
 #define NET_MAXCONNS    8           /* host: max simultaneous clients */
 #define NET_HOST_DPID   1           /* host's fixed player id */
-#define NET_FRAMEMAX    (16*1024)   /* max single message payload */
-#define NET_HDR_SIZE    12          /* wire header: len(4)+from(4)+to(4), LE */
-#define NET_CTRL_FROM   (-1)        /* reserved 'from' => internal control frame */
-#define NETCTRL_WELCOME 1           /* host->client: [op][assigned DPID] */
-#define NETCTRL_HELLO   2           /* client->host: [op][player name bytes] */
+#define NET_FRAMEMAX    (16*1024)   /* max single (reliable) message payload */
+
+/* Wire format, all little-endian:
+ *   0 u32 magic   4 u8 kind   5 u8 flags   6 u16 version
+ *   8 u32 seq    12 u32 aux  16 i32 from  20 i32 to   24 payload
+ * seq/aux by kind:
+ *   REL      seq = packet sequence number        flags = FIRST/LAST fragment
+ *   UNREL    seq = state sequence number         aux   = sender's next REL seq at send time
+ *            flags = fragment index | count << 4 (a state message spans at most 15)
+ *   ACK      seq = next REL seq expected         aux   = bitmask: bit i => seq+1+i received
+ *   HELLO    payload = player name
+ *   WELCOME  seq = DPID assigned to the joiner */
+#define NET_MAGIC       0x55505641  /* 'AVPU' */
+#define NET_VERSION     1
+#define NET_HDR         24
+#define NET_MTU         1200        /* datagram ceiling: safely under any internet path MTU */
+#define NET_SEG         (NET_MTU - NET_HDR)
+
+enum { PK_REL = 1, PK_UNREL, PK_ACK, PK_HELLO, PK_WELCOME, PK_PING, PK_BYE };
+#define PKF_FIRST       1
+#define PKF_LAST        2
+/* UNREL flags: fragment index in the low nibble, fragment count in the high one.
+   15 x NET_SEG is larger than NET_FRAMEMAX, so state never needs the reliable path. */
+#define NET_UNREL_FRAGS 15
+
+#define NET_WIN             1024    /* reliable packets in flight / held out of order, per link */
+#define NET_RTO_MIN_MS      40
+#define NET_RTO_MAX_MS      500     /* a game would rather resend than wait */
+#define NET_RTO_INIT_MS     200
+#define NET_PING_MS         1000    /* send a keepalive after this long with nothing sent */
+#define NET_TIMEOUT_MS      30000   /* nothing heard for this long => peer gone (see header) */
+#define NET_HELLO_EVERY_MS  250     /* joiner: resend HELLO until WELCOME */
+#define NET_JOIN_TIMEOUT_MS 5000    /* joiner: give up if no WELCOME by then */
+#define NET_RCVBUF          (1024*1024)
+#define NET_PENDING_MAX     (8*1024*1024)  /* reliable bytes queued behind a full window before giving up */
 
 /* LAN auto-discovery (UDP broadcast): clients broadcast a QUERY; hosts reply
    with their session name + player count. The host's IP is taken from the reply
@@ -108,16 +149,57 @@ typedef enum { NET_JS_NONE = 0, NET_JS_CONNECTING, NET_JS_HANDSHAKE, NET_JS_DONE
 
 typedef enum { NET_OFF = 0, NET_HOST, NET_CLIENT } NetRole;
 
+struct NetMsg;
+
 typedef struct {
-	NetSocket     sock;
-	DPID          dpid;                              /* remote player's id */
-	unsigned char in[NET_HDR_SIZE + NET_FRAMEMAX];   /* inbound reassembly buffer */
-	int           inlen;                             /* bytes currently buffered */
+	unsigned char *pkt;         /* NULL = slot free (acked) */
+	int            len;
+	uint32_t       sent_ms;
+	uint32_t       rto_ms;      /* this packet's current retransmit timeout (backs off) */
+	int            resent;      /* retransmitted at least once: no RTT sample (Karn) */
+} NetRelOut;
+
+typedef struct {
+	struct sockaddr_in addr;
+	DPID           dpid;        /* remote player's id */
+
+	/* reliable, sending */
+	uint32_t       rel_next;    /* seq the next packet gets */
+	uint32_t       rel_una;     /* oldest unacknowledged seq */
+	NetRelOut      out[NET_WIN];
+	uint32_t       srtt_ms;     /* smoothed round trip; 0 = no sample yet */
+	/* Whole messages waiting for room in the window. A peer that is loading a level
+	   does not acknowledge, and the host keeps sending (the lobby sends its game
+	   description every frame), so the window can fill without anything being wrong.
+	   They wait here, as TCP's socket buffer used to hold them. */
+	struct NetMsg *pend_head, *pend_tail;
+	int            pend_bytes;
+	int            pend_frags;  /* packets those will take: state is stamped as sent after them */
+
+	/* reliable, receiving */
+	uint32_t       rel_expect;  /* next in-order seq to deliver */
+	unsigned char *held[NET_WIN];   /* out-of-order packets waiting for the gap to fill */
+	int            held_len[NET_WIN];
+	unsigned char  asm_buf[NET_FRAMEMAX];  /* fragment reassembly */
+	int            asm_len, asm_on;
+	int            ack_due;
+
+	/* unreliable state */
+	uint32_t       unrel_next;
+	uint32_t       unrel_last;
+	int            unrel_seen;
+	/* reassembly of ONE fragmented state message; a newer one discards it */
+	uint32_t       ua_seq;
+	int            ua_on, ua_count, ua_len;
+	unsigned       ua_mask;
+	unsigned char  ua_buf[NET_UNREL_FRAGS * NET_SEG];
+
+	uint32_t       last_rx_ms, last_tx_ms;
 } NetConn;
 
 static NetRole   net_role     = NET_OFF;
-static NetSocket net_listen   = NET_BAD;             /* host only */
-static NetConn   net_conns[NET_MAXCONNS];            /* host: clients; client: [0]=host link */
+static NetSocket net_sock     = NET_BAD;             /* the game socket (host: bound to NET_PORT) */
+static NetConn  *net_conns[NET_MAXCONNS];            /* host: clients; client: [0]=host link */
 static int       net_nconns   = 0;
 static DPID      net_next_dpid = NET_HOST_DPID + 1;  /* host assigns to joiners */
 
@@ -142,8 +224,8 @@ static char      net_host_sessionname[64] = "AvP Game";
 
 /* async join state */
 static NetJoinState net_join_state = NET_JS_NONE;
-static NetSocket    net_join_sock  = NET_BAD;
 static uint32_t     net_join_start = 0;
+static uint32_t     net_join_hello_ms = 0;
 
 static void net_wr32(unsigned char *p, int32_t v) {
 	p[0]=(unsigned char)v; p[1]=(unsigned char)(v>>8);
@@ -152,6 +234,8 @@ static void net_wr32(unsigned char *p, int32_t v) {
 static int32_t net_rd32(const unsigned char *p) {
 	return (int32_t)((uint32_t)p[0] | ((uint32_t)p[1]<<8) | ((uint32_t)p[2]<<16) | ((uint32_t)p[3]<<24));
 }
+/* Sequence comparison that survives wrap-around: a is after b. */
+static int net_seq_after(uint32_t a, uint32_t b) { return (int32_t)(a - b) > 0; }
 
 static void net_setnonblock(NetSocket s) {
 #ifdef _WIN32
@@ -161,29 +245,13 @@ static void net_setnonblock(NetSocket s) {
 #endif
 }
 
-/* Send a full buffer over a non-blocking socket, spinning briefly on
-   EWOULDBLOCK. Fine for AvP's small messages; proper outbound queuing later. */
-static int net_send_all(NetSocket s, const unsigned char *buf, int len) {
-	int off = 0, spins = 0;
-	while (off < len) {
-		int n = (int)send(s, (const char *)buf + off, len - off, 0);
-		if (n > 0) { off += n; spins = 0; continue; }
-		if (n < 0 && net_wouldblock()) { if (++spins > 1000000) return -1; continue; }
-		return -1;
-	}
-	return 0;
+static int net_same_addr(const struct sockaddr_in *a, const struct sockaddr_in *b) {
+	return a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
 }
 
-static int net_send_frame(NetSocket s, DPID from, DPID to, const void *data, int size) {
-	unsigned char hdr[NET_HDR_SIZE];
-	if (size < 0 || size > NET_FRAMEMAX) return -1;
-	net_wr32(hdr,   size);
-	net_wr32(hdr+4, from);
-	net_wr32(hdr+8, to);
-	if (net_send_all(s, hdr, NET_HDR_SIZE) != 0) return -1;
-	if (size && net_send_all(s, (const unsigned char *)data, size) != 0) return -1;
-	return 0;
-}
+/* ---------------------------------------------------------------------------
+ * Received-message queue and the DirectPlay system messages the engine expects
+ * ------------------------------------------------------------------------- */
 
 static void net_enqueue(DPID from, DPID to, const unsigned char *data, int size) {
 	NetMsg *m = (NetMsg *)malloc(sizeof(NetMsg) + (size > 0 ? (size_t)size : 0));
@@ -194,10 +262,9 @@ static void net_enqueue(DPID from, DPID to, const unsigned char *data, int size)
 	net_qtail = m;
 }
 
-/* Synthesize the DirectPlay system messages the engine expects. These structs
-   carry a POINTER to the player name (DPNAME.lpszShortNameA); ProcessSystemMessage
-   dereferences it immediately after DpExtRecv returns, so we point it at a small
-   ring of persistent name buffers. */
+/* These structs carry a POINTER to the player name (DPNAME.lpszShortNameA);
+   ProcessSystemMessage dereferences it immediately after DpExtRecv returns, so we
+   point it at a small ring of persistent name buffers. */
 #define NET_NAMESLOTS 32
 static char net_nameslots[NET_NAMESLOTS][NET_PLAYERNAMELENGTH];
 static int  net_nameslot_next = 0;
@@ -236,122 +303,436 @@ static void net_enqueue_sessionlost(void) {
 	net_enqueue(DPID_SYSMSG, AVPDPNetID, (const unsigned char *)&m, (int)sizeof m);
 }
 
-static void net_conn_close(int i) {
-	DPID id = net_conns[i].dpid;
-	net_closesock(net_conns[i].sock);
+/* ---------------------------------------------------------------------------
+ * Datagrams
+ * ------------------------------------------------------------------------- */
+
+static void net_hdr(unsigned char *p, int kind, int flags, uint32_t seq, uint32_t aux, DPID from, DPID to) {
+	net_wr32(p, NET_MAGIC);
+	p[4] = (unsigned char)kind;
+	p[5] = (unsigned char)flags;
+	p[6] = (unsigned char)NET_VERSION; p[7] = 0;
+	net_wr32(p + 8,  (int32_t)seq);
+	net_wr32(p + 12, (int32_t)aux);
+	net_wr32(p + 16, from);
+	net_wr32(p + 20, to);
+}
+
+static void net_sendto(const struct sockaddr_in *addr, const unsigned char *pkt, int len) {
+	if (net_sock == NET_BAD) return;
+	sendto(net_sock, (const char *)pkt, len, 0, (const struct sockaddr *)addr, sizeof *addr);
+}
+
+static void net_send_ctrl(NetConn *c, int kind, uint32_t seq, uint32_t aux,
+                          const void *payload, int plen) {
+	unsigned char pkt[NET_MTU];
+	if (plen > NET_SEG) plen = NET_SEG;
+	net_hdr(pkt, kind, 0, seq, aux, 0, 0);
+	if (plen > 0) memcpy(pkt + NET_HDR, payload, (size_t)plen);
+	net_sendto(&c->addr, pkt, NET_HDR + plen);
+	c->last_tx_ms = net_now_ms();
+}
+
+static NetConn *net_conn_new(const struct sockaddr_in *addr, DPID dpid) {
+	NetConn *c = (NetConn *)calloc(1, sizeof(NetConn));
+	if (!c) return NULL;
+	c->addr = *addr;
+	c->dpid = dpid;
+	c->last_rx_ms = c->last_tx_ms = net_now_ms();
+	return c;
+}
+
+static void net_conn_free(NetConn *c) {
+	int i;
+	for (i = 0; i < NET_WIN; i++) { free(c->out[i].pkt); free(c->held[i]); }
+	while (c->pend_head) { struct NetMsg *m = c->pend_head; c->pend_head = m->next; free(m); }
+	free(c);
+}
+
+/* Drop a link. 'notify' raises the matching system message for the game. */
+static void net_conn_close(int i, int notify) {
+	NetConn *c = net_conns[i];
+	DPID id = c->dpid;
+	net_conn_free(c);
 	net_conns[i] = net_conns[net_nconns - 1];   /* compact */
+	net_conns[net_nconns - 1] = NULL;
 	net_nconns--;
+	if (!notify) return;
 	if (net_role == NET_HOST)        net_enqueue_destroy(id);       /* host: player left */
 	else if (net_role == NET_CLIENT) net_enqueue_sessionlost();     /* client: host lost */
 }
 
-/* Act on one fully-received frame from connection index 'ci'. */
-static void net_handle_frame(int ci, DPID from, DPID to, unsigned char *data, int size) {
-	if (from == NET_CTRL_FROM) {                    /* internal control channel */
-		int op = (size >= 4) ? net_rd32(data) : 0;
-		if (op == NETCTRL_WELCOME && size >= 8 && net_role == NET_CLIENT) {
-			AVPDPNetID = net_rd32(data + 4);
-			fprintf(stderr, "net: assigned DPID %d by host\n", (int)AVPDPNetID);
-		} else if (op == NETCTRL_HELLO && net_role == NET_HOST) {
-			/* client sent its player name -> register it so the host's game and
-			   the roster / GameDescription include this player */
-			char nm[NET_PLAYERNAMELENGTH];
-			int nlen = size - 4;
-			if (nlen < 0) nlen = 0;
-			if (nlen > NET_PLAYERNAMELENGTH - 1) nlen = NET_PLAYERNAMELENGTH - 1;
-			memcpy(nm, data + 4, (size_t)nlen);
-			nm[nlen] = '\0';
-			net_enqueue_create(net_conns[ci].dpid, nm);
-		}
-		return;
+/* Put one reliable message on the wire: split into fragments, each sent now and
+   kept until acknowledged. The caller has checked the window has room. */
+static void net_transmit_rel(NetConn *c, DPID from, DPID to, const unsigned char *data, int size) {
+	int nfrag = size > 0 ? (size + NET_SEG - 1) / NET_SEG : 1;
+	int f, off = 0;
+	uint32_t now = net_now_ms();
+	for (f = 0; f < nfrag; f++) {
+		int len = size - off;
+		NetRelOut *o = &c->out[c->rel_next % NET_WIN];
+		if (len > NET_SEG) len = NET_SEG;
+		free(o->pkt);
+		o->pkt = (unsigned char *)malloc((size_t)(NET_HDR + len));
+		if (!o->pkt) return;
+		net_hdr(o->pkt, PK_REL, (f == 0 ? PKF_FIRST : 0) | (f == nfrag - 1 ? PKF_LAST : 0),
+		        c->rel_next, 0, from, to);
+		if (len > 0) memcpy(o->pkt + NET_HDR, data + off, (size_t)len);
+		o->len     = NET_HDR + len;
+		o->sent_ms = now;
+		o->rto_ms  = c->srtt_ms ? c->srtt_ms * 2 + 20 : NET_RTO_INIT_MS;
+		if (o->rto_ms < NET_RTO_MIN_MS) o->rto_ms = NET_RTO_MIN_MS;
+		if (o->rto_ms > NET_RTO_MAX_MS) o->rto_ms = NET_RTO_MAX_MS;
+		o->resent  = 0;
+		net_sendto(&c->addr, o->pkt, o->len);
+		c->rel_next++;
+		off += len;
 	}
-	if (net_role == NET_HOST) {
-		int j;
-		net_enqueue(from, to, data, size);          /* host's own game sees it */
-		for (j = 0; j < net_nconns; j++) {          /* relay to the other clients */
-			if (j == ci) continue;
-			if (to == DPID_ALLPLAYERS || to == net_conns[j].dpid)
-				net_send_frame(net_conns[j].sock, from, to, data, size);
-		}
-	} else {
-		net_enqueue(from, to, data, size);          /* client: it's for us */
+	c->last_tx_ms = now;
+}
+
+static int net_frags(int size) { return size > 0 ? (size + NET_SEG - 1) / NET_SEG : 1; }
+
+static int net_rel_fits(const NetConn *c, int size) {
+	return (int)(c->rel_next - c->rel_una) + net_frags(size) <= NET_WIN;
+}
+
+/* Send what the window now has room for, oldest first. */
+static void net_flush_pending(NetConn *c) {
+	while (c->pend_head && net_rel_fits(c, c->pend_head->size)) {
+		struct NetMsg *m = c->pend_head;
+		c->pend_head = m->next;
+		if (!c->pend_head) c->pend_tail = NULL;
+		c->pend_bytes -= m->size;
+		c->pend_frags -= net_frags(m->size);
+		net_transmit_rel(c, m->from, m->to, m->data, m->size);
+		free(m);
 	}
 }
 
-/* Drain readable bytes from one connection, extracting complete frames.
-   Extraction is interleaved with reading: we pull out every complete frame
-   before reading more, so a backlog larger than the buffer (a burst, or a pump
-   delayed by a frame hitch) is processed in chunks instead of overflowing the
-   16 KB buffer and getting force-closed — which used to masquerade as the peer
-   leaving and rejoining ("has left" / "has connected" spam). */
-static void net_pump_conn(int ci) {
-	NetConn *c = &net_conns[ci];
-	for (;;) {
-		int off = 0, space, n;
+/* Queue one reliable message on a link. Goes out at once if the window has room
+   and nothing is already waiting (order must be kept), else waits in the pending
+   queue. Returns -1 only if that queue has grown past NET_PENDING_MAX. */
+static int net_send_rel(NetConn *c, DPID from, DPID to, const unsigned char *data, int size) {
+	struct NetMsg *m;
+	if (!c->pend_head && net_rel_fits(c, size)) {
+		net_transmit_rel(c, from, to, data, size);
+		return 0;
+	}
+	if (c->pend_bytes + size > NET_PENDING_MAX) return -1;
+	m = (struct NetMsg *)malloc(sizeof(struct NetMsg) + (size > 0 ? (size_t)size : 0));
+	if (!m) return -1;
+	m->next = NULL; m->from = from; m->to = to; m->size = size;
+	if (size) memcpy(m->data, data, (size_t)size);
+	if (c->pend_tail) c->pend_tail->next = m; else c->pend_head = m;
+	c->pend_tail = m;
+	c->pend_bytes += size;
+	c->pend_frags += net_frags(size);
+	return 0;
+}
 
-		/* Extract all complete frames currently buffered, then compact. */
-		while (c->inlen - off >= NET_HDR_SIZE) {
-			int32_t size = net_rd32(c->in + off);
-			int32_t from = net_rd32(c->in + off + 4);
-			int32_t to   = net_rd32(c->in + off + 8);
-			if (size < 0 || size > NET_FRAMEMAX) { net_conn_close(ci); return; }
-			if (c->inlen - off - NET_HDR_SIZE < size) break;    /* wait for the rest */
-			net_handle_frame(ci, from, to, c->in + off + NET_HDR_SIZE, size);
-			off += NET_HDR_SIZE + size;
+/* One state message: one datagram, or up to NET_UNREL_FRAGS when a crowd of aliens
+ * makes it large. It never falls back to the reliable channel - state delivered
+ * that way could land after a NEWER state sent directly, and be applied over it.
+ *
+ * The stamp counts reliable messages still waiting in the pending queue as already
+ * sent, because to the game they were: they were handed over before this state. */
+static int net_send_unrel(NetConn *c, DPID from, DPID to, const unsigned char *data, int size) {
+	unsigned char pkt[NET_MTU];
+	int nfrag = net_frags(size), f, off = 0;
+	uint32_t seq = c->unrel_next++;
+	uint32_t mark = c->rel_next + (uint32_t)c->pend_frags;
+	if (nfrag > NET_UNREL_FRAGS) return -1;
+	for (f = 0; f < nfrag; f++) {
+		int len = size - off;
+		if (len > NET_SEG) len = NET_SEG;
+		net_hdr(pkt, PK_UNREL, f | (nfrag << 4), seq, mark, from, to);
+		if (len > 0) memcpy(pkt + NET_HDR, data + off, (size_t)len);
+		net_sendto(&c->addr, pkt, NET_HDR + len);
+		off += len;
+	}
+	c->last_tx_ms = net_now_ms();
+	return 0;
+}
+
+/* Route one message out of this machine. 'except' is the link it arrived on when
+   the host is relaying (it is not sent back there), or NULL. A POINTER, not an
+   index: a failing link is closed here and the array compacted, and 'except'
+   itself is never closed, so the pointer stays valid where an index would not. */
+static void net_route(const NetConn *except, DPID from, DPID to, int reliable,
+                      const unsigned char *data, int size) {
+	int j;
+	for (j = net_nconns - 1; j >= 0; j--) {
+		NetConn *c = net_conns[j];
+		if (c == except) continue;
+		if (net_role == NET_HOST && !(to == DPID_ALLPLAYERS || to == c->dpid)) continue;
+		if (reliable) {
+			if (net_send_rel(c, from, to, data, size) != 0) {
+				fprintf(stderr, "net: DPID %d has %d bytes waiting unacknowledged; dropping the link\n",
+				        (int)c->dpid, c->pend_bytes);
+				net_conn_close(j, 1);
+			}
+		} else {
+			net_send_unrel(c, from, to, data, size);
 		}
-		if (off > 0) { memmove(c->in, c->in + off, c->inlen - off); c->inlen -= off; }
+	}
+}
 
-		/* Read more. Buffer full with no complete frame => a single frame really
-		   exceeds NET_FRAMEMAX, i.e. genuine desync. */
-		space = (int)sizeof(c->in) - c->inlen;
-		if (space <= 0) { net_conn_close(ci); return; }
-		n = (int)recv(c->sock, (char *)c->in + c->inlen, space, 0);
-		if (n > 0) { c->inlen += n; continue; }              /* loop: extract, read again */
-		if (n == 0) { net_conn_close(ci); return; }          /* peer closed */
-		if (net_wouldblock()) break;                         /* nothing more now */
-		net_conn_close(ci); return;                          /* error */
+/* A whole message arrived on link ci: give it to the game, and relay it if we host. */
+static void net_deliver(const NetConn *c, DPID from, DPID to, int reliable,
+                        const unsigned char *data, int size) {
+	net_enqueue(from, to, data, size);
+	if (net_role == NET_HOST) net_route(c, from, to, reliable, data, size);
+}
+
+/* ---------------------------------------------------------------------------
+ * Receiving
+ * ------------------------------------------------------------------------- */
+
+/* Apply one in-order reliable packet: append to the reassembly buffer, deliver on
+   the last fragment. */
+static void net_rel_apply(NetConn *c, const unsigned char *pkt, int len) {
+	int flags = pkt[5];
+	int plen  = len - NET_HDR;
+	if (flags & PKF_FIRST) { c->asm_len = 0; c->asm_on = 1; }
+	if (!c->asm_on) return;                           /* tail of a message we never started */
+	if (c->asm_len + plen > NET_FRAMEMAX) { c->asm_on = 0; return; }
+	memcpy(c->asm_buf + c->asm_len, pkt + NET_HDR, (size_t)plen);
+	c->asm_len += plen;
+	if (flags & PKF_LAST) {
+		c->asm_on = 0;
+		net_deliver(c, net_rd32(pkt + 16), net_rd32(pkt + 20), 1, c->asm_buf, c->asm_len);
+	}
+}
+
+static void net_on_rel(NetConn *c, const unsigned char *pkt, int len) {
+	uint32_t seq = (uint32_t)net_rd32(pkt + 8);
+	c->ack_due = 1;                                   /* ack even duplicates: our ack may have been lost */
+	if (!net_seq_after(seq + 1, c->rel_expect)) return;           /* already delivered */
+	if ((uint32_t)(seq - c->rel_expect) >= NET_WIN) return;      /* too far ahead: it will be resent */
+	if (seq != c->rel_expect) {                       /* out of order: hold it */
+		int k = (int)(seq % NET_WIN);
+		if (!c->held[k]) {
+			c->held[k] = (unsigned char *)malloc((size_t)len);
+			if (!c->held[k]) return;
+			memcpy(c->held[k], pkt, (size_t)len);
+			c->held_len[k] = len;
+		}
+		return;
+	}
+	/* Advance BEFORE applying: delivery can relay, and a state packet relayed or
+	   checked meanwhile must see this one as delivered. */
+	c->rel_expect++;
+	net_rel_apply(c, pkt, len);
+	for (;;) {                                        /* drain anything the gap was holding back */
+		int k = (int)(c->rel_expect % NET_WIN);
+		unsigned char *h = c->held[k];
+		if (!h || (uint32_t)net_rd32(h + 8) != c->rel_expect) break;
+		c->held[k] = NULL;
+		c->rel_expect++;
+		net_rel_apply(c, h, c->held_len[k]);
+		free(h);
+	}
+}
+
+static void net_on_unrel(NetConn *c, const unsigned char *pkt, int len) {
+	uint32_t seq     = (uint32_t)net_rd32(pkt + 8);
+	uint32_t relmark = (uint32_t)net_rd32(pkt + 12);
+	int idx  = pkt[5] & 15, cnt = pkt[5] >> 4;
+	int plen = len - NET_HDR;
+	const unsigned char *data = pkt + NET_HDR;
+	int size = plen;
+
+	if (cnt == 0) cnt = 1;
+	if (idx >= cnt || (idx < cnt - 1 && plen != NET_SEG)) return;     /* malformed */
+	if (c->unrel_seen && !net_seq_after(seq, c->unrel_last)) return;   /* older than one we used */
+
+	if (cnt > 1) {
+		if (c->ua_on && seq != c->ua_seq) {
+			if (!net_seq_after(seq, c->ua_seq)) return;   /* a fragment of an older one */
+			c->ua_on = 0;                                 /* newer: abandon the old one */
+		}
+		if (!c->ua_on) {
+			c->ua_on = 1; c->ua_seq = seq; c->ua_count = cnt; c->ua_mask = 0; c->ua_len = 0;
+		}
+		if (cnt != c->ua_count) return;
+		memcpy(c->ua_buf + idx * NET_SEG, data, (size_t)plen);
+		c->ua_mask |= 1u << idx;
+		if (idx == cnt - 1) c->ua_len = idx * NET_SEG + plen;
+		if (c->ua_mask != (1u << cnt) - 1) return;        /* still waiting for fragments */
+		c->ua_on = 0;
+		data = c->ua_buf;
+		size = c->ua_len;
+	}
+
+	if (net_seq_after(c->rel_expect, relmark)) return;  /* an event sent after it is already applied */
+	c->unrel_seen = 1;
+	c->unrel_last = seq;
+	net_deliver(c, net_rd32(pkt + 16), net_rd32(pkt + 20), 0, data, size);
+}
+
+static void net_on_ack(NetConn *c, const unsigned char *pkt) {
+	uint32_t ack  = (uint32_t)net_rd32(pkt + 8);
+	uint32_t bits = (uint32_t)net_rd32(pkt + 12);
+	uint32_t now  = net_now_ms();
+	int i;
+	if (net_seq_after(ack, c->rel_next)) return;      /* acks something never sent: ignore */
+	while (net_seq_after(ack, c->rel_una)) {          /* cumulative */
+		NetRelOut *o = &c->out[c->rel_una % NET_WIN];
+		if (o->pkt) {
+			if (!o->resent) {                         /* RTT sample (Karn: never from a resend) */
+				uint32_t s = now - o->sent_ms;
+				c->srtt_ms = c->srtt_ms ? (c->srtt_ms * 7 + s) / 8 : s;
+			}
+			free(o->pkt); o->pkt = NULL;
+		}
+		c->rel_una++;
+	}
+	for (i = 0; i < 32; i++) {                        /* selective: received past a gap */
+		uint32_t s = ack + 1 + (uint32_t)i;
+		if (!(bits & (1u << i))) continue;
+		if (!net_seq_after(c->rel_next, s)) break;
+		{
+			NetRelOut *o = &c->out[s % NET_WIN];
+			if (o->pkt) { free(o->pkt); o->pkt = NULL; }
+		}
+	}
+}
+
+static int net_find_conn(const struct sockaddr_in *from) {
+	int i;
+	for (i = 0; i < net_nconns; i++)
+		if (net_same_addr(&net_conns[i]->addr, from)) return i;
+	return -1;
+}
+
+/* Host: a joiner's HELLO. A repeat (our WELCOME was lost) just gets the WELCOME again. */
+static void net_on_hello(const struct sockaddr_in *from, const unsigned char *pkt, int len) {
+	int ci = net_find_conn(from);
+	NetConn *c;
+	if (ci < 0) {
+		char nm[NET_PLAYERNAMELENGTH];
+		int nlen = len - NET_HDR;
+		DPID id;
+		if (net_nconns >= NET_MAXCONNS) return;
+		id = net_next_dpid++;
+		if (id == DPID_SYSMSG || id == DPID_ALLPLAYERS) id = net_next_dpid++;   /* skip reserved */
+		c = net_conn_new(from, id);
+		if (!c) return;
+		net_conns[net_nconns++] = c;
+		if (nlen < 0) nlen = 0;
+		if (nlen > NET_PLAYERNAMELENGTH - 1) nlen = NET_PLAYERNAMELENGTH - 1;
+		memcpy(nm, pkt + NET_HDR, (size_t)nlen);
+		nm[nlen] = '\0';
+		fprintf(stderr, "net: client %s:%d joined, assigned DPID %d (%d players)\n",
+			inet_ntoa(from->sin_addr), ntohs(from->sin_port), (int)id, net_nconns + 1);
+		net_enqueue_create(id, nm);
+	} else {
+		c = net_conns[ci];
+	}
+	net_send_ctrl(c, PK_WELCOME, (uint32_t)c->dpid, 0, NULL, 0);
+}
+
+/* Read every waiting datagram. */
+static void net_read_all(void) {
+	unsigned char pkt[NET_MTU + 64];
+	for (;;) {
+		struct sockaddr_in from;
+		socklen_t fl = sizeof from;
+		int n = (int)recvfrom(net_sock, (char *)pkt, sizeof pkt, 0, (struct sockaddr *)&from, &fl);
+		int kind, ci;
+		if (n < 0) break;                             /* would block, or an ICMP error: done */
+		if (n < NET_HDR || net_rd32(pkt) != (int32_t)NET_MAGIC || pkt[6] != NET_VERSION) continue;
+		kind = pkt[4];
+
+		if (kind == PK_HELLO) { if (net_role == NET_HOST) net_on_hello(&from, pkt, n); continue; }
+
+		ci = net_find_conn(&from);
+		if (ci < 0) continue;                         /* not one of ours */
+		net_conns[ci]->last_rx_ms = net_now_ms();
+
+		switch (kind) {
+		case PK_REL:     net_on_rel(net_conns[ci], pkt, n);    break;
+		case PK_UNREL:   net_on_unrel(net_conns[ci], pkt, n);  break;
+		case PK_ACK:     net_on_ack(net_conns[ci], pkt);   break;
+		case PK_WELCOME:
+			if (net_role == NET_CLIENT && AVPDPNetID == 0) {
+				AVPDPNetID = net_rd32(pkt + 8);
+				fprintf(stderr, "net: assigned DPID %d by host\n", (int)AVPDPNetID);
+			}
+			break;
+		case PK_BYE:
+			fprintf(stderr, "net: DPID %d said goodbye\n", (int)net_conns[ci]->dpid);
+			net_conn_close(ci, 1);
+			break;
+		default: break;                               /* PING: last_rx_ms was all it needed */
+		}
+	}
+}
+
+/* Per link, per pump: ack what arrived, resend what timed out, keep an idle link
+   alive, and give up on a silent one. */
+static void net_service_links(void) {
+	uint32_t now = net_now_ms();
+	int i;
+	for (i = net_nconns - 1; i >= 0; i--) {
+		NetConn *c = net_conns[i];
+		uint32_t s;
+
+		if (now - c->last_rx_ms > NET_TIMEOUT_MS) {
+			fprintf(stderr, "net: DPID %d timed out\n", (int)c->dpid);
+			net_conn_close(i, 1);
+			continue;
+		}
+		if (c->ack_due) {
+			uint32_t bits = 0;
+			int k;
+			for (k = 0; k < 32; k++) {
+				uint32_t q = c->rel_expect + 1 + (uint32_t)k;
+				unsigned char *h = c->held[q % NET_WIN];
+				if (h && (uint32_t)net_rd32(h + 8) == q) bits |= 1u << k;
+			}
+			net_send_ctrl(c, PK_ACK, c->rel_expect, bits, NULL, 0);
+			c->ack_due = 0;
+		}
+		for (s = c->rel_una; net_seq_after(c->rel_next, s); s++) {
+			NetRelOut *o = &c->out[s % NET_WIN];
+			if (!o->pkt || now - o->sent_ms < o->rto_ms) continue;
+			net_sendto(&c->addr, o->pkt, o->len);
+			o->sent_ms = now;
+			o->resent  = 1;
+			o->rto_ms *= 2;
+			if (o->rto_ms > NET_RTO_MAX_MS) o->rto_ms = NET_RTO_MAX_MS;
+			c->last_tx_ms = now;
+		}
+		net_flush_pending(c);
+		if (now - c->last_tx_ms > NET_PING_MS) net_send_ctrl(c, PK_PING, 0, 0, NULL, 0);
 	}
 }
 
 static void net_udp_respond(void);   /* forward decl (defined below) */
 
-/* Accept new clients (host) and read from all connections. Cheap to call often. */
+/* Read the socket and service every link. Cheap to call often. */
 static void net_pump(void) {
-	int i;
-	if (net_role == NET_OFF) return;
-
+	if (net_role == NET_OFF || net_sock == NET_BAD) return;
 	if (net_role == NET_HOST) net_udp_respond();
-
-	if (net_role == NET_HOST && net_listen != NET_BAD && net_nconns < NET_MAXCONNS) {
-		NetSocket cs = accept(net_listen, NULL, NULL);
-		if (cs != NET_BAD) {
-			NetConn *c;
-			DPID id;
-			unsigned char wel[8];
-			int one = 1;
-			net_setnonblock(cs);
-			setsockopt(cs, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof one);
-			id = net_next_dpid++;
-			if (id == DPID_SYSMSG || id == DPID_ALLPLAYERS) id = net_next_dpid++;  /* skip reserved */
-			c = &net_conns[net_nconns++];
-			c->sock = cs; c->dpid = id; c->inlen = 0;
-			net_wr32(wel, NETCTRL_WELCOME);
-			net_wr32(wel + 4, id);
-			net_send_frame(cs, NET_CTRL_FROM, id, wel, sizeof wel);
-			fprintf(stderr, "net: client connected, assigned DPID %d (%d players)\n", (int)id, net_nconns + 1);
-			/* milestone 2: send roster + synthesize DPSYS_CREATEPLAYERORGROUP */
-		}
-	}
-	for (i = net_nconns - 1; i >= 0; i--) net_pump_conn(i);
+	net_read_all();
+	net_service_links();
 }
 
 static void net_teardown(void) {
 	int i;
-	for (i = 0; i < net_nconns; i++) net_closesock(net_conns[i].sock);
+	/* Say goodbye so peers notice at once rather than after NET_TIMEOUT_MS. Twice,
+	   since it is not acknowledged and one may be lost. */
+	for (i = 0; i < net_nconns; i++) {
+		net_send_ctrl(net_conns[i], PK_BYE, 0, 0, NULL, 0);
+		net_send_ctrl(net_conns[i], PK_BYE, 0, 0, NULL, 0);
+		net_conn_free(net_conns[i]);
+		net_conns[i] = NULL;
+	}
 	net_nconns = 0;
-	if (net_listen != NET_BAD)   { net_closesock(net_listen);   net_listen   = NET_BAD; }
-	if (net_udp != NET_BAD)      { net_closesock(net_udp);      net_udp      = NET_BAD; }
-	if (net_join_sock != NET_BAD){ net_closesock(net_join_sock);net_join_sock= NET_BAD; }
+	if (net_sock != NET_BAD) { net_closesock(net_sock); net_sock = NET_BAD; }
+	if (net_udp != NET_BAD)  { net_closesock(net_udp);  net_udp  = NET_BAD; }
 	net_join_state = NET_JS_NONE;
 	net_browsing = 0;
 	while (net_qhead) { NetMsg *m = net_qhead; net_qhead = m->next; free(m); }
@@ -392,6 +773,34 @@ static void net_winsock_init(void) {
 #endif
 }
 
+/* The game socket. port 0 = any (a joiner). */
+static NetSocket net_open_game_socket(unsigned short port) {
+	struct sockaddr_in a;
+	int rcv = NET_RCVBUF;
+	NetSocket s = socket(AF_INET, SOCK_DGRAM, 0);
+	if (s == NET_BAD) return NET_BAD;
+	/* Large receive buffer: the game does not pump during a level load, and what
+	   arrives meanwhile has to wait in the kernel. */
+	setsockopt(s, SOL_SOCKET, SO_RCVBUF, (const char *)&rcv, sizeof rcv);
+	memset(&a, 0, sizeof a);
+	a.sin_family = AF_INET; a.sin_addr.s_addr = INADDR_ANY; a.sin_port = htons(port);
+	if (bind(s, (struct sockaddr *)&a, sizeof a) != 0) { net_closesock(s); return NET_BAD; }
+	net_setnonblock(s);
+#ifdef _WIN32
+	{
+		/* Windows reports an ICMP port-unreachable from an EARLIER sendto as a
+		   WSAECONNRESET on the next recvfrom, which would end the read loop every
+		   pump while a peer is gone. Switch that off. */
+		#ifndef SIO_UDP_CONNRESET
+		#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+		#endif
+		BOOL off = FALSE; DWORD nb = 0;
+		WSAIoctl(s, SIO_UDP_CONNRESET, &off, sizeof off, NULL, 0, &nb, NULL, NULL);
+	}
+#endif
+	return s;
+}
+
 /* Host: open the UDP discovery socket so LAN clients can find us. Best-effort;
    hosting still works (via manual IP) if this fails. */
 static void net_udp_open_host(void) {
@@ -407,98 +816,61 @@ static void net_udp_open_host(void) {
 }
 
 static int net_start_host(void) {
-	NetSocket s;
-	struct sockaddr_in a;
-	int one = 1;
 	net_teardown();
 	net_winsock_init();
-	s = socket(AF_INET, SOCK_STREAM, 0);
-	if (s == NET_BAD) return 0;
-	setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&one, sizeof one);
-	memset(&a, 0, sizeof a);
-	a.sin_family = AF_INET; a.sin_addr.s_addr = INADDR_ANY; a.sin_port = htons(NET_PORT);
-	if (bind(s, (struct sockaddr*)&a, sizeof a) != 0) { net_closesock(s); return 0; }
-	if (listen(s, NET_MAXCONNS) != 0) { net_closesock(s); return 0; }
-	net_setnonblock(s);
-	net_listen = s;
+	net_sock = net_open_game_socket(NET_PORT);
+	if (net_sock == NET_BAD) return 0;
 	net_role = NET_HOST;
 	net_next_dpid = NET_HOST_DPID + 1;
 	AVPDPNetID = NET_HOST_DPID;
 	glpDP = 1;
 	net_udp_open_host();                      /* answer LAN discovery */
-	fprintf(stderr, "net: hosting on port %d (host DPID %d), discovery on %d\n",
+	fprintf(stderr, "net: hosting on UDP %d (host DPID %d), discovery on %d\n",
 		NET_PORT, NET_HOST_DPID, NET_DISC_PORT);
 	return 1;
 }
 
-/* Start a non-blocking TCP connect to a host. Never blocks; the connection and
-   DPID handshake are then advanced a step at a time by net_join_pump() each
-   frame, so the game loop keeps running throughout. */
+static void net_send_hello(void) {
+	extern char MP_PlayerName[];
+	int nlen = (int)strlen(MP_PlayerName);
+	if (nlen > NET_PLAYERNAMELENGTH - 1) nlen = NET_PLAYERNAMELENGTH - 1;
+	net_send_ctrl(net_conns[0], PK_HELLO, 0, 0, MP_PlayerName, nlen);
+	net_join_hello_ms = net_now_ms();
+}
+
+/* Start joining a host. Never blocks: HELLO is resent by net_join_pump() each
+   frame until the WELCOME arrives, so the game loop keeps running throughout. */
 static void net_begin_connect(const struct sockaddr_in *addr) {
-	int r;
+	NetConn *c;
 	net_teardown();
 	net_winsock_init();
 	net_join_state = NET_JS_FAILED;
-	net_join_sock = socket(AF_INET, SOCK_STREAM, 0);
-	if (net_join_sock == NET_BAD) return;
-	net_setnonblock(net_join_sock);
-	r = connect(net_join_sock, (const struct sockaddr*)addr, sizeof *addr);
-	if (r != 0 && !net_inprogress()) {                 /* immediate hard failure */
-		net_closesock(net_join_sock); net_join_sock = NET_BAD;
-		return;
-	}
+	net_sock = net_open_game_socket(0);
+	if (net_sock == NET_BAD) return;
+	c = net_conn_new(addr, NET_HOST_DPID);
+	if (!c) { net_closesock(net_sock); net_sock = NET_BAD; return; }
+	net_conns[0] = c;
+	net_nconns = 1;
+	net_role = NET_CLIENT;
+	glpDP = 1;
+	AVPDPNetID = 0;
+	net_send_hello();
 	net_join_start = net_now_ms();
-	net_join_state = NET_JS_CONNECTING;                 /* r==0 handled next pump too */
-	fprintf(stderr, "net: connecting...\n");
+	net_join_state = NET_JS_HANDSHAKE;
+	fprintf(stderr, "net: joining %s:%d...\n", inet_ntoa(addr->sin_addr), ntohs(addr->sin_port));
 }
 
-/* Advance the async connect one step (no blocking). Returns the current state. */
+/* Advance the join one step (no blocking). Returns the current state. */
 static int net_join_pump(void) {
-	if (net_join_state == NET_JS_CONNECTING) {
-		fd_set wf;
-		struct timeval tv;
-		FD_ZERO(&wf); FD_SET(net_join_sock, &wf);
-		tv.tv_sec = 0; tv.tv_usec = 0;                 /* poll, don't wait */
-		if (select((int)net_join_sock + 1, NULL, &wf, NULL, &tv) > 0) {
-			int err = 0, one = 1;
-			socklen_t el = sizeof err;
-			getsockopt(net_join_sock, SOL_SOCKET, SO_ERROR, (char*)&err, &el);
-			if (err != 0) {
-				fprintf(stderr, "net: connect refused (%d)\n", err);
-				net_join_state = NET_JS_FAILED;
-			} else {
-				/* connected: adopt the socket as our host link, send HELLO */
-				setsockopt(net_join_sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof one);
-				net_conns[0].sock = net_join_sock; net_conns[0].dpid = NET_HOST_DPID; net_conns[0].inlen = 0;
-				net_nconns = 1;
-				net_role = NET_CLIENT;
-				glpDP = 1;
-				AVPDPNetID = 0;
-				net_join_sock = NET_BAD;               /* ownership moved to net_conns[0] */
-				{
-					extern char MP_PlayerName[];
-					unsigned char hello[4 + NET_PLAYERNAMELENGTH];
-					int nlen = (int)strlen(MP_PlayerName);
-					if (nlen > NET_PLAYERNAMELENGTH - 1) nlen = NET_PLAYERNAMELENGTH - 1;
-					net_wr32(hello, NETCTRL_HELLO);
-					if (nlen > 0) memcpy(hello + 4, MP_PlayerName, (size_t)nlen);
-					net_send_frame(net_conns[0].sock, NET_CTRL_FROM, NET_HOST_DPID, hello, 4 + nlen);
-				}
-				net_join_start = net_now_ms();
-				net_join_state = NET_JS_HANDSHAKE;
-				fprintf(stderr, "net: connected, awaiting DPID\n");
-			}
-		} else if (net_now_ms() - net_join_start > NET_CONNECT_TIMEOUT_MS) {
-			fprintf(stderr, "net: connect timed out\n");
-			net_join_state = NET_JS_FAILED;
-		}
-	} else if (net_join_state == NET_JS_HANDSHAKE) {
-		net_pump();                                    /* reads WELCOME -> AVPDPNetID */
-		if (AVPDPNetID != 0) net_join_state = NET_JS_DONE;
-		else if (net_now_ms() - net_join_start > NET_HANDSHAKE_TIMEOUT_MS) {
-			fprintf(stderr, "net: no WELCOME from host\n");
-			net_join_state = NET_JS_FAILED;
-		}
+	if (net_join_state != NET_JS_HANDSHAKE) return (int)net_join_state;
+	net_pump();                                    /* reads WELCOME -> AVPDPNetID */
+	if (AVPDPNetID != 0) {
+		net_join_state = NET_JS_DONE;
+	} else if (net_nconns < 1 || net_now_ms() - net_join_start > NET_JOIN_TIMEOUT_MS) {
+		fprintf(stderr, "net: no answer from host\n");
+		net_join_state = NET_JS_FAILED;
+	} else if (net_now_ms() - net_join_hello_ms > NET_HELLO_EVERY_MS) {
+		net_send_hello();                          /* HELLO or WELCOME may have been lost */
 	}
 	return (int)net_join_state;
 }
@@ -659,21 +1031,15 @@ HRESULT DpExtRecv(int lpDP2A, void *lpidFrom, void *lpidTo, DWORD dwFlags, void 
 }
 
 /* Send one message. Client -> host link; host -> fan out to clients (the sender
-   never receives its own DPID_ALLPLAYERS message, matching DirectPlay). */
+   never receives its own DPID_ALLPLAYERS message, matching DirectPlay).
+   DPSEND_GUARANTEED selects the reliable channel; see the header comment. */
 HRESULT DpExtSend(int lpDP2A, DPID idFrom, DPID idTo, DWORD dwFlags, void *lpData, DWORD dwDataSize)
 {
 	if (net_role == NET_OFF) return 1;
 	if ((int)dwDataSize > NET_FRAMEMAX) return DPERR_SENDTOOBIG;
-	if (net_role == NET_CLIENT) {
-		if (net_nconns < 1) return DPERR_CONNECTIONLOST;
-		net_send_frame(net_conns[0].sock, idFrom, idTo, lpData, (int)dwDataSize);
-	} else {
-		int j;
-		for (j = 0; j < net_nconns; j++) {
-			if (idTo == DPID_ALLPLAYERS || idTo == net_conns[j].dpid)
-				net_send_frame(net_conns[j].sock, idFrom, idTo, lpData, (int)dwDataSize);
-		}
-	}
+	if (net_role == NET_CLIENT && net_nconns < 1) return DPERR_CONNECTIONLOST;
+	net_route(NULL, idFrom, idTo, (dwFlags & DPSEND_GUARANTEED) != 0,
+	          (const unsigned char *)lpData, (int)dwDataSize);
 	return DP_OK;
 }
 
@@ -681,7 +1047,7 @@ HRESULT DpExtSend(int lpDP2A, DPID idFrom, DPID idTo, DWORD dwFlags, void *lpDat
 int DirectPlay_ConnectingToLobbiedGame(char* playerName)
 {
 	fprintf(stderr, "DirectPlay_ConnectingToLobbiedGame(%s)\n", playerName);
-	
+
 	return 0;
 }
 
@@ -740,21 +1106,21 @@ int DirectPlay_JoinGame()
 void DirectPlay_EnumConnections()
 {
 	fprintf(stderr, "DirectPlay_EnumConnections()\n");
-	
+
 	netGameData.tcpip_available = 1;
 	netGameData.ipx_available = 0;
 	netGameData.modem_available = 0;
-	netGameData.serial_available = 0;                        
+	netGameData.serial_available = 0;
 }
 
 int DirectPlay_HostGame(char *playerName, char *sessionName,int species,int gamestyle,int level)
 {
 	extern int DetermineAvailableCharacterTypes(int);
-	
+
 	int maxPlayers=DetermineAvailableCharacterTypes(FALSE);
 	if(maxPlayers<1) maxPlayers=1;
 	if(maxPlayers>8) maxPlayers=8;
-	
+
 	if(!netGameData.skirmishMode) {
 		fprintf(stderr, "DirectPlay_HostGame(%s, %s, %d, %d, %d)\n", playerName, sessionName, species, gamestyle, level);
 
@@ -765,7 +1131,7 @@ int DirectPlay_HostGame(char *playerName, char *sessionName,int species,int game
 			net_host_sessionname[sizeof net_host_sessionname - 1] = '\0';
 		}
 
-		/* Open the listening + discovery sockets; sets AVPDPNetID and glpDP. */
+		/* Open the game + discovery sockets; sets AVPDPNetID and glpDP. */
 		if (!net_start_host()) {
 			fprintf(stderr, "net: failed to start host on port %d\n", NET_PORT);
 			return 0;
@@ -779,13 +1145,13 @@ int DirectPlay_HostGame(char *playerName, char *sessionName,int species,int game
 		//fake multiplayer
 		//need to set the id to an non zero value
 		AVPDPNetID=100;
-		
+
 		memset(&AVPDPplayerName, 0, sizeof(AVPDPplayerName));
 		AVPDPplayerName.dwSize = sizeof(DPNAME);
 		AVPDPplayerName.lpszShortNameA  = playerName;
 		AVPDPplayerName.lpszLongNameA = playerName;
 	}
-	
+
 	InitAVPNetGameForHost(species,gamestyle,level);
 
 	/* Register the host's own player (DirectPlay would raise a CREATE for it).
@@ -798,10 +1164,10 @@ int DirectPlay_HostGame(char *playerName, char *sessionName,int species,int game
 
 int DirectPlay_ConnectToSession(int sessionNumber, char *playerName)
 {
-	/* The player picked a discovered session: kick off a NON-BLOCKING connect and
-	   go to the "Joining..." screen, which polls DirectPlay_ConnectingToSession()
-	   each frame to finish the handshake and become a joining peer. Nothing here
-	   blocks the game loop. */
+	/* The player picked a discovered session: start the (non-blocking) join and go
+	   to the "Joining..." screen, which polls DirectPlay_ConnectingToSession() each
+	   frame to finish the handshake and become a joining peer. Nothing here blocks
+	   the game loop. */
 	struct sockaddr_in target;
 	fprintf(stderr, "DirectPlay_ConnectToSession(%d, %s)\n", sessionNumber, playerName);
 

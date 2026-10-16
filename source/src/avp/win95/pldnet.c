@@ -229,6 +229,13 @@ int LobbiedGame=0;
 
 static char sendBuffer[NET_MESSAGEBUFFERSIZE];
 static char *endSendBuffer;
+/* Per-tick STATE messages (player, alien AI, autogun, moving-object state) are built
+   here instead of in sendBuffer, and sent without a delivery guarantee: each one is
+   superseded by the next tick's, so a lost or late one is simply dropped. Everything
+   else - kills, damage, explosions, chat, scores, game start/end - stays in sendBuffer
+   and is sent reliably and in order. See NetSendMessages and net.c. */
+static char stateBuffer[NET_MESSAGEBUFFERSIZE];
+static char *endStateBuffer;
 static int netNextLocalObjectId = 1;
 DPID myNetworkKillerId = 0;
 DPID myIgniterId = 0;
@@ -1676,22 +1683,29 @@ void NetSendMessages(void)
 		HRESULT res;
 		int numBytes;
 		BOOL clearSendBuffer=TRUE;
+		int stateBytes = (int)(endStateBuffer - &stateBuffer[0]);
 		numBytes = (int)(endSendBuffer - &sendBuffer[0]);
 
-		if(netGameData.myGameState==NGS_EndGameScreen || netGameData.myGameState==NGS_Joining)
-		{
-			//there may not be any messages while showing the end game screen
-			if(numBytes==DPEXT_HEADER_SIZE) return;
-		}
-		
-		
-		LOCALASSERT(numBytes > DPEXT_HEADER_SIZE);			
+		/* Either buffer may be empty now that per-tick state has its own (the main one
+		   usually is, mid-game). Nothing to send at all is not an error. */
+		if(numBytes==DPEXT_HEADER_SIZE && stateBytes==DPEXT_HEADER_SIZE) return;
+
 		LOCALASSERT(numBytes <= NET_MESSAGEBUFFERSIZE);
+		LOCALASSERT(stateBytes <= NET_MESSAGEBUFFERSIZE);
 		if(!netGameData.skirmishMode)
 		{
 			if(glpDP && AVPDPNetID)
 			{
-				res = DpExtSend(glpDP,AVPDPNetID,DPID_ALLPLAYERS,0,&sendBuffer,numBytes);
+				/* Reliable first, THEN the state: net.c stamps each state packet with how
+				   much reliable traffic preceded it, and a receiver drops state that is
+				   older than an event it has already applied (a kill, a destroy). Sending
+				   in this order means a tick's state is never judged older than its own
+				   events. */
+				res = DP_OK;
+				if(numBytes > DPEXT_HEADER_SIZE)
+					res = DpExtSend(glpDP,AVPDPNetID,DPID_ALLPLAYERS,DPSEND_GUARANTEED,&sendBuffer,numBytes);
+				if(stateBytes > DPEXT_HEADER_SIZE)
+					DpExtSend(glpDP,AVPDPNetID,DPID_ALLPLAYERS,0,&stateBuffer,stateBytes);
 				if(res!=DP_OK)
 				{
 					//we have some problem sending...
@@ -1764,6 +1778,8 @@ static void InitialiseSendMessageBuffer(void)
 	endSendBuffer = &sendBuffer[0];
 	/* add space for a dpext header to the send buffer */
 	endSendBuffer += DPEXT_HEADER_SIZE;
+	/* the state buffer is sent as a message of its own, so it carries a header too */
+	endStateBuffer = &stateBuffer[0] + DPEXT_HEADER_SIZE;
 }
 
 
@@ -2209,7 +2225,7 @@ void AddNetMsg_PlayerState(STRATEGYBLOCK *sbPtr)
 	/* check there's enough room in the send buffer */
 	{
 		int numBytesReqd = headerSize + messageSize;
-		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endSendBuffer - &sendBuffer[0]));
+		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endStateBuffer - &stateBuffer[0]));
 		if(numBytesReqd > numBytesLeft)
 		{
 			LOCALASSERT(1==0);
@@ -2219,10 +2235,10 @@ void AddNetMsg_PlayerState(STRATEGYBLOCK *sbPtr)
 	}
 	
 	/* set up pointers to header and message structures */
-	headerPtr = (NETMESSAGEHEADER *)endSendBuffer;
-	endSendBuffer += headerSize;
-	messagePtr = (NETMESSAGE_PLAYERSTATE *)endSendBuffer;
-	endSendBuffer += messageSize;
+	headerPtr = (NETMESSAGEHEADER *)endStateBuffer;
+	endStateBuffer += headerSize;
+	messagePtr = (NETMESSAGE_PLAYERSTATE *)endStateBuffer;
+	endStateBuffer += messageSize;
 
 	/* fill out the header */
 	headerPtr->type = (unsigned char)NetMT_PlayerState;
@@ -2558,7 +2574,7 @@ void AddNetMsg_PlayerState_Minimal(STRATEGYBLOCK *sbPtr,BOOL sendOrient)
 	/* check there's enough room in the send buffer */
 	{
 		int numBytesReqd = headerSize + messageSize;
-		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endSendBuffer - &sendBuffer[0]));
+		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endStateBuffer - &stateBuffer[0]));
 		if(numBytesReqd > numBytesLeft)
 		{
 			LOCALASSERT(1==0);
@@ -2568,10 +2584,10 @@ void AddNetMsg_PlayerState_Minimal(STRATEGYBLOCK *sbPtr,BOOL sendOrient)
 	}
 	
 	/* set up pointers to header and message structures */
-	headerPtr = (NETMESSAGEHEADER *)endSendBuffer;
-	endSendBuffer += headerSize;
-	messagePtr = (NETMESSAGE_PLAYERSTATE_MINIMAL *)endSendBuffer;
-	endSendBuffer += messageSize;
+	headerPtr = (NETMESSAGEHEADER *)endStateBuffer;
+	endStateBuffer += headerSize;
+	messagePtr = (NETMESSAGE_PLAYERSTATE_MINIMAL *)endStateBuffer;
+	endStateBuffer += messageSize;
 
 	/* fill out the header */
 	if(sendOrient)
@@ -3274,6 +3290,11 @@ void AddNetMsg_LocalObjectState(STRATEGYBLOCK *sbPtr)
 	NETMESSAGE_LOBSTATE *messagePtr;
 	int headerSize = sizeof(NETMESSAGEHEADER);
 	int messageSize = sizeof(NETMESSAGE_LOBSTATE);
+	/* Per-tick object state goes in the state buffer (may be lost; the next tick
+	   replaces it). The speargun bolt is the exception: its position is sent ONCE,
+	   when it sticks (weapons.c), so it must arrive and goes in the main buffer. */
+	char  *lobBase = (sbPtr->I_SBtype == I_BehaviourSpeargunBolt) ? &sendBuffer[0] : &stateBuffer[0];
+	char **lobEnd  = (sbPtr->I_SBtype == I_BehaviourSpeargunBolt) ? &endSendBuffer : &endStateBuffer;
 
 	/* only send this if we are playing */
 	if(netGameData.myGameState!=NGS_Playing) return;
@@ -3281,7 +3302,7 @@ void AddNetMsg_LocalObjectState(STRATEGYBLOCK *sbPtr)
 	/* check there's enough room in the send buffer */
 	{
 		int numBytesReqd = headerSize + messageSize;
-		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endSendBuffer - &sendBuffer[0]));
+		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)((*lobEnd) - lobBase));
 		if(numBytesReqd > numBytesLeft)
 		{
 			LOCALASSERT(1==0);
@@ -3291,10 +3312,10 @@ void AddNetMsg_LocalObjectState(STRATEGYBLOCK *sbPtr)
 	}
 
 	/* set up pointers to header and message structures */
-	headerPtr = (NETMESSAGEHEADER *)endSendBuffer;
-	endSendBuffer += headerSize;
-	messagePtr = (NETMESSAGE_LOBSTATE *)endSendBuffer;
-	endSendBuffer += messageSize;
+	headerPtr = (NETMESSAGEHEADER *)(*lobEnd);
+	(*lobEnd) += headerSize;
+	messagePtr = (NETMESSAGE_LOBSTATE *)(*lobEnd);
+	(*lobEnd) += messageSize;
 
 	/* fill out the header */
 	headerPtr->type = (unsigned char)NetMT_LocalObjectState;
@@ -4024,7 +4045,7 @@ void AddNetMsg_PlayerAutoGunState(STRATEGYBLOCK *sbPtr)
 	/* check there's enough room in the send buffer */
 	{
 		int numBytesReqd = headerSize + messageSize;
-		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endSendBuffer - &sendBuffer[0]));
+		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endStateBuffer - &stateBuffer[0]));
 		if(numBytesReqd > numBytesLeft)
 		{
 			LOCALASSERT(1==0);
@@ -4034,10 +4055,10 @@ void AddNetMsg_PlayerAutoGunState(STRATEGYBLOCK *sbPtr)
 	}
 	
 	/* set up pointers to header and message structures */
-	headerPtr = (NETMESSAGEHEADER *)endSendBuffer;
-	endSendBuffer += headerSize;
-	messagePtr = (NETMESSAGE_AGUNSTATE *)endSendBuffer;
-	endSendBuffer += messageSize;
+	headerPtr = (NETMESSAGEHEADER *)endStateBuffer;
+	endStateBuffer += headerSize;
+	messagePtr = (NETMESSAGE_AGUNSTATE *)endStateBuffer;
+	endStateBuffer += messageSize;
 
 	/* fill out the header */
 	headerPtr->type = (unsigned char)NetMT_PlayerAutoGunState;
@@ -4808,7 +4829,7 @@ void AddNetMsg_AlienAIState(STRATEGYBLOCK *sbPtr)
 	/* check there's enough room in the send buffer */
 	{
 		int numBytesReqd = headerSize + messageSize;
-		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endSendBuffer - &sendBuffer[0]));
+		int numBytesLeft = NET_MESSAGEBUFFERSIZE - ((int)(endStateBuffer - &stateBuffer[0]));
 		if(numBytesReqd > numBytesLeft)
 		{
 			LOCALASSERT(1==0);
@@ -4818,10 +4839,10 @@ void AddNetMsg_AlienAIState(STRATEGYBLOCK *sbPtr)
 	}
 	
 	/* set up pointers to header and message structures */
-	headerPtr = (NETMESSAGEHEADER *)endSendBuffer;
-	endSendBuffer += headerSize;
-	messagePtr = (NETMESSAGE_ALIENAISTATE *)endSendBuffer;
-	endSendBuffer += messageSize;
+	headerPtr = (NETMESSAGEHEADER *)endStateBuffer;
+	endStateBuffer += headerSize;
+	messagePtr = (NETMESSAGE_ALIENAISTATE *)endStateBuffer;
+	endStateBuffer += messageSize;
 
 	/* fill out the header */
 	headerPtr->type = (unsigned char)NetMT_AlienAIState;

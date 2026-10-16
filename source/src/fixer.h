@@ -243,6 +243,9 @@ typedef struct DPNAME
 #define DPID_SYSMSG			18
 #define DPSYS_DESTROYPLAYERORGROUP	19
 #define DPID_ALLPLAYERS			20
+/* DpExtSend flag, same value as DirectPlay's: deliver reliably and in order. Without it
+   a message may be lost, and an out-of-date one is dropped (see net.c). */
+#define DPSEND_GUARANTEED		0x00000001
 
 typedef struct DPMSG_GENERIC
 {

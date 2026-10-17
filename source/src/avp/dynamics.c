@@ -1116,13 +1116,20 @@ static void AlignObjectToGravityDirection(DYNAMICSBLOCK *dynPtr)
 		int dotx = Dot((VECTORCH*)&dynPtr->OrientMat.mat11, &dynPtr->GravityDirection);
 		int doty = Dot((VECTORCH*)&dynPtr->OrientMat.mat21, &dynPtr->GravityDirection);
 		int dotz = Dot((VECTORCH*)&dynPtr->OrientMat.mat31, &dynPtr->GravityDirection);
-		
+		/* Upside down against the new gravity: roll about the forward axis, never pitch.
+		   See AlignObjectToStandardGravityDirection. */
+		int upsideDown = (doty < -ONE_FIXED/2);
+
 		/* Get their absolute values */
 		if(dotx < 0) dotx = -dotx;
 		if(doty < 0) doty = -doty;
 		if(dotz < 0) dotz = -dotz;
 
-		if (dotx<doty)
+		if (upsideDown)
+		{
+			staticAxis = iz;
+		}
+		else if (dotx<doty)
 		{
 			if (dotx<dotz)
 			{
@@ -1197,13 +1204,24 @@ static void AlignObjectToStandardGravityDirection(DYNAMICSBLOCK *dynPtr)
 		int dotx = dynPtr->OrientMat.mat12;
 		int doty = dynPtr->OrientMat.mat22;
 		int dotz = dynPtr->OrientMat.mat32;
-		
+		/* An Alien dropping off a CEILING is upside down here (Y against gravity), and
+		   on a flat ceiling the X and Z dots are both ~0, so 1999's smallest-dot pick
+		   was a coin toss. Static X pitched it over, turning the body (and the view)
+		   180 degrees on landing. Static Z rolls it upright about the forward axis
+		   instead, so it lands facing the way it was looking. Only the upside-down
+		   case changes: on a wall the pick is unchanged. */
+		int upsideDown = (doty < -ONE_FIXED/2);
+
 		/* Get their absolute values */
 		if(dotx < 0) dotx = -dotx;
 		if(doty < 0) doty = -doty;
 		if(dotz < 0) dotz = -dotz;
 
-		if (dotx<doty)
+		if (upsideDown)
+		{
+			staticAxis = iz;
+		}
+		else if (dotx<doty)
 		{
 			if (dotx<dotz)
 			{

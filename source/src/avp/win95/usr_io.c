@@ -973,8 +973,8 @@ void ReadPlayerGameInput(STRATEGYBLOCK* sbPtr)
 		
 		/* Jump, and the Alien's Climb. The keyboard and the pad have no Climb of their
 		   own, so on them Jump still grabs a wall exactly as before; in VR Climb is a
-		   separate binding (VR_ACT_CLIMB, B by default - shared with Jump, which gives
-		   the same result), so it can be moved elsewhere. pmove.c reads both. */
+		   separate binding (VR_ACT_CLIMB, Left Grip by default; it was B, shared with
+		   Jump, which gave the same result as the keyboard). pmove.c reads both. */
 		{
 			const int jumpOther = KeyboardInput[primaryInput->Jump]
 			                   || KeyboardInput[secondaryInput->Jump]

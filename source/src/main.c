@@ -758,7 +758,7 @@ int VR_Reach(int range)
         VR_SRC_NONE,            /* FLARE   - Marine only */ \
         VR_SRC_NONE, VR_SRC_NONE, /* NEXT/PREV WEAPON - one weapon only, see the pad table */ \
         VR_SRC_NONE,            /* RELOAD - Marine and Predator only */ \
-        VR_SRC_B                /* CLIMB - shares B with Jump, the original behaviour */ \
+        VR_SRC_L_GRIP           /* CLIMB - its own control since 2026-10-17 (was B, shared with Jump) */ \
     } }
 
 int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT] = VR_BINDING_DEFAULTS;

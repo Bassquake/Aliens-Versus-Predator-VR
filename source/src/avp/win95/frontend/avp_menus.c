@@ -1496,7 +1496,6 @@ static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCo
 }
 
 static int VR_SourceCanHoldFn(int s)  { return VR_SOURCE_CAN_HOLD(s); }
-static int VR_ActionsMayShareFn(int a, int b) { return VR_ACTIONS_MAY_SHARE(a, b); }
 /* Left Grip is the weapon grip while "Grip Weapon With Opposing Grip Button" is on. */
 static int VR_RowBindableFn(int sp, int act, int s)
 {
@@ -1509,12 +1508,17 @@ static int VR_SourceNoHoldFn(int s)   { (void)s; return 0; }
 
 static int VR_CycleBinding(int *valuePtr, int maxValue, int forward)
 {
-	/* Climb never offers Hold controls - see VR_ClimbBindingDropHold. */
+	/* Climb never offers Hold controls - see VR_ClimbBindingDropHold.
+
+	   No row is offered a control another action already holds, Climb included
+	   (2026-10-17, on request), so the menu can never CREATE a shared control. The
+	   profile loader still accepts VR_ACTIONS_MAY_SHARE, so the default (Climb on
+	   B, shared with Jump) and any saved shared set still load and work. */
 	const int climbNoHold = (valuePtr == &VRBinding[I_Alien][VR_ACT_CLIMB]);
 	return CycleBindingInTable(valuePtr, forward, &VRBinding[0][0], VR_ACT_COUNT,
 	                           VR_SPECIES_COUNT, maxValue, VR_BIND_HOLD,
 	                           climbNoHold ? VR_SourceNoHoldFn : VR_SourceCanHoldFn,
-	                           NULL, VR_ActionsMayShareFn, VR_RowBindableFn);
+	                           NULL, NULL, VR_RowBindableFn);
 }
 
 /* The pad counterpart. Start and Back - reserved by the frontend - sit in the middle
@@ -4007,6 +4011,13 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 					int i;
 					for (i = 0; i < VR_ACT_COUNT; i++)
 						VRBinding[sp][i] = VRBindingDefault[sp][i];
+					/* The Alien page's one non-binding row resets too, to the
+					   default SetDefaultProfileOptions gives it. */
+					if (sp == I_Alien)
+					{
+						extern int AlienClimbHoldToClimb;
+						AlienClimbHoldToClimb = 0;
+					}
 					/* Deliberately NOT saved here: like every other row in these
 					   menus the change is live, but only kept once Use These
 					   Settings is chosen. */

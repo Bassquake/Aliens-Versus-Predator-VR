@@ -81,10 +81,9 @@ enum VR_ACTION {
        last slot of the profile's VRBindingPlus1[3][12]; profiles written before it
        have a zero there and get the default. */
     VR_ACT_RELOAD,
-    /* Alien wall climb: grab a climbable surface / let go. Appended 2026-10-10. B by
-       default - the SAME control as Jump, which is the one pair allowed to share a
-       binding (VR_ACTIONS_MAY_SHARE): sharing B reproduces the original behaviour, where
-       jump + forward at a wall grabs it. Stored outside VRBindingPlus1[3][12], which this
+    /* Alien wall climb: grab a climbable surface / let go. Appended 2026-10-10. Left
+       Grip by default since 2026-10-17; it was B, shared with Jump (VR_ACTIONS_MAY_SHARE),
+       which reproduced the original jump + forward grab. Stored outside VRBindingPlus1[3][12], which this
        13th action no longer fits - see VRClimbBindingPlus1 in avp_userprofile.h. */
     VR_ACT_CLIMB,
     VR_ACT_COUNT

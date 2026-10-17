@@ -214,14 +214,14 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_FIRESECONDARY: return "Secondary Fire";
 			case TEXTSTRING_BIND_JUMP:          return "Jump";
 			case TEXTSTRING_BIND_CLIMB:         return "Trigger Climb";
-			case TEXTSTRING_CLIMBHOLD:          return "Climb By Keeping Button Pressed?";
-			case TEXTSTRING_CLIMBHOLD_HELP:     return "No: press Climb to grab a wall and press again to let go. Yes: you only stay on the wall while the Climb control is held, and letting go of it drops you off.";
+			case TEXTSTRING_CLIMBHOLD:          return "Stay On Walls if Hold Trigger Climb button?";
+			case TEXTSTRING_CLIMBHOLD_HELP:     return "No: press Trigger Climb to grab a wall and press again to let go. Yes: you only stay on the wall while the Trigger Climb control is held, and letting go of it drops you off.";
 			case TEXTSTRING_CLIMBHOLD_NO:       return "No (Default)";
 			case TEXTSTRING_CLIMBHOLD_YES:      return "Yes";
 			case TEXTSTRING_MULTIPLAYER_RELAYSERVER:      return "Relay Server";
 			case TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP: return "The internet relay server, as an address or name with an optional :port. Leave it blank for local network games only. When it is set, hosting also opens an internet game; its code is shown in the game and on the scores.";
 			case TEXTSTRING_MULTIPLAYER_JOINFAILED_HELP:  return "Could not join the internet game. Go back to try again.";
-			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. Can share a control with any other action, which still does its own job. On the same control as Jump you must also push forward; on any other control it grabs straight away. Hold controls are not offered.";
+			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. Only controls no other action uses are offered, and no Hold controls.";
 			case TEXTSTRING_BIND_CROUCH:        return "Crouch";
 			/* "Operate" to match the keyboard config screens, which is where the
 			   action is named for every species. Shared by the three VR binding

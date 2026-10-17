@@ -3895,6 +3895,29 @@ int vr_room_offset_z = 0;
    plays a walk cycle for room-scale movement, not just joystick locomotion. */
 int vr_physically_moving = 0;
 
+/* The climbing Alien's carried forward vector: the surface frame of the climb tilt,
+   parallel transported (see the climb block in AvpShowViewsVR). Crawling across
+   surfaces can turn it - floor to wall to ceiling and back leaves it pointing a
+   different way from where it started - so once the body is upright again the tilt
+   has shrunk to a pure HEADING turn. It used to be thrown away there, and the view
+   swung by that angle the instant the Alien landed (2026-10-17, "sometimes suddenly
+   changes direction when landing"). Now the turn is folded into xr_snap_yaw on that
+   frame, so the total view rotation is unchanged. The fold is exact because an
+   upright tilt has the same form as a snap matrix (sin = fwd_x, cos = fwd_z). */
+static float vr_climb_fwd_x = 0.0f, vr_climb_fwd_y = 0.0f, vr_climb_fwd_z = 1.0f;
+
+/* The view's "is the climb tilt on" test: the body's down axis is off vertical. Must
+   match the test in VR_RotateMoveVelocity (pmove.c). */
+static int VR_ClimbBodyTilted(const MATRIXCH *om)
+{
+    float bx = (float)om->mat21 / 65536.0f;
+    float by = (float)om->mat22 / 65536.0f;
+    float bz = (float)om->mat23 / 65536.0f;
+    float blen = SDL_sqrtf(bx*bx + by*by + bz*bz);
+    if (blen > 0.0001f) { bx /= blen; by /= blen; bz /= blen; }
+    return (SDL_sqrtf(bx*bx + bz*bz) > 0.0001f) || by < 0.0f;
+}
+
 void AvpShowViewsVR(void)
 {
     extern SDL_GLContext context;
@@ -4064,6 +4087,20 @@ void AvpShowViewsVR(void)
      * base_world is the eye; their difference is the in-game eye-to-floor distance.
      * Dividing by ref_head_y (user's physical standing height in metres) gives a
      * units-per-metre scale that makes both the VR floor and game scale feel correct. */
+    /* Climb ended: hand the heading the climb frame picked up over to the snap turn.
+     * See vr_climb_fwd_* (file scope) for why. Done here, before the first reader of
+     * xr_snap_yaw this frame (the network offset, the hands, the move direction), so
+     * every one of them sees the folded value on the landing frame. */
+    if (AvP.PlayerType == I_Alien && Player->ObStrategyBlock && Player->ObStrategyBlock->DynPtr) {
+        const MATRIXCH *om = &Player->ObStrategyBlock->DynPtr->OrientMat;
+        if (!VR_ClimbBodyTilted(om) && (vr_climb_fwd_x != 0.0f || vr_climb_fwd_z != 1.0f)) {
+            float yaw = SDL_atan2f(vr_climb_fwd_x, vr_climb_fwd_z);
+            int units = (int)SDL_lroundf(yaw * 2048.0f / SDL_PI_F);
+            xr_snap_yaw = (xr_snap_yaw + units) & 4095;
+            vr_climb_fwd_x = 0.0f; vr_climb_fwd_y = 0.0f; vr_climb_fwd_z = 1.0f;
+        }
+    }
+
     int   game_eye_to_floor = Player->ObWorld.vy - base_world.vy; /* game units, > 0 upright */
     /* While the Alien climbs, the body tilts so the eye is no longer above the
      * feet in Y: this measure collapses toward 0 (and would flip on a ceiling),
@@ -4630,9 +4667,6 @@ void AvpShowViewsVR(void)
             }
         }
 
-        float s = SDL_sqrtf(bx*bx + bz*bz);  /* sin(tilt) = horizontal magnitude */
-        float c = by;                        /* cos(tilt) */
-
         /* The surface frame, PARALLEL TRANSPORTED rather than rebuilt each frame.
          *
          * The old construction was the minimal rotation taking world-down onto the body
@@ -4653,10 +4687,8 @@ void AvpShowViewsVR(void)
          *
          * Columns are (right, down, forward) - the same convention the old Rodrigues matrix
          * produced, whose second column was the body down axis. */
-        static float fwd_x = 0.0f, fwd_y = 0.0f, fwd_z = 1.0f;
-
-        if (s > 0.0001f || c < 0.0f) {            /* not upright -> apply tilt */
-            float fx = fwd_x, fy = fwd_y, fz = fwd_z;
+        if (VR_ClimbBodyTilted(om)) {             /* not upright -> apply tilt */
+            float fx = vr_climb_fwd_x, fy = vr_climb_fwd_y, fz = vr_climb_fwd_z;
             float d, fl;
 
             d = fx*bx + fy*by + fz*bz;
@@ -4674,7 +4706,7 @@ void AvpShowViewsVR(void)
                 fl = SDL_sqrtf(fx*fx + fy*fy + fz*fz);
             }
             fx /= fl; fy /= fl; fz /= fl;
-            fwd_x = fx; fwd_y = fy; fwd_z = fz;
+            vr_climb_fwd_x = fx; vr_climb_fwd_y = fy; vr_climb_fwd_z = fz;
 
             {
                 /* right = down x forward: right-handed, and (1,0,0) when upright. */
@@ -4694,11 +4726,9 @@ void AvpShowViewsVR(void)
             }
             vr_climb_tilt_active = 1;
         }
-        else {
-            /* Upright: no tilt, and the carried frame resets to world forward so the next
-               climb starts from the identity exactly as the floor view does. */
-            fwd_x = 0.0f; fwd_y = 0.0f; fwd_z = 1.0f;
-        }
+        /* Upright: no tilt. The carried frame was already folded into the snap turn
+           and reset at the top of this function, so the next climb starts from the
+           identity exactly as the floor view does. */
     }
     else {
         /* Not the Alien (or no player yet): drop the tracked axis so re-entering

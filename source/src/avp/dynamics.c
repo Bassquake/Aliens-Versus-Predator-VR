@@ -1,6 +1,7 @@
 /* KJL 12:42:43 29/12/98 - this is effectively Dynamics V4.0. If you think this code looks bad,
 you should have seen the previous versions. */
 
+#include <math.h>
 #include "3dc.h"
 #include "module.h"					  
 #include "inline.h"
@@ -1192,91 +1193,80 @@ static void AlignObjectToGravityDirection(DYNAMICSBLOCK *dynPtr)
 
 	MatrixToEuler(&dynPtr->OrientMat, &dynPtr->OrientEuler);
 }
+/* Turns the body upright under standard gravity, as a MINIMAL rotation: Y is homed
+   toward down exactly as before, and X and Z are carried by the same rotation, so the
+   heading changes only as much as tipping upright requires.
+
+   1999 instead held one body axis fixed - whichever was most nearly horizontal - and
+   rebuilt the others around it. That failed two ways for an Alien leaving a surface
+   (2026-10-17):
+   - Off a WALL, looking along it, X is the vertical axis and the pick could be Y.
+     Homing Y toward down then ran it parallel to X, the cross products collapsed, and
+     the Alien landed facing somewhere unrelated - usually backwards.
+   - Off a CEILING, X and Z are both horizontal and the pick was a coin toss; static X
+     pitched the body over and landed it facing 180 degrees away.
+   Upside down (Y against gravity, where the minimal rotation has no defined axis) the
+   homing steps Y toward X, i.e. a roll about the forward axis, so it keeps facing the
+   way it was looking. */
 static void AlignObjectToStandardGravityDirection(DYNAMICSBLOCK *dynPtr)
 {
 	VECTORCH gravityDirection = {0,65536,0};
-	VECTORCH XVector,YVector,ZVector;
-	int staticAxis;
+	VECTORCH oldY = *((VECTORCH*)&dynPtr->OrientMat.mat21);
+	VECTORCH newY = oldY;
+	float ax, ay, az, bx, by, bz, kx, ky, kz, c, s;
+	VECTORCH *axes[2];
+	VECTORCH XVector, ZVector;
+	int i;
 
 	dynPtr->GravityDirection = gravityDirection;
-	
-	{
-		int dotx = dynPtr->OrientMat.mat12;
-		int doty = dynPtr->OrientMat.mat22;
-		int dotz = dynPtr->OrientMat.mat32;
-		/* An Alien dropping off a CEILING is upside down here (Y against gravity), and
-		   on a flat ceiling the X and Z dots are both ~0, so 1999's smallest-dot pick
-		   was a coin toss. Static X pitched it over, turning the body (and the view)
-		   180 degrees on landing. Static Z rolls it upright about the forward axis
-		   instead, so it lands facing the way it was looking. Only the upside-down
-		   case changes: on a wall the pick is unchanged. */
-		int upsideDown = (doty < -ONE_FIXED/2);
 
-		/* Get their absolute values */
-		if(dotx < 0) dotx = -dotx;
-		if(doty < 0) doty = -doty;
-		if(dotz < 0) dotz = -dotz;
+	VectorHomingForSurfaceAlign(&newY, &gravityDirection, ((VECTORCH*)&dynPtr->OrientMat.mat11));
 
-		if (upsideDown)
-		{
-			staticAxis = iz;
-		}
-		else if (dotx<doty)
-		{
-			if (dotx<dotz)
-			{
-				staticAxis = ix;
-			}
-			else
-			{
-				staticAxis = iz;
-			}
-		}
-		else
-		{
-			if (doty<dotz)
-			{
-				staticAxis = iy;
-			}
-			else
-			{
-				staticAxis = iz;
-			}
-		}
-	}
- 	if (staticAxis == iz)
+	XVector = *((VECTORCH*)&dynPtr->OrientMat.mat11);
+	ZVector = *((VECTORCH*)&dynPtr->OrientMat.mat31);
+
+	/* Rotation taking oldY to newY, applied to X and Z (Rodrigues, axis k = a x b). */
+	ax = oldY.vx/65536.0f; ay = oldY.vy/65536.0f; az = oldY.vz/65536.0f;
+	bx = newY.vx/65536.0f; by = newY.vy/65536.0f; bz = newY.vz/65536.0f;
 	{
-		ZVector = *((VECTORCH*)&dynPtr->OrientMat.mat31);
-	 	YVector = *((VECTORCH*)&dynPtr->OrientMat.mat21);
-	  	VectorHomingForSurfaceAlign(&YVector, &gravityDirection,((VECTORCH*)&dynPtr->OrientMat.mat11));
-		CrossProduct(&YVector, &ZVector, &XVector);
+		float la = sqrtf(ax*ax+ay*ay+az*az), lb = sqrtf(bx*bx+by*by+bz*bz);
+		if (la > 0.0f) { ax/=la; ay/=la; az/=la; }
+		if (lb > 0.0f) { bx/=lb; by/=lb; bz/=lb; }
 	}
- 	else if (staticAxis == ix)
+	kx = ay*bz - az*by;
+	ky = az*bx - ax*bz;
+	kz = ax*by - ay*bx;
+	c  = ax*bx + ay*by + az*bz;
+	s  = (c > -0.999f) ? 1.0f/(1.0f+c) : 0.0f;
+
+	axes[0] = &XVector;
+	axes[1] = &ZVector;
+	for (i = 0; i < 2; i++)
 	{
-		XVector = *((VECTORCH*)&dynPtr->OrientMat.mat11);
-	 	YVector = *((VECTORCH*)&dynPtr->OrientMat.mat21);
-		VectorHomingForSurfaceAlign(&YVector, &gravityDirection,((VECTORCH*)&dynPtr->OrientMat.mat31));
-		CrossProduct(&XVector, &YVector, &ZVector);
+		float vx = axes[i]->vx/65536.0f, vy = axes[i]->vy/65536.0f, vz = axes[i]->vz/65536.0f;
+		float kv = kx*vx + ky*vy + kz*vz;
+		float rx = vx*c + (ky*vz - kz*vy) + kx*kv*s;
+		float ry = vy*c + (kz*vx - kx*vz) + ky*kv*s;
+		float rz = vz*c + (kx*vy - ky*vx) + kz*kv*s;
+		axes[i]->vx = (int)(rx*65536.0f);
+		axes[i]->vy = (int)(ry*65536.0f);
+		axes[i]->vz = (int)(rz*65536.0f);
 	}
-	else if (staticAxis == iy)
-	{
-		XVector = *((VECTORCH*)&dynPtr->OrientMat.mat11);
-	 	YVector = *((VECTORCH*)&dynPtr->OrientMat.mat21);
-		VectorHomingForSurfaceAlign(&YVector, &gravityDirection,((VECTORCH*)&dynPtr->OrientMat.mat31));
-		CrossProduct(&XVector, &YVector, &ZVector);
-		CrossProduct(&YVector, &ZVector, &XVector);
-	}
-	Normalise(&XVector);
-	Normalise(&YVector);
+
+	/* Re-orthonormalise about the new Y (X = Y x Z, Z = X x Y, as the old branches). */
+	CrossProduct(&XVector, &newY, &ZVector);
 	Normalise(&ZVector);
+	CrossProduct(&newY, &ZVector, &XVector);
+	Normalise(&XVector);
+	Normalise(&newY);
 
 	dynPtr->OrientMat.mat11 = XVector.vx;
    	dynPtr->OrientMat.mat12 = XVector.vy;
 	dynPtr->OrientMat.mat13 = XVector.vz;
 
-	dynPtr->OrientMat.mat21 = YVector.vx;
-	dynPtr->OrientMat.mat22 = YVector.vy;
-	dynPtr->OrientMat.mat23 = YVector.vz;
+	dynPtr->OrientMat.mat21 = newY.vx;
+	dynPtr->OrientMat.mat22 = newY.vy;
+	dynPtr->OrientMat.mat23 = newY.vz;
 
 	dynPtr->OrientMat.mat31 = ZVector.vx;
 	dynPtr->OrientMat.mat32 = ZVector.vy;

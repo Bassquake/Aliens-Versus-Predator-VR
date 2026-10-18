@@ -1329,7 +1329,7 @@ int AutoTwoHandedWeapons = 1;   /* profile byte only - see above */
  *   0 = No: the left grip never takes hold of the weapon, and Left Grip is an ordinary
  *       bindable control. */
 int OpposingGripHoldsWeapon = 1;
-/* VR Controls "Manual Attacks": 1 = Yes (default), the Alien's claw swipes and the
+/* VR Controls "Enable Physical Melee Attacks": 1 = Yes (default), the Alien's claw swipes and the
    Predator's wristblade punches below strike; 0 = No, only the attack buttons do. */
 int VRManualAttacks = 1;
 extern int xr_left_squeeze_gameplay_pressed;   /* main.c: left grip held, gameplay only */

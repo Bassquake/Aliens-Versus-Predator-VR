@@ -284,7 +284,7 @@ typedef struct
 	unsigned char VREyeSeparationIndexPlus1;
 	/* VR Comfort & Display "Sitting Mode": 0 = off (default), 1 = on. */
 	unsigned char SittingMode;
-	/* VR Controls "Manual Attacks". Stored INVERTED - it defaults to Yes, and the zero
+	/* VR Controls "Enable Physical Melee Attacks". Stored INVERTED - it defaults to Yes, and the zero
 	   every older profile has here must decode to that. */
 	unsigned char ManualAttacksOff;           //0=Yes (default), 1=No
 	/* Was "Alien Wide-Angle Lens" (removed). Profiles saved while it existed hold a

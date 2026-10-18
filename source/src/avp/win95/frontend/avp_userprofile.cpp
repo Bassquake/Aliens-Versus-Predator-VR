@@ -78,6 +78,8 @@ extern int RightStickDeadzoneY;
 extern int VRWorldScaleIndex;
 extern int VREyeSeparationIndex;
 extern int VRSittingMode;
+extern int VRAlienWideLens;
+extern int VRAlienWideLensStrength;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
@@ -429,6 +431,8 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 	VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;
 	VRSittingMode = 0;
+	VRAlienWideLens = 0;
+	VRAlienWideLensStrength = VR_ALIEN_WIDE_LENS_DEFAULT;
 	/* Bindings keep whatever main.c initialised them to: those ARE the defaults. */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
@@ -595,6 +599,12 @@ extern void GetSettingsFromUserProfile(void)
 	   while it stays hidden. Remove this line along with un-hiding the row. */
 	VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;
 	VRSittingMode =			UserProfilePtr->SittingMode ? 1 : 0;
+	VRAlienWideLens =		(UserProfilePtr->AlienWideLens & 0x80) ? 1 : 0;
+	{
+		int s = (UserProfilePtr->AlienWideLens & 0x7f);
+		VRAlienWideLensStrength = (s >= 1 && s - 1 <= VR_ALIEN_WIDE_LENS_MAX)
+		                        ? s - 1 : VR_ALIEN_WIDE_LENS_DEFAULT;
+	}
 	{
 		/* Stored as source+1; 0 means the profile predates the bindings, so that
 		   action keeps its default rather than becoming unbound. */
@@ -796,6 +806,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);
 	profilePtr->VREyeSeparationIndexPlus1 =	(unsigned char)(VREyeSeparationIndex + 1);
 	profilePtr->SittingMode =		(unsigned char)(VRSittingMode ? 1 : 0);
+	profilePtr->AlienWideLens =		(unsigned char)((VRAlienWideLens ? 0x80 : 0) | (VRAlienWideLensStrength + 1));
 	{
 		int sp, i;
 		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)

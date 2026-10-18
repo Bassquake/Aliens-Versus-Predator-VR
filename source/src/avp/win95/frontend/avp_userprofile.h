@@ -287,7 +287,11 @@ typedef struct
 	/* VR Controls "Manual Attacks". Stored INVERTED - it defaults to Yes, and the zero
 	   every older profile has here must decode to that. */
 	unsigned char ManualAttacksOff;           //0=Yes (default), 1=No
-	unsigned char ExtReserved[2];
+	/* VR Comfort & Display "Alien Wide-Angle Lens": bit 7 = on, low 7 bits = strength + 1.
+	   0 (every older profile) = off at the default strength. One byte for both, so one
+	   byte of headroom is left. */
+	unsigned char AlienWideLens;
+	unsigned char ExtReserved[1];
 
 } AVP_USER_PROFILE;
 

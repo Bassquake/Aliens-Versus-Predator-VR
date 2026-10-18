@@ -246,6 +246,12 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_VRSITTINGMODE_HELP:   return "Play seated at full standing height, with the world at its normal size. Recentre the view while seated (hold the Meta button on Quest).";
 			case TEXTSTRING_VRSITTINGMODE_OFF:    return "No (Default)";
 			case TEXTSTRING_VRSITTINGMODE_ON:     return "Yes";
+			case TEXTSTRING_VRALIENWIDELENS:      return "Alien Wide-Angle Lens";
+			case TEXTSTRING_VRALIENWIDELENS_HELP: return "Gives the Alien a wider view than the headset's own, like a wide-angle lens: you see further round to the sides, and everything looks smaller and further away. The world no longer turns exactly with your head, which can cause motion sickness - start with a low strength.";
+			case TEXTSTRING_VRALIENWIDELENS_OFF:  return "Off (Default)";
+			case TEXTSTRING_VRALIENWIDELENS_ON:   return "On";
+			case TEXTSTRING_VRALIENWIDELENS_STRENGTH:      return "Alien Wide-Angle Strength";
+			case TEXTSTRING_VRALIENWIDELENS_STRENGTH_HELP: return "How much wider than the headset the Alien's view is, from slightly wider up to half as wide again.";
 			case TEXTSTRING_LEFTSTICKDEADZONE:     return "Left Joystick X Deadzone";
 			case TEXTSTRING_LEFTSTICKDEADZONE_Y:   return "Left Joystick Y Deadzone";
 			case TEXTSTRING_LEFTSTICKDEADZONE_Y_HELP:return "How far the left stick must be pushed forward or back before it registers. Applies to VR controllers and to a gamepad, and stays with the left stick if the sticks are swapped.";

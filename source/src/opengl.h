@@ -226,6 +226,13 @@ extern int   VREyeSeparationIndex;  /* menu-editable, profile-stored */
  * to a standing eye height and keeps the world scale at its standing value; see
  * VR_SittingLiftFor in avpview.c. Profile byte SittingMode. */
 extern int   VRSittingMode;
+/* VR Comfort & Display "Alien Wide-Angle Lens" (off by default) and its strength,
+   0..VR_ALIEN_WIDE_LENS_MAX: the Alien's eye view is widened by 1 + 0.05 x (strength+1),
+   so 1.05x to 1.50x the headset's own field of view (avpview.c). */
+#define VR_ALIEN_WIDE_LENS_MAX 9
+#define VR_ALIEN_WIDE_LENS_DEFAULT 4
+extern int   VRAlienWideLens;
+extern int   VRAlienWideLensStrength;
 
 /* VR render diagnostics, compiled IN. Same dev-tool pattern as the two tuners: set to 1,
  * rebuild, and the diagnostics are on with no launch argument and no config file.

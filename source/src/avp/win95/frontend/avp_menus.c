@@ -4314,7 +4314,7 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 				if (bindingIsHold)
 					snprintf(holdText, sizeof(holdText), "%s", GetTextString(elementPtr->d.FirstTextSliderString));
 				else
-					snprintf(holdText, sizeof(holdText), "%s (Hold)", textPtr);
+					snprintf(holdText, sizeof(holdText), "%s (Long Press)", textPtr);
 				textPtr = holdText;
 			}
 			/* Controller bindings, VR and pad alike: mark the value this action
@@ -4349,7 +4349,7 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 				if (matched)
 				{
 					snprintf(bindText, sizeof(bindText), "%s%s%s", textPtr,
-					         bindingIsHold ? " Hold" : "",
+					         bindingIsHold ? " Long Press" : "",
 					         isDefault ? " (Default)" : "");
 					textPtr = bindText;
 				}

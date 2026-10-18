@@ -221,7 +221,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_MULTIPLAYER_RELAYSERVER:      return "Relay Server";
 			case TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP: return "The internet relay server, as an address or name with an optional :port. Leave it blank for local network games only. When it is set, hosting also opens an internet game; its code is shown in the game and on the scores.";
 			case TEXTSTRING_MULTIPLAYER_JOINFAILED_HELP:  return "Could not join the internet game. Go back to try again.";
-			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. Only controls no other action uses are offered, and no Hold controls.";
+			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. Only controls no other action uses are offered, and no Long Press controls.";
 			case TEXTSTRING_BIND_CROUCH:        return "Crouch";
 			/* "Operate" to match the keyboard config screens, which is where the
 			   action is named for every species. Shared by the three VR binding
@@ -237,7 +237,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_FLARE:         return "Throw Flare";
 			case TEXTSTRING_BIND_NEXTWEAPON:    return "Next Weapon";
 			case TEXTSTRING_BIND_PREVWEAPON:    return "Previous Weapon";
-			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. A Hold option fires after holding the control for half a second, so one control can do two things. X and the stick directions cannot be held. A stick direction given an action stops moving or turning that way.";
+			case TEXTSTRING_BIND_HELP:          return "Which control performs this action. A Long Press option fires after holding the control for half a second, so one control can do two things. X and the stick directions cannot be long pressed. A stick direction given an action stops moving or turning that way.";
 			case TEXTSTRING_VRWORLDSCALE:       return "World Scale (Default: 1.30)";
 			case TEXTSTRING_VRWORLDSCALE_HELP:  return "How large the world feels. Higher values make one real step cover more ground, so the world seems smaller.";
 			case TEXTSTRING_VREYESEPARATION:      return "Eye Separation (Default: 100%)";
@@ -277,7 +277,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			   reports them (A = bottom, B = right, X = left, Y = top), which is what
 			   an Xbox pad is labelled; a DualSense player reads A as cross, B as
 			   circle and so on, in the same places. */
-			case TEXTSTRING_PADBIND_HELP:       return "Choose which controller button performs this action. A Hold option fires after holding the button for half a second, so one button can do two things. A stick direction given an action stops moving or looking that way.";
+			case TEXTSTRING_PADBIND_HELP:       return "Choose which controller button performs this action. A Long Press option fires after holding the button for half a second, so one button can do two things. A stick direction given an action stops moving or looking that way.";
 			case TEXTSTRING_PADSRC_NONE:        return "Unbound";
 			case TEXTSTRING_PADSRC_A:           return "A / Cross";
 			case TEXTSTRING_PADSRC_B:           return "B / Circle";
@@ -312,7 +312,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_MARINEPADCONFIG_TITLE:   return "Marine Configuration";
 			case TEXTSTRING_PREDATORPADCONFIG_TITLE: return "Predator Configuration";
 			case TEXTSTRING_BIND_ZOOM:               return "Zoom (Always uses Cycle Vision Modes button)";
-			case TEXTSTRING_BIND_ZOOM_HELP:          return "Hold the Cycle Vision Modes button to step the zoom. It has no button of its own, so it follows whatever that is bound to.";
+			case TEXTSTRING_BIND_ZOOM_HELP:          return "Long press the Cycle Vision Modes button to step the zoom. It has no button of its own, so it follows whatever that is bound to.";
 			case TEXTSTRING_BIND_CLOAK:              return "Cloak";
 			case TEXTSTRING_BIND_GRAPPLE:            return "Grappling Hook";
 			case TEXTSTRING_BIND_RELOAD:             return "Reload";

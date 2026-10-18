@@ -226,6 +226,15 @@ extern int   VREyeSeparationIndex;  /* menu-editable, profile-stored */
  * to a standing eye height and keeps the world scale at its standing value; see
  * VR_SittingLiftFor in avpview.c. Profile byte SittingMode. */
 extern int   VRSittingMode;
+/* VR Comfort & Display "Adjust HUD On X/Y Axis": slider 0..VR_HUD_OFFSET_MAX, centre
+   VR_HUD_OFFSET_CENTRE is the default. Each step moves the whole VR HUD by
+   VR_HUD_OFFSET_STEP_PX pixels of the HUD's virtual screen (avpview.c); X+ is right,
+   Y+ is up. Profile byte HUDOffsetXY. */
+#define VR_HUD_OFFSET_MAX      10
+#define VR_HUD_OFFSET_CENTRE   5
+#define VR_HUD_OFFSET_STEP_PX  40
+extern int   VRHudOffsetX;
+extern int   VRHudOffsetY;
 
 /* VR render diagnostics, compiled IN. Same dev-tool pattern as the two tuners: set to 1,
  * rebuild, and the diagnostics are on with no launch argument and no config file.

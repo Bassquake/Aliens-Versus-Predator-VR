@@ -246,6 +246,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_VRSITTINGMODE_HELP:   return "Play seated at full standing height, with the world at its normal size. Recentre the view while seated (hold the Meta button on Quest).";
 			case TEXTSTRING_VRSITTINGMODE_OFF:    return "No (Default)";
 			case TEXTSTRING_VRSITTINGMODE_ON:     return "Yes";
+			case TEXTSTRING_VRHUDOFFSETX:         return "Adjust HUD On X Axis";
+			case TEXTSTRING_VRHUDOFFSETX_HELP:    return "Moves the whole HUD left or right. The middle is the default.";
+			case TEXTSTRING_VRHUDOFFSETY:         return "Adjust HUD On Y Axis";
+			case TEXTSTRING_VRHUDOFFSETY_HELP:    return "Moves the whole HUD down or up. The middle is the default.";
 			case TEXTSTRING_LEFTSTICKDEADZONE:     return "Left Joystick X Deadzone";
 			case TEXTSTRING_LEFTSTICKDEADZONE_Y:   return "Left Joystick Y Deadzone";
 			case TEXTSTRING_LEFTSTICKDEADZONE_Y_HELP:return "How far the left stick must be pushed forward or back before it registers. Applies to VR controllers and to a gamepad, and stays with the left stick if the sticks are swapped.";

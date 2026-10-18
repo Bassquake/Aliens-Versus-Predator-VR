@@ -6860,6 +6860,15 @@ void AvpShowViewsVR(void)
         }
         vr_hud_offset_x   = (eye == 0) ? +VR_HUD_STEREO_DEPTH : -VR_HUD_STEREO_DEPTH;
         vr_hud_offset_y   = -0.10f;//-0.15
+        /* "Adjust HUD On X/Y Axis" (VR Comfort & Display): whole-HUD shift in pixels of
+         * the 640x680 virtual HUD screen, so it scales with Adjust HUD Elements. It goes
+         * INTO vr_hud_offset_x/y on purpose: the crosshairs and the Predator smart-target
+         * box invert through those offsets, so they stay on what they aim at, and the
+         * PCVR mirror crop below follows the HUD too. */
+        vr_hud_offset_x += (float)((VRHudOffsetX - VR_HUD_OFFSET_CENTRE) * VR_HUD_OFFSET_STEP_PX)
+                           / 320.0f * vr_hud_clip_scale;
+        vr_hud_offset_y += (float)((VRHudOffsetY - VR_HUD_OFFSET_CENTRE) * VR_HUD_OFFSET_STEP_PX)
+                           / 340.0f * vr_hud_clip_scale;
         vr_eye_index = eye;
 #ifdef AVP_PCVR
         /* D3D_HUDQuad_Output maps the full 640x480 HUD rect to

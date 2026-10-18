@@ -86,6 +86,8 @@ extern int RightStickDeadzoneY;
 extern int VRWorldScaleIndex;
 extern int VREyeSeparationIndex;
 extern int VRSittingMode;
+extern int VRHudOffsetX;
+extern int VRHudOffsetY;
 extern int HUDInsetLevel;
 /* "Swap Joysticks" - one setting, shown on General VR Configuration and on the flat
    Joystick Configuration screen. A single global rather than an array indexed by
@@ -290,6 +292,8 @@ static const AVPMENU_ELEMENT AvPMenu_VRConfigMaster[] =
 static const AVPMENU_ELEMENT AvPMenu_VRConfig2Master[] =
 {
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_HUDADJUST},	{4}, {&HUDInsetLevel},	{TEXTSTRING_HUDADJUST_1},	TEXTSTRING_HUDADJUST_HELP},
+	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRHUDOFFSETX},	{VR_HUD_OFFSET_MAX}, {&VRHudOffsetX},	{0},	TEXTSTRING_VRHUDOFFSETX_HELP},
+	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRHUDOFFSETY},	{VR_HUD_OFFSET_MAX}, {&VRHudOffsetY},	{0},	TEXTSTRING_VRHUDOFFSETY_HELP},
 	/* Moved here from AV Options in headset builds (2026-10-10); flat and phone keep it
 	   on AV Options. One variable, so either place edits the same setting. */
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES},	{4}, {&EnlargeMessagesText},	{TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_OFF},	TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_HELP},

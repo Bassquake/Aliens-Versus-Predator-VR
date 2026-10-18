@@ -290,7 +290,11 @@ typedef struct
 	/* Was "Alien Wide-Angle Lens" (removed). Profiles saved while it existed hold a
 	   value here, so the byte stays retired rather than going back to ExtReserved. */
 	unsigned char ReservedWasAlienWideLens;
-	unsigned char ExtReserved[1];
+	/* VR Comfort & Display "Adjust HUD On X/Y Axis": low nibble X, high nibble Y, each a
+	   4-bit two's-complement step offset -5..+5, so 0 (every older profile) is the
+	   centred default. This was the LAST ExtReserved byte: the next option needs bytes
+	   from somewhere else (Padding[12]) or the struct must grow. */
+	unsigned char HUDOffsetXY;
 
 } AVP_USER_PROFILE;
 

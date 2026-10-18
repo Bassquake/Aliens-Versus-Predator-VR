@@ -78,6 +78,8 @@ extern int RightStickDeadzoneY;
 extern int VRWorldScaleIndex;
 extern int VREyeSeparationIndex;
 extern int VRSittingMode;
+extern int VRHudOffsetX;
+extern int VRHudOffsetY;
 extern int VRVignetteStrength;
 extern int GiveAllWeaponsCheatEnabled;
 extern int GodModeCheatEnabled;
@@ -429,6 +431,8 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	VRWorldScaleIndex = VR_WORLD_SCALE_DEFAULT_INDEX;
 	VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;
 	VRSittingMode = 0;
+	VRHudOffsetX = VR_HUD_OFFSET_CENTRE;
+	VRHudOffsetY = VR_HUD_OFFSET_CENTRE;
 	/* Bindings keep whatever main.c initialised them to: those ARE the defaults. */
 	VRVignetteStrength = 5; /* mid strength by default (0..10) */
 	GiveAllWeaponsCheatEnabled = 0; /* "give all weapons" cheat off by default */
@@ -595,6 +599,17 @@ extern void GetSettingsFromUserProfile(void)
 	   while it stays hidden. Remove this line along with un-hiding the row. */
 	VREyeSeparationIndex = VR_EYE_SEP_DEFAULT_INDEX;
 	VRSittingMode =			UserProfilePtr->SittingMode ? 1 : 0;
+	{
+		/* Two signed nibbles, 0 = centred; out of range -> centred (untrusted blob). */
+		int ox = UserProfilePtr->HUDOffsetXY & 0x0f;
+		int oy = (UserProfilePtr->HUDOffsetXY >> 4) & 0x0f;
+		if (ox >= 8) ox -= 16;
+		if (oy >= 8) oy -= 16;
+		if (ox < -VR_HUD_OFFSET_CENTRE || ox > VR_HUD_OFFSET_MAX - VR_HUD_OFFSET_CENTRE) ox = 0;
+		if (oy < -VR_HUD_OFFSET_CENTRE || oy > VR_HUD_OFFSET_MAX - VR_HUD_OFFSET_CENTRE) oy = 0;
+		VRHudOffsetX = VR_HUD_OFFSET_CENTRE + ox;
+		VRHudOffsetY = VR_HUD_OFFSET_CENTRE + oy;
+	}
 	{
 		/* Stored as source+1; 0 means the profile predates the bindings, so that
 		   action keeps its default rather than becoming unbound. */
@@ -796,6 +811,8 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->VRWorldScaleIndexPlus1 =	(unsigned char)(VRWorldScaleIndex + 1);
 	profilePtr->VREyeSeparationIndexPlus1 =	(unsigned char)(VREyeSeparationIndex + 1);
 	profilePtr->SittingMode =		(unsigned char)(VRSittingMode ? 1 : 0);
+	profilePtr->HUDOffsetXY =		(unsigned char)(((VRHudOffsetX - VR_HUD_OFFSET_CENTRE) & 0x0f)
+	                                              | (((VRHudOffsetY - VR_HUD_OFFSET_CENTRE) & 0x0f) << 4));
 	{
 		int sp, i;
 		for (sp = 0; sp < VR_SPECIES_COUNT; sp++)

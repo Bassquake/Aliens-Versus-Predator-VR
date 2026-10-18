@@ -1752,45 +1752,6 @@ static void VR_StabiliseHandRotation(MATRIXCH *mat, float held[4], int *have, fl
 #define VR_PUNCH_COOLDOWN_SECS  0.30f
 #define VR_PUNCH_TIP_M          0.35f   /* blade tip, ahead of the grip */
 #define VR_PUNCH_REACH_M        1.00f   /* how far from the tip a target still counts */
-/* "Alien Wide-Angle Lens" (VR Comfort & Display, off by default). Renders the Alien's
- * eyes with a WIDER frustum than the headset's and lets the runtime show it in the
- * headset's own: the tangents of all four half-angles are multiplied by k, which is the
- * focal length (ProjX/ProjY) divided by k. Their RATIOS are unchanged, so the off-axis
- * principal point - the clip offset - is exactly the same and nothing else needs to know.
- * Everything that maps a world direction to a pixel inside the eye pass (crosshairs,
- * smart-target box, LOS) reads VDB_ProjX, so it follows automatically. The submitted
- * layer fov stays the headset's, which is the point: the image is minified into it.
- *
- * The cost is the 1:1 mapping between head and world, so the world turns at 1/k the
- * speed of the head near the centre; that is why it is opt-in. k is also capped so the
- * widened image stays inside the WIDE clip frustum (the Alien always uses it), or the
- * edges would be clipped into black wedges - see WIDE_F under "Field of view". Both the
- * plain and the Y-aspect-scaled vertical tangent are checked, since the clipper tests
- * Y after kshape.c scales it by ProjX/ProjY. */
-static void VR_AlienWideLensApply(int *projX, int *projY, float offx, float offy, int w, int h)
-{
-    float k, hx, hy, tx, ty, tyk, worst, cap;
-
-    if (!VRAlienWideLens || AvP.PlayerType != I_Alien || *projX <= 0 || *projY <= 0) return;
-    k = 1.0f + 0.05f * (float)(VRAlienWideLensStrength + 1);
-
-    /* Furthest image edge from the principal point, as a tangent, after widening. */
-    hx  = (float)w * 0.5f * (1.0f + SDL_fabsf(offx));
-    hy  = (float)h * 0.5f * (1.0f + SDL_fabsf(offy));
-    tx  = hx / (float)*projX;
-    ty  = hy / (float)*projY;
-    tyk = ty * (float)*projX / (float)*projY;
-    worst = tx;
-    if (ty  > worst) worst = ty;
-    if (tyk > worst) worst = tyk;
-    cap = 0.95f * (float)WIDE_FRUSTUM_F / worst;
-    if (k > cap) k = cap;
-    if (k <= 1.0f) return;
-
-    *projX = (int)((float)*projX / k);
-    *projY = (int)((float)*projY / k);
-}
-
 static void VR_WristbladePunchUpdate(float unitsPerMetre)
 {
     extern int NormalFrameTime;
@@ -5320,10 +5281,6 @@ void AvpShowViewsVR(void)
         float eye_clip_off_x = 0.0f, eye_clip_off_y = 0.0f;
         VR_EyeProjection(&xr_views[eye].fov, eye_fbo_w, eye_fbo_h,
                          &eye_projX, &eye_projY, &eye_clip_off_x, &eye_clip_off_y);
-        /* ...except by choice: "Alien Wide-Angle Lens" (VR Comfort & Display, off by
-         * default) breaks that rule on purpose, with a warning in its help text. */
-        VR_AlienWideLensApply(&eye_projX, &eye_projY, eye_clip_off_x, eye_clip_off_y,
-                              eye_fbo_w, eye_fbo_h);
         Global_VDB_Ptr->VDB_ProjX = eye_projX;
         Global_VDB_Ptr->VDB_ProjY = eye_projY;
 

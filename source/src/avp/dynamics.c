@@ -138,6 +138,47 @@ static void UpdateDisplayBlockData(STRATEGYBLOCK *sbPtr);
 static void ApplyGravity(DYNAMICSBLOCK *dynPtr);
 static void AlignObjectToGravityDirection(DYNAMICSBLOCK *dynPtr);
 static void AlignObjectToStandardGravityDirection(DYNAMICSBLOCK *dynPtr);
+static void AlignObjectMinimally(DYNAMICSBLOCK *dynPtr, VECTORCH *targetPtr);
+
+/* The player's own body while a headset is presenting. */
+static int AlignIsVRPlayer(const DYNAMICSBLOCK *dynPtr)
+{
+	extern int VR_SessionActive(void);
+	return VR_SessionActive() && Player && Player->ObStrategyBlock
+	    && dynPtr == Player->ObStrategyBlock->DynPtr;
+}
+
+/* Upside down, the homing rolls the body about the axis perpendicular to the vector
+   returned here - the body's own forward when that is X. In VR the VIEW does not
+   follow the body's heading (it is head pose x snap turn, see avpview.c), so a roll
+   about the body's forward can be a PITCH for the player: dropping off a ceiling read
+   as a backflip that landed facing the other way. For the VR player this returns the
+   view's right axis instead, flattened onto the surface, so the roll is about where the
+   player is looking and they land facing the same way. */
+static VECTORCH *AlignRollPerpendicular(DYNAMICSBLOCK *dynPtr, const VECTORCH *down)
+{
+	static VECTORCH viewRight;
+	extern MATRIXCH vr_listener_mat;
+	extern int vr_listener_mat_valid;
+
+	if (vr_listener_mat_valid && AlignIsVRPlayer(dynPtr))
+	{
+		/* vr_listener_mat is world->view with the view axes as ROWS; row 1 is right. */
+		float rx = vr_listener_mat.mat11/65536.0f, ry = vr_listener_mat.mat12/65536.0f, rz = vr_listener_mat.mat13/65536.0f;
+		float dx = down->vx/65536.0f, dy = down->vy/65536.0f, dz = down->vz/65536.0f;
+		float d = rx*dx + ry*dy + rz*dz, l;
+		rx -= d*dx; ry -= d*dy; rz -= d*dz;
+		l = sqrtf(rx*rx + ry*ry + rz*rz);
+		if (l > 0.2f)	/* else the head is rolled onto the surface normal: use the body */
+		{
+			viewRight.vx = (int)(rx/l*65536.0f);
+			viewRight.vy = (int)(ry/l*65536.0f);
+			viewRight.vz = (int)(rz/l*65536.0f);
+			return &viewRight;
+		}
+	}
+	return (VECTORCH*)&dynPtr->OrientMat.mat11;
+}
 static void VectorHomingForSurfaceAlign(VECTORCH *currentPtr, VECTORCH *targetPtr, VECTORCH *perpendicularPtr);
 
 extern void DynamicallyRotateObject(DYNAMICSBLOCK *dynPtr);
@@ -1126,6 +1167,13 @@ static void AlignObjectToGravityDirection(DYNAMICSBLOCK *dynPtr)
 		if(doty < 0) doty = -doty;
 		if(dotz < 0) dotz = -dotz;
 
+		if (upsideDown && AlignIsVRPlayer(dynPtr))
+		{
+			/* VR: roll about where the player LOOKS, not the body's Z, which the view
+			   does not follow (see AlignRollPerpendicular). */
+			AlignObjectMinimally(dynPtr, &dynPtr->GravityDirection);
+			return;
+		}
 		if (upsideDown)
 		{
 			staticAxis = iz;
@@ -1211,6 +1259,16 @@ static void AlignObjectToGravityDirection(DYNAMICSBLOCK *dynPtr)
 static void AlignObjectToStandardGravityDirection(DYNAMICSBLOCK *dynPtr)
 {
 	VECTORCH gravityDirection = {0,65536,0};
+
+	dynPtr->GravityDirection = gravityDirection;
+	AlignObjectMinimally(dynPtr, &gravityDirection);
+}
+/* One homing step of the body's Y toward *targetPtr, carrying X and Z by the same
+   rotation. Shared by the standard-gravity case above and, for the VR player only,
+   the upside-down case of AlignObjectToGravityDirection. */
+static void AlignObjectMinimally(DYNAMICSBLOCK *dynPtr, VECTORCH *targetPtr)
+{
+	VECTORCH gravityDirection = *targetPtr;
 	VECTORCH oldY = *((VECTORCH*)&dynPtr->OrientMat.mat21);
 	VECTORCH newY = oldY;
 	float ax, ay, az, bx, by, bz, kx, ky, kz, c, s;
@@ -1218,9 +1276,7 @@ static void AlignObjectToStandardGravityDirection(DYNAMICSBLOCK *dynPtr)
 	VECTORCH XVector, ZVector;
 	int i;
 
-	dynPtr->GravityDirection = gravityDirection;
-
-	VectorHomingForSurfaceAlign(&newY, &gravityDirection, ((VECTORCH*)&dynPtr->OrientMat.mat11));
+	VectorHomingForSurfaceAlign(&newY, &gravityDirection, AlignRollPerpendicular(dynPtr, &oldY));
 
 	XVector = *((VECTORCH*)&dynPtr->OrientMat.mat11);
 	ZVector = *((VECTORCH*)&dynPtr->OrientMat.mat31);

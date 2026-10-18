@@ -3912,6 +3912,37 @@ int vr_physically_moving = 0;
    upright tilt has the same form as a snap matrix (sin = fwd_x, cos = fwd_z). */
 static float vr_climb_fwd_x = 0.0f, vr_climb_fwd_y = 0.0f, vr_climb_fwd_z = 1.0f;
 
+/* Falling off a WALL while looking down it, the body's down axis swings onto world
+   down and the carried forward follows it out to face AWAY from the wall. The player
+   should land facing the wall, so at the start of the fall the forward's up/down-the-
+   wall component is mirrored as a twist about the down axis, fed in over the fall in
+   step with how far the body has turned upright (vr_fall_twist_left, radians). */
+static float vr_fall_twist_left = 0.0f;
+static float vr_fall_prev_theta = 0.0f;
+static int   vr_fall_prev = 0;
+
+/* out = R v, R the minimal rotation taking the unit vector b onto world down (0,1,0). */
+static void VR_RotateBToDown(float bx, float by, float bz, float vx, float vy, float vz, float out[3])
+{
+    float c = by, kx = -bz, kz = bx;                   /* k = b x (0,1,0); ky = 0 */
+    float s = (c > -0.999f) ? 1.0f / (1.0f + c) : 0.0f;
+    float kv = kx*vx + kz*vz;
+    out[0] = vx*c - kz*vy + kx*kv*s;
+    out[1] = vy*c + (kz*vx - kx*vz);
+    out[2] = vz*c + kx*vy + kz*kv*s;
+}
+
+/* Rotate vr_climb_fwd_* about the unit axis (bx,by,bz) by ang. Forward is
+   perpendicular to the axis, so the Rodrigues term along the axis drops out. */
+static void VR_ClimbTwistFwd(float bx, float by, float bz, float ang)
+{
+    float fx = vr_climb_fwd_x, fy = vr_climb_fwd_y, fz = vr_climb_fwd_z;
+    float c = SDL_cosf(ang), s = SDL_sinf(ang);
+    vr_climb_fwd_x = fx*c + (by*fz - bz*fy)*s;
+    vr_climb_fwd_y = fy*c + (bz*fx - bx*fz)*s;
+    vr_climb_fwd_z = fz*c + (bx*fy - by*fx)*s;
+}
+
 /* The view's "is the climb tilt on" test: the body's down axis is off vertical. Must
    match the test in VR_RotateMoveVelocity (pmove.c). */
 static int VR_ClimbBodyTilted(const MATRIXCH *om)
@@ -4099,6 +4130,13 @@ void AvpShowViewsVR(void)
      * every one of them sees the folded value on the landing frame. */
     if (AvP.PlayerType == I_Alien && Player->ObStrategyBlock && Player->ObStrategyBlock->DynPtr) {
         const MATRIXCH *om = &Player->ObStrategyBlock->DynPtr->OrientMat;
+        if (!VR_ClimbBodyTilted(om) && vr_fall_twist_left != 0.0f) {
+            /* Landed before the twist was all fed in: finish it here, upright, where
+               it is a plain heading turn folded in just below. */
+            VR_ClimbTwistFwd(0.0f, 1.0f, 0.0f, vr_fall_twist_left);
+            vr_fall_twist_left = 0.0f;
+        }
+        if (!VR_ClimbBodyTilted(om)) vr_fall_prev = 0;
         if (!VR_ClimbBodyTilted(om) && (vr_climb_fwd_x != 0.0f || vr_climb_fwd_z != 1.0f)) {
             float yaw = SDL_atan2f(vr_climb_fwd_x, vr_climb_fwd_z);
             int units = (int)SDL_lroundf(yaw * 2048.0f / SDL_PI_F);
@@ -4713,6 +4751,87 @@ void AvpShowViewsVR(void)
             }
             fx /= fl; fy /= fl; fz /= fl;
             vr_climb_fwd_x = fx; vr_climb_fwd_y = fy; vr_climb_fwd_z = fz;
+
+            /* Falling (gravity is exactly world down, either released or a climb
+               that lost every surface) while still tilted: land facing the wall.
+               See vr_fall_twist_left. */
+            {
+                const VECTORCH *g = &Player->ObStrategyBlock->DynPtr->GravityDirection;
+                int falling = (g->vx == 0 && g->vz == 0 && g->vy == ONE_FIXED);
+                float theta = SDL_acosf(SDL_max(-1.0f, SDL_min(1.0f, by)));  /* b vs down */
+
+                if (falling && !vr_fall_prev) {
+                    /* u = world up flattened onto the surface (up the wall); a = u x b,
+                       along the wall (horizontal). u's length is the wall-ness of the
+                       surface, so ceilings and gentle slopes are left alone. */
+                    extern MATRIXCH vr_listener_mat;
+                    extern int      vr_listener_mat_valid;
+                    float ux = by*bx, uy = by*by - 1.0f, uz = by*bz;   /* up - (up.b)b, up = (0,-1,0) */
+                    float ul = SDL_sqrtf(ux*ux + uy*uy + uz*uz);
+                    vr_fall_twist_left = 0.0f;
+                    if (ul > 0.7f && vr_listener_mat_valid) {
+                        /* G = where the player is LOOKING (listener row 3 = view forward). */
+                        float gx = vr_listener_mat.mat31 / 65536.0f;
+                        float gy = vr_listener_mat.mat32 / 65536.0f;
+                        float gz = vr_listener_mat.mat33 / 65536.0f;
+                        float ax, ay, az, ga, gu, gb, wx, wz, wl, hx, hz;
+                        ux /= ul; uy /= ul; uz /= ul;
+                        ax = uy*bz - uz*by; ay = uz*bx - ux*bz; az = ux*by - uy*bx;
+                        ga = gx*ax + gy*ay + gz*az;
+                        gu = gx*ux + gy*uy + gz*uz;
+                        gb = gx*bx + gy*by + gz*bz;
+
+                        /* Wanted landing heading H: along the wall keeps its along part;
+                           up the wall, down the wall and AT the wall all mean "face the
+                           wall"; only looking back out into the room faces away. */
+                        wl = SDL_sqrtf(bx*bx + bz*bz);
+                        wx = bx / wl; wz = bz / wl;                   /* horizontal toward-wall */
+                        hx = ga*ax + (SDL_fabsf(gu) + gb)*wx;
+                        hz = ga*az + (SDL_fabsf(gu) + gb)*wz;
+
+                        if (hx*hx + hz*hz > 0.01f) {
+                            /* Where the view would land with no twist: its tilt is
+                               outermost (tilt x snap x head), and over the fall it turns by
+                               the minimal rotation R taking b onto down. */
+                            float lg[3], lv[3], px, pz;
+                            float vx = -vr_listener_mat.mat21 / 65536.0f;   /* view UP = -row 2 */
+                            float vy = -vr_listener_mat.mat22 / 65536.0f;
+                            float vz = -vr_listener_mat.mat23 / 65536.0f;
+                            VR_RotateBToDown(bx, by, bz, gx, gy, gz, lg);
+                            VR_RotateBToDown(bx, by, bz, vx, vy, vz, lv);
+                            /* The landed FACING. Looking at the wall the gaze lands
+                               pointing at the floor, with no heading of its own; then the
+                               top of the head says which way the player faces once they
+                               look up. Gaze + up when looking down, gaze - up when looking
+                               up: both reduce to the gaze's own heading when it is level. */
+                            if (lg[1] > 0.0f) { px = lg[0] + lv[0]; pz = lg[2] + lv[2]; }
+                            else              { px = lg[0] - lv[0]; pz = lg[2] - lv[2]; }
+                            if (px*px + pz*pz > 0.01f) {
+                                /* Twist about b turns the landed heading by the same angle
+                                   (atan2(x,z), the fold's convention). */
+                                float t = SDL_atan2f(hx, hz) - SDL_atan2f(px, pz);
+                                while (t >  SDL_PI_F) t -= 2.0f*SDL_PI_F;
+                                while (t < -SDL_PI_F) t += 2.0f*SDL_PI_F;
+                                vr_fall_twist_left = t;
+                            }
+                        }
+                    }
+                    vr_fall_prev_theta = theta;
+                }
+                else if (falling && vr_fall_twist_left != 0.0f) {
+                    if (vr_fall_prev_theta > 0.001f && theta < vr_fall_prev_theta) {
+                        float step = vr_fall_twist_left * (vr_fall_prev_theta - theta) / vr_fall_prev_theta;
+                        VR_ClimbTwistFwd(bx, by, bz, step);
+                        vr_fall_twist_left -= step;
+                        fx = vr_climb_fwd_x; fy = vr_climb_fwd_y; fz = vr_climb_fwd_z;
+                    }
+                    vr_fall_prev_theta = theta;
+                }
+                else if (!falling) {
+                    vr_fall_twist_left = 0.0f;     /* grabbed a surface again */
+                }
+                vr_fall_prev = falling;
+            }
 
             {
                 /* right = down x forward: right-handed, and (1,0,0) when upright. */

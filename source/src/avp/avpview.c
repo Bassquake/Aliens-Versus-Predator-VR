@@ -6843,7 +6843,7 @@ void AvpShowViewsVR(void)
                                 Larger = closer. 0.0 = optical infinity.
                                 0.014 ≈ 2 m, 0.02 ≈ 1.5 m, 0.028 ≈ 1 m    */
         #define VR_HUD_STEREO_DEPTH 0.02f
-        /* "Adjust HUD elements" (Controller Config -> HUDInsetLevel): pull the HUD
+        /* "Reduce Overall HUD Size" (Controller Config -> HUDInsetLevel): pull the HUD
          * toward the centre of view for narrow-FOV headsets. Level 0 (default) is
          * the tuned 0.50; each higher level nudges it in slightly (also a touch
          * smaller, which helps it fit a narrow FOV). The crosshair recompute below

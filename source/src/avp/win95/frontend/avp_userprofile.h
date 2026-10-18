@@ -103,7 +103,7 @@ typedef struct
 	unsigned char EnemySpeedAlien;    //main menu Cheats: alien enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char EnemySpeedMarine;   //main menu Cheats: marine enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
 	unsigned char EnemySpeedPredator; //main menu Cheats: predator enemy speed, stored as (10-speed): 0=full speed..10=stopped (was Padding)
-	unsigned char HUDInsetLevel; //VR Comfort & Display: "Adjust HUD elements" 0=default,1..4 pull HUD toward centre (was Padding)
+	unsigned char HUDInsetLevel; //VR Comfort & Display: "Reduce Overall HUD Size" 0=default,1..4 pull HUD toward centre (was Padding)
 	unsigned char ReservedWasManualReloadEnabled; //"Manual Reload" gesture toggle, removed (now the Reload binding) - byte kept so the blob layout does not shift
 	/* AV Options texture filtering. All three are index 0 = the port's previous
 	   behaviour, which is required rather than tidy: these come out of Padding,

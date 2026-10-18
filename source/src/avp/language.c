@@ -348,8 +348,8 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CHEATS_ENEMYSPEED_MARINE:   return "Marine Speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_PREDATOR: return "Predator Speed";
 			case TEXTSTRING_CHEATS_ENEMYSPEED_HELP: return "Slow this enemy type down in Single Player. Full is normal speed, empty stops them (not Skirmish or Multiplayer).";
-			case TEXTSTRING_HUDADJUST: return "Adjust HUD Elements";
-			case TEXTSTRING_HUDADJUST_HELP: return "Moves HUD elements toward the centre of view. 1 is furthest out, 5 is closest to the centre of view.";
+			case TEXTSTRING_HUDADJUST: return "Reduce Overall HUD Size";
+			case TEXTSTRING_HUDADJUST_HELP: return "Shrinks the whole HUD toward the centre of view. 1 is full size, 5 is the smallest.";
 			case TEXTSTRING_HUDADJUST_1: return "1 (Default)";
 			case TEXTSTRING_HUDADJUST_2: return "2";
 			case TEXTSTRING_HUDADJUST_3: return "3";

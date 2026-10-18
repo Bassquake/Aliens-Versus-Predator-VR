@@ -830,7 +830,7 @@ int VRManualAttacks = 1;           /* defined in avpview.c on VR builds; inert h
 int VRLeftHanded = 0;           /* defined in avpview.c on VR builds; inert here */
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;
-int HUDInsetLevel = 0; /* "Adjust HUD elements": 0=default,1..4 pull HUD toward centre (inert on desktop) */
+int HUDInsetLevel = 0; /* "Reduce Overall HUD Size": 0=default,1..4 pull HUD toward centre (inert on desktop) */
 /* "Swap Joysticks": 0=No (default), 1=Yes. ONE setting for both input paths - the VR
  * thumbsticks and the flat gamepad - so it is defined on every target, not just VR. */
 int SwapJoysticksEnabled = 0;
@@ -1602,7 +1602,7 @@ int VRClimbVignetteStrength = 5;
 int MarineLeftArmVisible = 1;
 
 
-/* "Adjust HUD elements" (Controller Config): 0=default layout, 1 and 2 pull the
+/* "Reduce Overall HUD Size" (Controller Config): 0=default layout, 1 and 2 pull the
  * HUD progressively toward the centre of view for narrow-FOV headsets.
  * Consumed in AvpShowViewsVR when setting vr_hud_clip_scale. */
 int HUDInsetLevel = 0;

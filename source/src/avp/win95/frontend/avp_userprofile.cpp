@@ -441,7 +441,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	EnemySpeedAlien = 10;    /* enemy speed sliders default to full speed (10 = 1.0) */
 	EnemySpeedMarine = 10;
 	EnemySpeedPredator = 10;
-	HUDInsetLevel = 0;       /* "Adjust HUD elements" defaults to level 1 (current layout) */
+	HUDInsetLevel = 0;       /* "Reduce Overall HUD Size" defaults to level 1 (current layout) */
 	SwapJoysticksEnabled = 0; /* "Swap Joysticks" defaults to No */
 	/* All three reproduce the filtering the port had before these were options. */
 	AnisotropicFilterIndex = 0; /* 16x, matching the old always-maximum behaviour */

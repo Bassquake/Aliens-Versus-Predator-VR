@@ -76,6 +76,7 @@ extern int VRClimbVignetteOn;
 extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int OpposingGripHoldsWeapon;
+extern int VRManualAttacks;
 extern int VRLeftHanded;
 extern int AlienClimbHoldToClimb;
 extern int LeftStickDeadzone;
@@ -277,6 +278,7 @@ static const AVPMENU_ELEMENT AvPMenu_VRConfigMaster[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRVIGNETTE},	{1}, {&VRVignetteOn},		{TEXTSTRING_VRVIGNETTE_OFF},	TEXTSTRING_VRVIGNETTE_HELP},
 	{AVPMENU_ELEMENT_SLIDER,		{TEXTSTRING_VRVIGNETTE_STRENGTH}, {10}, {&VRVignetteStrength},	{0},	TEXTSTRING_VRVIGNETTE_STRENGTH_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_TWOHANDPROXIMITY},	{1}, {&OpposingGripHoldsWeapon},	{TEXTSTRING_TWOHANDPROXIMITY_NO},	TEXTSTRING_TWOHANDPROXIMITY_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_VRMANUALATTACKS},	{1}, {&VRManualAttacks},	{TEXTSTRING_VRMANUALATTACKS_NO},	TEXTSTRING_VRMANUALATTACKS_HELP},
 
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},	{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
 	{AVPMENU_ELEMENT_ENDOFMENU}
@@ -355,6 +357,9 @@ static void MakeVRConfigPage(const AVPMENU_ELEMENT *master, unsigned int count,
                     break;
                 case TEXTSTRING_MARINELEFTARM:
                     if (!isMarine) continue;
+                    break;
+                case TEXTSTRING_VRMANUALATTACKS:   /* Alien and Predator only */
+                    if (isMarine) continue;
                     break;
                 default:
                     break;

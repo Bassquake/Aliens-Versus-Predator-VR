@@ -824,6 +824,7 @@ int VRClimbVignetteStrength = 5;
 int MarineLeftArmVisible = 1;
 int AutoTwoHandedWeapons = 1;   /* defined in avpview.c on VR builds; inert here */
 int OpposingGripHoldsWeapon = 1;   /* defined in avpview.c on VR builds; inert here */
+int VRManualAttacks = 1;           /* defined in avpview.c on VR builds; inert here */
 int VRLeftHanded = 0;           /* defined in avpview.c on VR builds; inert here */
 float vr_vignette_strength = 0.0f;
 float vr_climb_vignette_strength = 0.0f;

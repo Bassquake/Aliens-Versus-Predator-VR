@@ -1666,6 +1666,11 @@ enum TEXTSTRING_ID
 	TEXTSTRING_LEFTHANDED_HELP,
 	TEXTSTRING_LEFTHANDED_NO,  // value 0 (default): must stay immediately before _YES
 	TEXTSTRING_LEFTHANDED_YES, // value 1
+	/* VR Controls "Manual Attacks" (Alien swipes, Predator wristblade punches). */
+	TEXTSTRING_VRMANUALATTACKS,
+	TEXTSTRING_VRMANUALATTACKS_HELP,
+	TEXTSTRING_VRMANUALATTACKS_NO,  // value 0: must stay immediately before _YES
+	TEXTSTRING_VRMANUALATTACKS_YES, // value 1 (default)
 
 	/* Page 2 of VR Configuration (Comfort & Display). Page 1 keeps TEXTSTRING_VRCONFIG_*. */
 	TEXTSTRING_VRCONFIG2_TITLE,

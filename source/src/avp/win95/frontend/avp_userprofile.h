@@ -284,7 +284,10 @@ typedef struct
 	unsigned char VREyeSeparationIndexPlus1;
 	/* VR Comfort & Display "Sitting Mode": 0 = off (default), 1 = on. */
 	unsigned char SittingMode;
-	unsigned char ExtReserved[3];
+	/* VR Controls "Manual Attacks". Stored INVERTED - it defaults to Yes, and the zero
+	   every older profile has here must decode to that. */
+	unsigned char ManualAttacksOff;           //0=Yes (default), 1=No
+	unsigned char ExtReserved[2];
 
 } AVP_USER_PROFILE;
 

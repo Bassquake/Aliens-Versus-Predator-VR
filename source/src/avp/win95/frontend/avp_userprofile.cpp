@@ -67,6 +67,7 @@ extern int VRClimbVignetteStrength;
 extern int MarineLeftArmVisible;
 extern int AutoTwoHandedWeapons;
 extern int OpposingGripHoldsWeapon;
+extern int VRManualAttacks;
 extern int VRLeftHanded;
 extern int AlienClimbHoldToClimb;
 extern int VRBinding[VR_SPECIES_COUNT][VR_ACT_COUNT];
@@ -414,6 +415,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	MarineLeftArmVisible = 1; /* Marine's left arm shown by default */
 	AutoTwoHandedWeapons = 1; /* left hand takes the grip when brought to it */
 	OpposingGripHoldsWeapon = 1; /* the left grip holds a two-handed weapon */
+	VRManualAttacks = 1;      /* Alien swipes and Predator punches strike */
 	VRLeftHanded = 0;         /* right-handed */
 	AlienClimbHoldToClimb = 0; /* a Climb press grabs; no need to keep holding it */
 	LeftStickDeadzone = 2;
@@ -569,6 +571,7 @@ extern void GetSettingsFromUserProfile(void)
 	MarineLeftArmVisible =			!UserProfilePtr->MarineLeftArmHidden;
 	AutoTwoHandedWeapons =			!UserProfilePtr->AutoTwoHandedDisabled;
 	OpposingGripHoldsWeapon =		UserProfilePtr->OpposingGripOff ? 0 : 1;
+	VRManualAttacks =				UserProfilePtr->ManualAttacksOff ? 0 : 1;
 	VRLeftHanded =					UserProfilePtr->LeftHanded ? 1 : 0;
 	AlienClimbHoldToClimb =			UserProfilePtr->AlienClimbHoldToClimb ? 1 : 0;
 	LeftStickDeadzone =			UserProfilePtr->LeftStickDeadzonePlus1
@@ -783,6 +786,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->AutoTwoHandedDisabled =	(unsigned char)(AutoTwoHandedWeapons ? 0 : 1);
 	profilePtr->ReservedWasTwoHandProximityOff = 0;
 	profilePtr->OpposingGripOff =		(unsigned char)(OpposingGripHoldsWeapon ? 0 : 1);
+	profilePtr->ManualAttacksOff =		(unsigned char)(VRManualAttacks ? 0 : 1);
 	profilePtr->LeftHanded =		(unsigned char)(VRLeftHanded ? 1 : 0);
 	profilePtr->AlienClimbHoldToClimb =	(unsigned char)(AlienClimbHoldToClimb ? 1 : 0);
 	profilePtr->LeftStickDeadzonePlus1 =	(unsigned char)(LeftStickDeadzone + 1);

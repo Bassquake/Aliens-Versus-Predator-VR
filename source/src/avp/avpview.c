@@ -1329,6 +1329,9 @@ int AutoTwoHandedWeapons = 1;   /* profile byte only - see above */
  *   0 = No: the left grip never takes hold of the weapon, and Left Grip is an ordinary
  *       bindable control. */
 int OpposingGripHoldsWeapon = 1;
+/* VR Controls "Manual Attacks": 1 = Yes (default), the Alien's claw swipes and the
+   Predator's wristblade punches below strike; 0 = No, only the attack buttons do. */
+int VRManualAttacks = 1;
 extern int xr_left_squeeze_gameplay_pressed;   /* main.c: left grip held, gameplay only */
 
 /* Is the left grip asking for a two-handed hold? Not for a Marine with the jetpack ON
@@ -1765,7 +1768,9 @@ static void VR_WristbladePunchUpdate(float unitsPerMetre)
     dt = NormalFrameTime / 65536.0f;
     if (cooldown > 0.0f) cooldown -= dt;
 
-    if (AvP.PlayerType != I_Predator || !vr_right_hand_valid || !Player
+    /* Switched off: take the same exit as "no hand", which also drops the previous
+       sample, so switching back on cannot read a stale pose as a fast punch. */
+    if (!VRManualAttacks || AvP.PlayerType != I_Predator || !vr_right_hand_valid || !Player
         || !Player->ObStrategyBlock || unitsPerMetre <= 0.0f || dt <= 0.0f) {
         have_prev = 0;
         return;
@@ -1866,7 +1871,8 @@ static void VR_AlienSwipeUpdate(float unitsPerMetre)
     float dt = NormalFrameTime / 65536.0f;
     int h, snapped;
 
-    if (AvP.PlayerType != I_Alien || !Player || !Player->ObStrategyBlock
+    if (!VRManualAttacks   /* switched off: as the punch above */
+        || AvP.PlayerType != I_Alien || !Player || !Player->ObStrategyBlock
         || unitsPerMetre <= 0.0f || dt <= 0.0f) {
         have_prev[0] = have_prev[1] = 0;
         return;

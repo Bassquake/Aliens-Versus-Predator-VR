@@ -384,6 +384,10 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_TWOHANDPROXIMITY_HELP: return "Yes: hold the grip on your other controller to hold a two-handed weapon with both hands; the weapon then aims along the line between your controllers. The Marine cannot bind that grip to anything but its Jetpack; the Alien and Predator can, and an action there takes priority over holding the weapon. No: that grip is an ordinary control you can bind to anything.";
 			case TEXTSTRING_TWOHANDPROXIMITY_NO:   return "No";
 			case TEXTSTRING_TWOHANDPROXIMITY_YES:  return "Yes (Default)";
+			case TEXTSTRING_VRMANUALATTACKS:      return "Manual Attacks";
+			case TEXTSTRING_VRMANUALATTACKS_HELP: return "Yes: as the Alien, swipe either hand to strike with its claws; as the Predator, punch with your weapon hand to strike with the wristblades. No: only the attack buttons attack.";
+			case TEXTSTRING_VRMANUALATTACKS_NO:   return "No";
+			case TEXTSTRING_VRMANUALATTACKS_YES:  return "Yes (Default)";
 			case TEXTSTRING_LEFTHANDED:      return "Left-Handed Mode";
 			case TEXTSTRING_LEFTHANDED_HELP: return "Hold the weapon in your left hand. The arms and weapon are mirrored, and the triggers and grips swap sides.";
 			case TEXTSTRING_LEFTHANDED_NO:   return "No (Default)";

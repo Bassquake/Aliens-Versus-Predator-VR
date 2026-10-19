@@ -5711,7 +5711,8 @@ void AvpShowViewsVR(void)
                 static int prev_fire_state = -1;
                 static unsigned int prev_primary_rounds = 0;
                 static int prev_weapon = -1;
-                static int tick_toggle = 0;
+                static int fast_tick_clock = 0;     /* 16.16 s since the last fast tick */
+                static int fast_was_firing = 0;     /* a fast weapon spent ammo last frame */
                 PLAYER_STATUS *psH = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
                 PLAYER_WEAPON_DATA *wH = &psH->WeaponSlot[psH->SelectedWeaponSlot];
                 int st = wH->CurrentState;
@@ -5723,7 +5724,7 @@ void AvpShowViewsVR(void)
                     prev_weapon = wH->WeaponIDNumber;
                     prev_primary_rounds = wH->PrimaryRoundsRemaining;
                     prev_fire_state = st;
-                    tick_toggle = 0;
+                    fast_was_firing = 0;
                 } else {
                     if (wH->PrimaryRoundsRemaining < prev_primary_rounds) {
                         /* On a FAST weapon, tick every OTHER round.
@@ -5756,19 +5757,35 @@ void AvpShowViewsVR(void)
                                      || wH->WeaponIDNumber == WEAPON_SMARTGUN);
                             int tick = 1;
                             if (fast) {
-                                /* Every FOURTH round. Halving was not enough: at ~16.7
-                                   rounds/sec even a 120 ms gap still read as a buzz, so
-                                   the tick rate drops to ~4/sec (a ~240 ms gap), which
-                                   is clearly separated. The pulse lengthens to 35 ms to
-                                   suit - there is plenty of room now, and a longer
-                                   pulse at this spacing feels like a thump rather than
-                                   a click. Every other weapon ticks on every round. */
-                                tick_toggle = (tick_toggle + 1) & 3;
-                                tick = (tick_toggle == 0);
+                                /* A 35 ms tick every 4/72 s (~56 ms), timed on the CLOCK.
+                                   This used to tick every fourth time the ammo moved,
+                                   meant as every fourth round - but ammo is 16.16 and an
+                                   automatic weapon spends a FRACTION of a round every
+                                   frame (FireAutomaticWeapon: FiringRate x
+                                   NormalFrameTime), so it was every fourth FRAME. That
+                                   was the pulse players knew at 72 Hz, became a buzz at
+                                   90 Hz and a solid hum at 120 Hz, where 35 ms pulses
+                                   overlap outright. The interval keeps the 72 Hz feel
+                                   at every refresh rate. The first frame of a burst
+                                   ticks at once. */
+                                const int FAST_TICK = (ONE_FIXED * 4) / 72;
+                                if (!fast_was_firing) {
+                                    fast_tick_clock = 0;
+                                } else {
+                                    fast_tick_clock += NormalFrameTime;
+                                    tick = (fast_tick_clock >= FAST_TICK);
+                                    if (tick) {
+                                        fast_tick_clock -= FAST_TICK;
+                                        if (fast_tick_clock >= FAST_TICK) fast_tick_clock = 0;
+                                    }
+                                }
                             }
                             if (tick) XR_Haptic_Right(1.0f, fast ? 35.0f : 50.0f);
+                            fast_was_firing = fast;
                         }
                         fired = 1;
+                    } else {
+                        fast_was_firing = 0;
                     }
                     if (!fired && st != prev_fire_state) {
                         /* The shoulder cannon is handled by the charge block below,

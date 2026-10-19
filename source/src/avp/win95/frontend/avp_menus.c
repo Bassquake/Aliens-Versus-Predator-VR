@@ -128,6 +128,7 @@ extern int IntroOutroMoviesAreActive;
 void HandlePreGameFMVs(void);
 extern void AvP_UpdateMenus(void);
 static void SetupNewMenu(enum AVPMENU_ID menuID);
+static void Bind_ResolveAlreadyUsed(void);
 static void RenderMenu(void);
 static void RenderBriefingScreenInfo(void);
 static void RenderEpisodeSelectMenu(void);
@@ -956,6 +957,9 @@ static void SetupNewMenu(enum AVPMENU_ID menuID)
 	if (previousMenuID == AVPMENU_MULTIPLAYER && menuID != AVPMENU_MULTIPLAYER)
 		Relay_SaveIfChanged();
 
+	/* A binding row left on an "(Already Used)" control is unbound on the way out. */
+	Bind_ResolveAlreadyUsed();
+
 	/* The "abort and save" intent only survives the hop from the Save progress?
 	   screen to the Save Game slot picker. Opening any other menu (e.g. backing
 	   out of the slot picker) cancels it, so a later ordinary save never quits. */
@@ -1428,11 +1432,75 @@ static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
 	     || elementPtr->a.TextDescription == TEXTSTRING_BIND_ZOOM);
 }
 
-/* Cycle a controller binding, skipping any control already used by another action.
+/* Rows the player has cycled ONTO a control another action already holds, one flag
+ * per binding-table entry. Such a value is shown in red as "(Already Used)" and is
+ * never kept: Bind_ResolveAlreadyUsed unbinds it when the player leaves the page.
+ *
+ * Tracked per row rather than worked out from the table, so only the row the player
+ * moved is flagged - the action that already owned the control stays as it was, and
+ * a shared pair the profile loader accepted (VR_ACTIONS_MAY_SHARE) is never touched. */
+static unsigned char VRBindAlreadyUsed[VR_SPECIES_COUNT * VR_ACT_COUNT];
+static unsigned char PadBindAlreadyUsed[PAD_SPECIES_COUNT * PAD_ACT_COUNT];
+
+static int BindingTakenInTable(const int *table, int actCount, int sp, int act, int v,
+                               int (*mayShare)(int, int))
+{
+	int other;
+	if (v == 0) return 0;               /* any number of actions may be Unbound */
+	for (other = 0; other < actCount; other++)
+		if (other != act && table[sp * actCount + other] == v
+		    && !(mayShare && mayShare(act, other))) return 1;
+	return 0;
+}
+
+/* Is this row showing a control another action holds? (the red "(Already Used)") */
+static int Bind_RowIsAlreadyUsed(const int *valuePtr)
+{
+	const int *vrFirst  = &VRBinding[0][0];
+	const int *padFirst = &PadBinding[0][0];
+	int idx;
+
+	if (valuePtr >= vrFirst && valuePtr < vrFirst + VR_SPECIES_COUNT*VR_ACT_COUNT)
+	{
+		idx = (int)(valuePtr - vrFirst);
+		return VRBindAlreadyUsed[idx]
+		    && BindingTakenInTable(vrFirst, VR_ACT_COUNT, idx / VR_ACT_COUNT,
+		                           idx % VR_ACT_COUNT, *valuePtr, NULL);
+	}
+	if (valuePtr >= padFirst && valuePtr < padFirst + PAD_SPECIES_COUNT*PAD_ACT_COUNT)
+	{
+		idx = (int)(valuePtr - padFirst);
+		return PadBindAlreadyUsed[idx]
+		    && BindingTakenInTable(padFirst, PAD_ACT_COUNT, idx / PAD_ACT_COUNT,
+		                           idx % PAD_ACT_COUNT, *valuePtr, NULL);
+	}
+	return 0;
+}
+
+/* Leaving a binding page: any row still on an "(Already Used)" control becomes
+   Unbound. A row whose control was freed meanwhile (the other action moved off it)
+   keeps it. Called from SetupNewMenu, so it covers Back and every other way out, and
+   from Use These Settings before the save. */
+static void Bind_ResolveAlreadyUsed(void)
+{
+	int i;
+	for (i = 0; i < VR_SPECIES_COUNT * VR_ACT_COUNT; i++)
+		if (VRBindAlreadyUsed[i] && Bind_RowIsAlreadyUsed(&VRBinding[0][0] + i))
+			(&VRBinding[0][0])[i] = 0;
+	for (i = 0; i < PAD_SPECIES_COUNT * PAD_ACT_COUNT; i++)
+		if (PadBindAlreadyUsed[i] && Bind_RowIsAlreadyUsed(&PadBinding[0][0] + i))
+			(&PadBinding[0][0])[i] = 0;
+	memset(VRBindAlreadyUsed, 0, sizeof(VRBindAlreadyUsed));
+	memset(PadBindAlreadyUsed, 0, sizeof(PadBindAlreadyUsed));
+}
+
+/* Cycle a controller binding. Controls already used by another action ARE offered,
+ * so the player can see what is taken, but are flagged "(Already Used)" and never kept.
  *
  * Two actions on one button would fire both at once, which the engine has no way to
- * arbitrate - so a control in use is simply not offered rather than allowed and then
- * resolved. Unbound is exempt: any number of actions may be on nothing. A control and
+ * arbitrate - so a control in use is shown, marked, and dropped to Unbound if the
+ * player leaves it there (Bind_ResolveAlreadyUsed). Unbound is exempt: any number of
+ * actions may be on nothing. A control and
  * its HOLD ("A" and "A Hold") are different values and so may carry two actions; that
  * is the point of offering the hold (see Bind_Step in main.c).
  *
@@ -1443,18 +1511,16 @@ static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
  *
  * The row is identified by its value POINTER landing inside the binding table, the same
  * test the "(Default)" marker uses; the species and action indices fall out of the
- * offset, so this works for every species menu without knowing which one is open.
- *
- * The guard bounds the search to one full pass. If every other value were taken the
- * row simply stays put, which is the correct outcome and cannot spin. */
+ * offset, so this works for every species menu without knowing which one is open. */
 static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCount,
                                int speciesCount, int lastSource, int holdFlag,
                                int (*canHold)(int), int (*bindable)(int),
                                int (*mayShare)(int, int),
-                               int (*rowBindable)(int species, int action, int source))
+                               int (*rowBindable)(int species, int action, int source),
+                               unsigned char *alreadyUsed)
 {
 	int order[2 * 64 + 1];
-	int count = 0, pos = 0, idx, sp, act, guard, s;
+	int count = 0, pos = 0, idx, sp, act, s;
 
 	if (valuePtr < table || valuePtr >= table + speciesCount * actCount)
 		return 0;                       /* not a binding row - caller does its thing */
@@ -1475,24 +1541,13 @@ static int CycleBindingInTable(int *valuePtr, int forward, int *table, int actCo
 	for (s = 0; s < count; s++)
 		if (order[s] == *valuePtr) { pos = s; break; }
 
-	for (guard = 0; guard < count; guard++)
-	{
-		int v, taken = 0, other;
-
-		pos += forward ? 1 : -1;
-		if (pos >= count) pos = 0;
-		if (pos < 0)      pos = count - 1;
-		v = order[pos];
-
-		if (v != 0)
-		{
-			for (other = 0; other < actCount; other++)
-				if (other != act && table[sp * actCount + other] == v
-				    && !(mayShare && mayShare(act, other))) { taken = 1; break; }
-		}
-		if (!taken) { *valuePtr = v; return 1; }
-	}
-	return 1;                           /* nothing free: leave it where it was */
+	pos += forward ? 1 : -1;
+	if (pos >= count) pos = 0;
+	if (pos < 0)      pos = count - 1;
+	*valuePtr = order[pos];
+	alreadyUsed[idx] = (unsigned char)BindingTakenInTable(table, actCount, sp, act,
+	                                                       *valuePtr, mayShare);
+	return 1;
 }
 
 static int VR_SourceCanHoldFn(int s)  { return VR_SOURCE_CAN_HOLD(s); }
@@ -1510,15 +1565,15 @@ static int VR_CycleBinding(int *valuePtr, int maxValue, int forward)
 {
 	/* Climb never offers Hold controls - see VR_ClimbBindingDropHold.
 
-	   No row is offered a control another action already holds, Climb included
-	   (2026-10-17, on request), so the menu can never CREATE a shared control. The
-	   profile loader still accepts VR_ACTIONS_MAY_SHARE, so the default (Climb on
-	   B, shared with Jump) and any saved shared set still load and work. */
+	   A control another action already holds is "(Already Used)" on every row,
+	   Climb included (2026-10-17, on request), so the menu can never CREATE a
+	   shared control. The profile loader still accepts VR_ACTIONS_MAY_SHARE, so
+	   any saved shared set (Climb sharing Jump's B) still loads and works. */
 	const int climbNoHold = (valuePtr == &VRBinding[I_Alien][VR_ACT_CLIMB]);
 	return CycleBindingInTable(valuePtr, forward, &VRBinding[0][0], VR_ACT_COUNT,
 	                           VR_SPECIES_COUNT, maxValue, VR_BIND_HOLD,
 	                           climbNoHold ? VR_SourceNoHoldFn : VR_SourceCanHoldFn,
-	                           NULL, NULL, VR_RowBindableFn);
+	                           NULL, NULL, VR_RowBindableFn, VRBindAlreadyUsed);
 }
 
 /* The pad counterpart. Start and Back - reserved by the frontend - sit in the middle
@@ -1528,7 +1583,8 @@ static int Pad_CycleBinding(int *valuePtr, int maxValue, int forward)
 {
 	return CycleBindingInTable(valuePtr, forward, &PadBinding[0][0], PAD_ACT_COUNT,
 	                           PAD_SPECIES_COUNT, maxValue, PAD_BIND_HOLD,
-	                           Pad_SourceCanHoldFn, Pad_SourceBindableFn, NULL, NULL);
+	                           Pad_SourceCanHoldFn, Pad_SourceBindableFn, NULL, NULL,
+	                           PadBindAlreadyUsed);
 }
 
 /* Rows that do not apply to the current Turning Mode: greyed out and skipped by the
@@ -4010,7 +4066,10 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 				{
 					int i;
 					for (i = 0; i < VR_ACT_COUNT; i++)
+					{
 						VRBinding[sp][i] = VRBindingDefault[sp][i];
+						VRBindAlreadyUsed[sp * VR_ACT_COUNT + i] = 0;
+					}
 					/* The Alien page's one non-binding row resets too, to the
 					   default SetDefaultProfileOptions gives it. */
 					if (sp == I_Alien)
@@ -4047,10 +4106,14 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 				{
 					int i;
 					for (i = 0; i < PAD_ACT_COUNT; i++)
+					{
 						PadBinding[sp][i] = PadBindingDefault[sp][i];
+						PadBindAlreadyUsed[sp * PAD_ACT_COUNT + i] = 0;
+					}
 				}
 				else
 				{
+					memset(PadBindAlreadyUsed, 0, sizeof(PadBindAlreadyUsed));
 					Pad_ResetBindings();
 					PadVertSensitivity  = PAD_VERT_SENSITIVITY_DEFAULT;
 					PadHorizSensitivity = PAD_HORIZ_SENSITIVITY_DEFAULT;
@@ -4086,6 +4149,8 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 			if (interactionID == AVPMENU_ELEMENT_INTERACTION_SELECT)
 			{
 				SetDetailLevelsFromMenu();
+				/* Before the save, so an "(Already Used)" row is saved as Unbound. */
+				Bind_ResolveAlreadyUsed();
 				SaveUserProfile(UserProfilePtr);
 				/* Re-seed the config.cfg copy of the desktop mirror rate. The
 				   profile is the authority once loaded, but it is loaded too
@@ -4152,10 +4217,24 @@ static void InteractWithMenuElement(enum AVPMENU_ELEMENT_INTERACTION_ID interact
 int LengthOfMenuText(char *textPtr);
 int LengthOfSmallMenuText(char *textPtr);
 
+/* A text slider's value, in red at full brightness when it is a controller binding
+   on a control another action already holds. The big font has no coloured variant
+   (and RenderText_Coloured is unset for it), but no binding menu uses that font. */
+static void BindValueText(int (*RenderText)(char *, int, int, int, enum AVPMENUFORMAT_ID),
+                          int (*RenderText_Coloured)(char *, int, int, int, enum AVPMENUFORMAT_ID, int, int, int),
+                          int alreadyUsed, char *textPtr, int x, int y, int brightness,
+                          enum AVPMENUFORMAT_ID format)
+{
+	if (alreadyUsed && AvPMenus.FontToUse != AVPMENU_FONT_BIG)
+		RenderText_Coloured(textPtr, x, y, ONE_FIXED, format, ONE_FIXED, 0, 0);
+	else
+		RenderText(textPtr, x, y, brightness, format);
+}
+
 static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 {
 	int (*RenderText)(char *textPtr, int x, int y, int alpha, enum AVPMENUFORMAT_ID format);
-	int (*RenderText_Coloured)(char *textPtr, int x, int y, int alpha, enum AVPMENUFORMAT_ID format, int r, int g, int b);
+	int (*RenderText_Coloured)(char *textPtr, int x, int y, int alpha, enum AVPMENUFORMAT_ID format, int r, int g, int b) = NULL;
 	int (*MenuTextLength)(char *textPtr);
 	
 	if (AvPMenus.FontToUse==AVPMENU_FONT_BIG)
@@ -4243,6 +4322,7 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 		{
 			char *textPtr = "";
 			int bindingIsHold = 0;   /* a controller binding on its Hold - see below */
+			int bindAlreadyUsed = 0; /* drawn red: see Bind_RowIsAlreadyUsed */
 			if(elementPtr->ElementID == AVPMENU_ELEMENT_TEXTSLIDER_POINTER ||
 			   elementPtr->ElementID == AVPMENU_ELEMENT_DUMMYTEXTSLIDER_POINTER)	
 			{
@@ -4348,9 +4428,12 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 
 				if (matched)
 				{
+					/* A control another action holds says so instead of "(Default)". */
+					bindAlreadyUsed = Bind_RowIsAlreadyUsed(val);
 					snprintf(bindText, sizeof(bindText), "%s%s%s", textPtr,
 					         bindingIsHold ? " Long Press" : "",
-					         isDefault ? " (Default)" : "");
+					         bindAlreadyUsed ? " (Already Used)"
+					                         : (isDefault ? " (Default)" : ""));
 					textPtr = bindText;
 				}
 			}
@@ -4418,14 +4501,8 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 						elementPtr->Brightness,
 						AVPMENUFORMAT_RIGHTJUSTIFIED
 					);
-					RenderText
-					(
-						textPtr,
-						MENU_CENTREX+MENU_ELEMENT_SPACING,
-						y,
-						elementPtr->Brightness,
-						AVPMENUFORMAT_LEFTJUSTIFIED
-					);
+					BindValueText(RenderText, RenderText_Coloured, bindAlreadyUsed, textPtr, MENU_CENTREX+MENU_ELEMENT_SPACING, y,
+					              elementPtr->Brightness, AVPMENUFORMAT_LEFTJUSTIFIED);
 
 				}
 				else
@@ -4442,14 +4519,8 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 							elementPtr->Brightness,
 							AVPMENUFORMAT_RIGHTJUSTIFIED
 						);
-						RenderText
-						(
-							textPtr,
-							ScreenDescriptorBlock.SDB_Width-MENU_ELEMENT_SPACING,
-							y,
-							elementPtr->Brightness,
-							AVPMENUFORMAT_RIGHTJUSTIFIED
-						);
+						BindValueText(RenderText, RenderText_Coloured, bindAlreadyUsed, textPtr, ScreenDescriptorBlock.SDB_Width-MENU_ELEMENT_SPACING, y,
+						              elementPtr->Brightness, AVPMENUFORMAT_RIGHTJUSTIFIED);
 					}
 					else
 					{
@@ -4462,27 +4533,15 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 							elementPtr->Brightness,
 							AVPMENUFORMAT_RIGHTJUSTIFIED
 						);
-						RenderText
-						(
-							textPtr,
-							MENU_CENTREX+MENU_ELEMENT_SPACING,
-							y,
-							elementPtr->Brightness,
-							AVPMENUFORMAT_LEFTJUSTIFIED
-						);
+						BindValueText(RenderText, RenderText_Coloured, bindAlreadyUsed, textPtr, MENU_CENTREX+MENU_ELEMENT_SPACING, y,
+						              elementPtr->Brightness, AVPMENUFORMAT_LEFTJUSTIFIED);
 					}
 				}
 			}
 			else
 			{
-				RenderText
-				(
-					textPtr,
-					MENU_CENTREX,
-					y,
-					elementPtr->Brightness,
-					AVPMENUFORMAT_CENTREJUSTIFIED
-				);
+				BindValueText(RenderText, RenderText_Coloured, bindAlreadyUsed, textPtr, MENU_CENTREX, y,
+				              elementPtr->Brightness, AVPMENUFORMAT_CENTREJUSTIFIED);
 			}
 			break;
 		}

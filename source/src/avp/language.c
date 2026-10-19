@@ -221,7 +221,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_MULTIPLAYER_RELAYSERVER:      return "Relay Server";
 			case TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP: return "The internet relay server, as an address or name with an optional :port. Leave it blank for local network games only. When it is set, hosting also opens an internet game; its code is shown in the game and on the scores.";
 			case TEXTSTRING_MULTIPLAYER_JOINFAILED_HELP:  return "Could not join the internet game. Go back to try again.";
-			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. Only controls no other action uses are offered, and no Long Press controls.";
+			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. No Long Press controls are offered.";
 			case TEXTSTRING_BIND_CROUCH:        return "Crouch";
 			/* "Operate" to match the keyboard config screens, which is where the
 			   action is named for every species. Shared by the three VR binding

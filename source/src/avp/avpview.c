@@ -5513,6 +5513,18 @@ void AvpShowViewsVR(void)
                 extern int  xr_left_trigger_gameplay_pressed;
                 PLAYER_STATUS *ps2 = (PLAYER_STATUS *)Player->ObStrategyBlock->SBdataptr;
                 PLAYER_WEAPON_DATA *w2 = &ps2->WeaponSlot[ps2->SelectedWeaponSlot];
+                /* ONE shot per trigger pull, like the right pistol. Firing on the held
+                   trigger made the left gun automatic, limited only by its recoil
+                   animation. A pull ARMS a shot, which fires as soon as the recoil
+                   allows, so a quick tap during the previous recoil is not lost. */
+                static int left_trigger_prev = 0;
+                static int left_shot_armed = 0;
+                if (xr_left_trigger_gameplay_pressed && !left_trigger_prev)
+                    left_shot_armed = 1;
+                left_trigger_prev = xr_left_trigger_gameplay_pressed;
+
+                if (w2->WeaponIDNumber != WEAPON_TWO_PISTOLS || !w2->SecondaryRoundsRemaining)
+                    left_shot_armed = 0;   /* no carrying a pull onto another weapon or a reload */
 
                 if (w2->WeaponIDNumber == WEAPON_TWO_PISTOLS) {
                     /* A dry left pistol does NOT start a reload on its own. It used
@@ -5525,7 +5537,7 @@ void AvpShowViewsVR(void)
                        together. The reload-completion change still refills each gun
                        from its own magazine, and the manual gesture still tops up
                        whichever gun is short. */
-                    if (xr_left_trigger_gameplay_pressed && vr_left_sight_valid
+                    if (left_shot_armed && vr_left_sight_valid
                         && w2->SecondaryRoundsRemaining) {
                         DELTA_CONTROLLER *fireLeft =
                             Get_Delta_Sequence(&PlayersWeaponHModelController, "FireLeft");
@@ -5544,6 +5556,7 @@ void AvpShowViewsVR(void)
                             LastHand = 0;          /* take the "fire left" branch */
 
                             if (FireMarineTwoPistols(w2, 1)) {
+                                left_shot_armed = 0;
                                 if (!fireLeft) {
                                     fireLeft = Add_Delta_Sequence(&PlayersWeaponHModelController,
                                                    "FireLeft", HMSQT_MarineHUD,

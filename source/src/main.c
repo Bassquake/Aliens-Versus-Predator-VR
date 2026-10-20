@@ -1229,6 +1229,68 @@ const char *xr_space_name     = "none";
  * space-creation there has not been one yet. */
 static XrSpace xr_floor_probe_space = XR_NULL_HANDLE;
 
+/* HEAD-RELATIVE QUAD LAYERS (Pico standalone). The 2D menu and the MP scoreboard are
+ * quad layers placed at a fixed point in xr_local_space, in front of where the head was
+ * located in that same space. That relies on the runtime using ONE origin for both
+ * xrLocate* and quad composition. Pico's standalone runtime evidently does not: the menu
+ * came out upright but at floor level, the in-game pause menu too, sometimes in front
+ * and sometimes not, and recentring changed nothing (2026-10-20; fine on Quest and on
+ * the same Pico over PCVR). Projection layers are immune - their poses come from the same
+ * locate call - which is why the 3D game looked right.
+ *
+ * When xr_quads_in_view_space is set, the quad's anchor is still computed in
+ * xr_local_space, but each frame it is re-expressed RELATIVE TO THE HEAD
+ * (xrLocateSpace of the VIEW space) and submitted in VIEW space. A relative pose from two
+ * locates in the same space is correct whatever origin the runtime uses, so the offset
+ * cancels. It is still world-locked: the head-relative pose changes as the head moves.
+ *
+ * On for a runtime named Pico, or with the AVP_QUAD_VIEWSPACE environment variable
+ * (presence-tested, as AVP_NO_XR is), so the maths can be checked on PCVR. Elsewhere off:
+ * a head-relative layer follows the runtime's late head pose, so prediction error shows
+ * as a slight swim that a space-anchored layer does not have. */
+static XrSpace xr_view_space = XR_NULL_HANDLE;
+static int     xr_quads_in_view_space = 0;
+static int     xr_runtime_is_pico = 0;
+
+/* Re-express a quad's xr_local_space pose relative to the head, at time t. Leaves the
+   layer untouched (still in local space) if the head cannot be located. */
+static void XR_QuadToViewSpace(XrCompositionLayerQuad *q, XrTime t)
+{
+    XrSpaceLocation head = { XR_TYPE_SPACE_LOCATION };
+    float hx, hy, hz, hw, dx, dy, dz, ix, iy, iz, iw, qx, qy, qz, qw, tx, ty, tz;
+
+    if (!xr_quads_in_view_space || xr_view_space == XR_NULL_HANDLE || !pfn_xrLocateSpace)
+        return;
+    if (XR_FAILED(pfn_xrLocateSpace(xr_view_space, xr_local_space, t, &head))
+        || !(head.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)
+        || !(head.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT))
+        return;
+
+    /* relative = head^-1 * quad: rotate (quad.p - head.p) by conj(head.q), and
+       orientation conj(head.q) * quad.q. */
+    hx = head.pose.orientation.x; hy = head.pose.orientation.y;
+    hz = head.pose.orientation.z; hw = head.pose.orientation.w;
+    ix = -hx; iy = -hy; iz = -hz; iw = hw;             /* conjugate = inverse (unit) */
+    dx = q->pose.position.x - head.pose.position.x;
+    dy = q->pose.position.y - head.pose.position.y;
+    dz = q->pose.position.z - head.pose.position.z;
+    /* v' = v + 2w(u x v) + 2 u x (u x v), u = (ix,iy,iz), w = iw */
+    tx = 2.0f * (iy*dz - iz*dy);
+    ty = 2.0f * (iz*dx - ix*dz);
+    tz = 2.0f * (ix*dy - iy*dx);
+    q->pose.position.x = dx + iw*tx + (iy*tz - iz*ty);
+    q->pose.position.y = dy + iw*ty + (iz*tx - ix*tz);
+    q->pose.position.z = dz + iw*tz + (ix*ty - iy*tx);
+
+    qx = q->pose.orientation.x; qy = q->pose.orientation.y;
+    qz = q->pose.orientation.z; qw = q->pose.orientation.w;
+    q->pose.orientation.w = iw*qw - ix*qx - iy*qy - iz*qz;
+    q->pose.orientation.x = iw*qx + ix*qw + iy*qz - iz*qy;
+    q->pose.orientation.y = iw*qy - ix*qz + iy*qw + iz*qx;
+    q->pose.orientation.z = iw*qz + ix*qy - iy*qx + iz*qw;
+    q->space = xr_view_space;
+}
+
 /* Set per frame from XrViewState: the runtime is allowed to return views whose pose is
  * not (yet) tracked, and it does so over a streaming link while the connection settles.
  * Consumers must not take a head reference from one of those. */
@@ -2614,6 +2676,8 @@ static bool init_xr_instance(void)
                         (unsigned)XR_VERSION_MAJOR(props.runtimeVersion),
                         (unsigned)XR_VERSION_MINOR(props.runtimeVersion),
                         (unsigned)XR_VERSION_PATCH(props.runtimeVersion));
+                /* Pico places quad layers off a different origin - see xr_view_space. */
+                xr_runtime_is_pico = (SDL_strcasestr(props.runtimeName, "pico") != NULL);
 #ifdef AVP_PCVR
                 {
                     /* Only SteamVR gets its own keyboard for menu text fields; see
@@ -2876,6 +2940,21 @@ static bool init_xr_session(void)
     SDL_Log("XR: xrCreateReferenceSpace result=%d space=%p type=%s floor_offset_y=%.2fm",
             (int)result, (void*)xr_local_space, xr_space_name, xr_space_floor_offset_y);
     XR_CHECK(result, "Failed to create reference space");
+
+    /* The VIEW space for head-relative quad layers - see xr_view_space. */
+    if (xr_runtime_is_pico || SDL_getenv("AVP_QUAD_VIEWSPACE") != NULL) {
+        XrReferenceSpaceCreateInfo view_info = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
+        view_info.poseInReferenceSpace.orientation.w = 1.0f;
+        view_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+        if (!XR_FAILED(pfn_xrCreateReferenceSpace(xr_session, &view_info, &xr_view_space))) {
+            xr_quads_in_view_space = 1;
+            SDL_Log("XR: menu and scoreboard quads placed head-relative (VIEW space)%s",
+                    xr_runtime_is_pico ? " - Pico runtime" : " - AVP_QUAD_VIEWSPACE");
+        } else {
+            xr_view_space = XR_NULL_HANDLE;
+            SDL_Log("XR: VIEW space unavailable - quads stay in the reference space");
+        }
+    }
 
     /* --- Input actions: left thumbstick locomotion --- */
     {
@@ -4009,6 +4088,21 @@ static void render_frame(void)
              * capture latches for the whole time the menu is open. If no tracked
              * position arrives within ~1 s, place it at a nominal eye height instead. */
             int pos_valid = (vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) != 0;
+            /* Head-relative quads (Pico) are submitted against xrLocateSpace's head, so
+               anchor off that same locate. The views' flags and the nominal-height
+               fallback below are measured against an origin this mode does not use, so
+               mixing the two could put the menu above or below the head. */
+            XrSpaceLocation anchor_head = { XR_TYPE_SPACE_LOCATION };
+            int anchor_from_view_space = 0;
+            if (xr_quads_in_view_space && pfn_xrLocateSpace
+                    && !XR_FAILED(pfn_xrLocateSpace(xr_view_space, xr_local_space,
+                                                    frame_state.predictedDisplayTime,
+                                                    &anchor_head))
+                    && (anchor_head.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)
+                    && (anchor_head.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
+                anchor_from_view_space = 1;
+                pos_valid = 1;
+            }
             if (!menu_quad_ready && !pos_valid) menu_quad_wait++;
             if (!menu_quad_ready && vc_out >= 1
                     && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)
@@ -4032,14 +4126,19 @@ static void render_frame(void)
                 float hy = (vc_out >= 2)
                     ? (xr_views[0].pose.position.y + xr_views[1].pose.position.y) * 0.5f
                     : xr_views[0].pose.position.y;
+                if (anchor_from_view_space) {
+                    hx = anchor_head.pose.position.x;
+                    hy = anchor_head.pose.position.y;
+                    hz = anchor_head.pose.position.z;
+                }
                 if (!pos_valid) {
                     hx = 0.0f;
                     hz = 0.0f;
                     hy = xr_space_is_stage ? XR_NOMINAL_EYE_HEIGHT_M : 0.0f;
                 }
-                SDL_Log("XR menu: anchored at head (%.2f, %.2f, %.2f)%s, stage=%d",
+                SDL_Log("XR menu: anchored at head (%.2f, %.2f, %.2f)%s, stage=%d%s",
                         hx, hy, hz, pos_valid ? "" : " [position not tracked - nominal height]",
-                        xr_space_is_stage);
+                        xr_space_is_stage, anchor_from_view_space ? ", head-relative" : "");
                 menu_quad_cx  = hx;
                 menu_quad_cy  = hy;
                 menu_quad_cz  = hz;
@@ -4163,6 +4262,7 @@ static void render_frame(void)
             quad_layer.pose.position.z = menu_quad_cz - 2.0f * SDL_cosf(menu_quad_yaw);
             quad_layer.size.width  = 2.0f;         /* metres (4:3 with height) */
             quad_layer.size.height = 1.5f;
+            XR_QuadToViewSpace(&quad_layer, frame_state.predictedDisplayTime);  /* Pico - see xr_view_space */
             layers[0]   = (XrCompositionLayerBaseHeader*)&quad_layer;
             layer_count = 1;
         } else {
@@ -4275,6 +4375,7 @@ static void render_frame(void)
                         score_quad.pose.position.z = score_quad_cz - 2.0f * SDL_cosf(score_quad_yaw);
                         score_quad.size.width  = 1.6f;   /* metres (4:3) */
                         score_quad.size.height = 1.2f;
+                        XR_QuadToViewSpace(&score_quad, frame_state.predictedDisplayTime);
                         layers[layer_count++] = (XrCompositionLayerBaseHeader*)&score_quad;
                     }
                 }

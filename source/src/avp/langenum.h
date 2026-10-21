@@ -1650,6 +1650,15 @@ enum TEXTSTRING_ID
 	TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_175,  // value 3
 	TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_200,  // value 4
 
+	/* "Timeout Of Messages" - how long the drop-down message box stays up. */
+	TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT,
+	TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_HELP,
+	/* These three must stay consecutive and in this order - TEXTSLIDER base + value,
+	   and the value is MessageTimeoutIndex (0..2). */
+	TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_5,   // value 0 (default)
+	TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_10,  // value 1
+	TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_20,  // value 2
+
 	/* AV Options "Use Video Background For Menu" (main-menu AV Options only). */
 	TEXTSTRING_AVOPTIONS_MENUVIDEO,
 	TEXTSTRING_AVOPTIONS_MENUVIDEO_HELP,

@@ -48,6 +48,7 @@ extern char MP_PlayerName[];
 extern int AutoWeaponChangeOn;
 extern int ShowCrosshair;
 extern int EnlargeMessagesText;
+extern int MessageTimeoutIndex;
 extern int ShowFrameRate;
 extern int VRRefreshRateIndex;
 extern int VRRefreshRateHz;
@@ -404,6 +405,7 @@ static void SetDefaultProfileOptions(AVP_USER_PROFILE *profilePtr)
 	AutoWeaponChangeOn = TRUE;
 	ShowCrosshair = 1;
 	EnlargeMessagesText = 0;
+	MessageTimeoutIndex = 0;
 	ShowFrameRate = 0;
 	VRRefreshRateIndex = 0;
 	VRRefreshRateHz = 0;    /* unset; resolved against the headset's list at session start */
@@ -541,6 +543,7 @@ extern void GetSettingsFromUserProfile(void)
 	AutoWeaponChangeOn = 			!UserProfilePtr->AutoWeaponChangeDisabled;
 	ShowCrosshair =				!UserProfilePtr->ShowCrosshairDisabled;
 	EnlargeMessagesText =			(UserProfilePtr->EnlargeMessagesText <= 4) ? UserProfilePtr->EnlargeMessagesText : 0;
+	MessageTimeoutIndex =			(UserProfilePtr->MessageTimeoutIndex <= 2) ? UserProfilePtr->MessageTimeoutIndex : 0;
 	ShowFrameRate =				!UserProfilePtr->ShowFrameRateDisabled;
 	/* The RATE is the stored value; the slider index is derived from it against
 	   whatever list this headset reports. Do NOT round-trip the index through
@@ -780,6 +783,7 @@ extern void SaveSettingsToUserProfile(AVP_USER_PROFILE *profilePtr)
 	profilePtr->AutoWeaponChangeDisabled =	!AutoWeaponChangeOn;
 	profilePtr->ShowCrosshairDisabled =	!ShowCrosshair;
 	profilePtr->EnlargeMessagesText =	(unsigned char)EnlargeMessagesText;
+	profilePtr->MessageTimeoutIndex =	(unsigned char)MessageTimeoutIndex;
 	profilePtr->ShowFrameRateDisabled =	!ShowFrameRate;
 	/* Only the rate is stored. The legacy 2-bit index field is left at 0 — see
 	   the note in GetSettingsFromUserProfile. */

@@ -175,7 +175,11 @@ typedef struct
 	   ControlMethods. That is not merely wrong-looking, it crashed the Mouse
 	   Configuration menu, because the sliders turn those ints into screen
 	   coordinates. Padding[12] therefore stays exactly where it is. */
-	char Padding[12];
+	/* AV Options "Timeout Of Messages": 0 = 5 s (default), 1 = 10 s, 2 = 20 s. Stored
+	   plain, since the zero every older profile has here is the default. Taken from
+	   the front of Padding, so nothing after it moves. */
+	unsigned char MessageTimeoutIndex;        //(was Padding)
+	char Padding[11];
 
 	int CDPlayerVolume;
 
@@ -293,7 +297,7 @@ typedef struct
 	/* VR Comfort & Display "Adjust HUD On X/Y Axis": low nibble X, high nibble Y, each a
 	   4-bit two's-complement step offset -5..+5, so 0 (every older profile) is the
 	   centred default. This was the LAST ExtReserved byte: the next option needs bytes
-	   from somewhere else (Padding[12]) or the struct must grow. */
+	   from somewhere else (Padding, now [11]) or the struct must grow. */
 	unsigned char HUDOffsetXY;
 
 } AVP_USER_PROFILE;

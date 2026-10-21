@@ -98,6 +98,7 @@ int GunMuzzleSightX, GunMuzzleSightY;
 
 int ShowCrosshair = 1; /* 1 = draw crosshair, 0 = hide; toggled from AV options menu */
 int EnlargeMessagesText = 0; /* drop-down message box size: 0=normal, 1=1.25x, 2=1.5x, 3=1.75x, 4=2.0x (trepgadg.cpp); AV options menu */
+int MessageTimeoutIndex = 0; /* drop-down message box timeout: 0=5s, 1=10s, 2=20s (trepgadg.cpp); AV options menu */
 int ShowFrameRate = 0; /* 1 = draw FPS counter, 0 = hide; toggled from AV options menu */
 
 /* In-game FPS counter for the FLAT render path, drawn top-left to match the

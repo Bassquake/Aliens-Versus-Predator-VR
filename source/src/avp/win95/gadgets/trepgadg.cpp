@@ -48,10 +48,12 @@
 
 extern "C" {
 	extern int EnlargeMessagesText;
+	extern int MessageTimeoutIndex;
 	void OGL_SetHUDQuadScale(float scale, float originX, float originY);
 };
 
-	#define FIXP_SECONDS_UNTIL_TEXT_REPORTS_DISAPPEAR (ONE_FIXED * 5)
+	/* "Timeout Of Messages" (AV Options): 5 s as in 1999, doubled per step (10, 20). */
+	#define FIXP_SECONDS_UNTIL_TEXT_REPORTS_DISAPPEAR ((ONE_FIXED * 5) << ((MessageTimeoutIndex >= 0 && MessageTimeoutIndex <= 2) ? MessageTimeoutIndex : 0))
 	#define FIXP_CHEESY_FLASH_RATE		(ONE_FIXED * 6)
 	#define INT_CHEESY_FLASH_DURATION	(1)
 

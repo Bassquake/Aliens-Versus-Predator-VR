@@ -378,6 +378,11 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_150:  return "1.5x";
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_175:  return "1.75x";
 			case TEXTSTRING_AVOPTIONS_ENLARGEMESSAGES_200:  return "2.0x";
+			case TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT:      return "Timeout Of Messages";
+			case TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_HELP: return "How long the messages, logs and instructions that drop down from the top of the screen stay there before scrolling away.";
+			case TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_5:    return "5 Seconds (Default)";
+			case TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_10:   return "10 Seconds";
+			case TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_20:   return "20 Seconds";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO:      return "Use Video Background For Menu";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_HELP: return "Play the animated video behind the menus like Gold Edition instead of the still background from Classic 2000.";
 			case TEXTSTRING_AUTOTWOHANDED:      return "Auto Two-Handed Weapons";

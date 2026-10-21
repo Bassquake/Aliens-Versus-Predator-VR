@@ -8319,6 +8319,141 @@ static void AvP_OpenLogFile(void)
     SDL_Log("Log file: %s", path);
 }
 
+/* ---- Crash report into the log (Android / Linux) ---------------------------------
+ *
+ * A native crash otherwise leaves avp_log.txt simply stopping mid-level, with the cause
+ * only in a tombstone, which an outside tester cannot get at (Pico, 2026-10-21). This
+ * writes the signal, the fault address and a backtrace into the log as
+ * "CRASH: #n pc <module>+0xOFFSET (symbol+0xN)", then hands the signal back to the
+ * system handler so the tombstone is still produced. Symbolicate the offsets against
+ * the UNSTRIPPED libavpvr.so of the same build with llvm-addr2line -f -i -e <so> <off>.
+ *
+ * Not strictly async-signal-safe (snprintf, dladdr, the unwinder), which is acceptable
+ * for a process that is about to die anyway; write() goes straight to the log's fd so
+ * nothing sits in a stdio buffer. Runs on its own stack so a stack overflow still
+ * reports. */
+#if defined(__ANDROID__) || defined(__linux__)
+#include <signal.h>
+#include <unistd.h>
+#include <dlfcn.h>
+#include <unwind.h>
+#include <sys/ucontext.h>
+
+#define AVP_CRASH_MAX_FRAMES 32
+static struct sigaction avp_crash_prev[NSIG];
+
+static void AvP_CrashWrite(const char *s)
+{
+    if (avp_log_fp) write(fileno(avp_log_fp), s, SDL_strlen(s));
+#ifdef __ANDROID__
+    /* logcat too, in case the log file is not open. */
+    {
+        extern int __android_log_write(int prio, const char *tag, const char *text);
+        __android_log_write(6 /* ANDROID_LOG_ERROR */, "AVP", s);
+    }
+#endif
+}
+
+static void AvP_CrashFrame(int n, uintptr_t pc)
+{
+    char line[512];
+    Dl_info info;
+    if (pc && dladdr((void *)pc, &info) && info.dli_fname) {
+        const char *mod = SDL_strrchr(info.dli_fname, '/');
+        mod = mod ? mod + 1 : info.dli_fname;
+        if (info.dli_sname)
+            SDL_snprintf(line, sizeof(line), "CRASH: #%02d pc %s+0x%lx (%s+0x%lx)\n", n, mod,
+                         (unsigned long)(pc - (uintptr_t)info.dli_fbase), info.dli_sname,
+                         (unsigned long)(pc - (uintptr_t)info.dli_saddr));
+        else
+            SDL_snprintf(line, sizeof(line), "CRASH: #%02d pc %s+0x%lx\n", n, mod,
+                         (unsigned long)(pc - (uintptr_t)info.dli_fbase));
+    } else {
+        SDL_snprintf(line, sizeof(line), "CRASH: #%02d pc 0x%lx\n", n, (unsigned long)pc);
+    }
+    AvP_CrashWrite(line);
+}
+
+typedef struct { int n; } AvpUnwindState;
+
+static _Unwind_Reason_Code AvP_CrashUnwindStep(struct _Unwind_Context *ctx, void *arg)
+{
+    AvpUnwindState *st = (AvpUnwindState *)arg;
+    uintptr_t pc = (uintptr_t)_Unwind_GetIP(ctx);
+    if (!pc) return _URC_END_OF_STACK;
+    AvP_CrashFrame(st->n, pc);
+    if (++st->n >= AVP_CRASH_MAX_FRAMES) return _URC_END_OF_STACK;
+    return _URC_NO_REASON;
+}
+
+static void AvP_CrashHandler(int sig, siginfo_t *si, void *ucv)
+{
+    char line[256];
+    AvpUnwindState st = { 0 };
+
+    SDL_snprintf(line, sizeof(line), "CRASH: signal %d (code %d) fault address %p\n",
+                 sig, si ? si->si_code : 0, si ? si->si_addr : NULL);
+    AvP_CrashWrite(line);
+
+    /* The faulting pc and return address straight from the signal context: these are
+       reliable even when the unwinder cannot get through the signal frame. */
+#if defined(__aarch64__)
+    if (ucv) {
+        ucontext_t *uc = (ucontext_t *)ucv;
+        AvP_CrashWrite("CRASH: at fault:\n");
+        AvP_CrashFrame(0, (uintptr_t)uc->uc_mcontext.pc);
+        AvP_CrashFrame(1, (uintptr_t)uc->uc_mcontext.regs[30]);   /* lr */
+    }
+#elif defined(__arm__)
+    if (ucv) {
+        ucontext_t *uc = (ucontext_t *)ucv;
+        AvP_CrashWrite("CRASH: at fault:\n");
+        AvP_CrashFrame(0, (uintptr_t)uc->uc_mcontext.arm_pc);
+        AvP_CrashFrame(1, (uintptr_t)uc->uc_mcontext.arm_lr);
+    }
+#elif defined(__x86_64__) && defined(REG_RIP)
+    if (ucv) {
+        ucontext_t *uc = (ucontext_t *)ucv;
+        AvP_CrashWrite("CRASH: at fault:\n");
+        AvP_CrashFrame(0, (uintptr_t)uc->uc_mcontext.gregs[REG_RIP]);
+    }
+#endif
+
+    AvP_CrashWrite("CRASH: backtrace:\n");
+    _Unwind_Backtrace(AvP_CrashUnwindStep, &st);
+    AvP_CrashWrite("CRASH: end\n");
+
+    /* Back to the previous (system) handler and re-raise, so the tombstone and the
+       usual crash dialog still happen. */
+    if (sig > 0 && sig < NSIG)
+        sigaction(sig, &avp_crash_prev[sig], NULL);
+    raise(sig);
+}
+
+static void AvP_InstallCrashHandler(void)
+{
+    static const int sigs[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT };
+    static char altstack[64 * 1024];
+    stack_t ss;
+    struct sigaction sa;
+    size_t i;
+
+    ss.ss_sp = altstack;
+    ss.ss_size = sizeof(altstack);
+    ss.ss_flags = 0;
+    sigaltstack(&ss, NULL);
+
+    SDL_memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = AvP_CrashHandler;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&sa.sa_mask);
+    for (i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++)
+        sigaction(sigs[i], &sa, &avp_crash_prev[sigs[i]]);
+}
+#else
+static void AvP_InstallCrashHandler(void) {}
+#endif
+
 int main(int argc, char *argv[])
 {
     /* Unbuffer the diagnostic streams. Redirecting to a file — the documented way
@@ -8331,6 +8466,7 @@ int main(int argc, char *argv[])
 
     /* Before the first SDL_Log below, so nothing is missed from the file. */
     AvP_OpenLogFile();
+    AvP_InstallCrashHandler();
 
     //NEEDED?
     //SDL_GLContext g_MainGLContext = NULL;
@@ -8557,6 +8693,10 @@ int main(int argc, char *argv[])
         
         start_of_loaded_shapes = load_precompiled_shapes();
         
+        /* Names the level in the log, so a crash report says where it happened
+           (env = I_AVP_ENVIRONMENTS, species 0 Marine / 1 Predator / 2 Alien). */
+        SDL_Log("LEVEL: env=%d species=%d network=%d",
+                (int)AvP.CurrentEnv, (int)AvP.PlayerType, (int)AvP.Network);
         SDL_Log("About to call InitCharacter");
         InitCharacter();
         

@@ -2463,6 +2463,8 @@ static VR_WEAPON_OFFSET vr_alien_tail_offset = { -1620, -260, -210, -29, 0, 0 };
 #define VR_ALIEN_SINGLE_POSE 1
 static HMODELCONTROLLER vr_alien_pose_hmc;
 static int vr_alien_pose_valid = 0;
+/* The "claws" hierarchy VR_DrawAlienClawsBeside draws from, looked up once per level. */
+static SECTION *vr_alien_claws_root = NULL;
 
 static HMODELCONTROLLER *VR_AlienPoseRigFor(SECTION *root)
 {
@@ -2644,11 +2646,27 @@ static void VR_RenderAlienSplitClaws(PLAYER_WEAPON_DATA *wpn, TEMPLATE_WEAPON_DA
    own copy of the "claws" hierarchy, still in the resting pose, placed exactly as the
    claws normally are - their own Camera Root offset, the same claw offsets, the same
    scaling - and split across both hands. The tail or bite rig is drawn as usual. */
+/* Called when the level's hierarchies are freed (EmptyHierarchyLibrary, projload.cpp).
+   The VR-only rigs here hold pointers INTO those hierarchies, so they must be dropped
+   with them: the next level loads its hierarchies at new addresses. Keeping the cached
+   claws root crashed a Pico tester's Alien on a later level the first time the tail
+   came out (2026-10-21, Init_Sequence_Recursion on a NULL sequence from a freed
+   hierarchy). Dispel_HModel only frees the rig's own allocations, never the hierarchy. */
+void VR_ForgetLevelRigs(void)
+{
+    if (vr_alien_pose_valid) Dispel_HModel(&vr_alien_pose_hmc);
+    vr_alien_pose_valid = 0;
+    vr_alien_pose_hmc.Root_Section = NULL;
+    vr_alien_claws_root = NULL;
+    if (vr_left_hmc_valid) Dispel_HModel(&vr_left_hmc);
+    vr_left_hmc_valid = 0;
+    vr_left_hmc.Root_Section = NULL;
+}
+
 static void VR_DrawAlienClawsBeside(PLAYER_WEAPON_DATA *wpn, TEMPLATE_WEAPON_DATA *tw, float wscale)
 {
     extern SECTION *GetNamedHierarchyFromLibrary(const char *rif_name, const char *hier_name);
     extern DISPLAYBLOCK PlayersWeapon;
-    static SECTION *claws_root = NULL;
     HMODELCONTROLLER *saveHmc = PlayersWeapon.HModelControlBlock, *pose;
     VECTORCH saveWorld = PlayersWeapon.ObWorld, saveView = PlayersWeapon.ObView;
     MATRIXCH saveMat = PlayersWeapon.ObMat, m;
@@ -2657,8 +2675,9 @@ static void VR_DrawAlienClawsBeside(PLAYER_WEAPON_DATA *wpn, TEMPLATE_WEAPON_DAT
     SECTION_DATA *cs;
     int *mm, i;
 
-    if (!claws_root) claws_root = GetNamedHierarchyFromLibrary("alien_HUD", "claws");
-    pose = VR_AlienPoseRigFor(claws_root);
+    if (!vr_alien_claws_root)
+        vr_alien_claws_root = GetNamedHierarchyFromLibrary("alien_HUD", "claws");
+    pose = VR_AlienPoseRigFor(vr_alien_claws_root);
     if (!pose) return;
     cs = GetThisSectionData(pose->section_data, "Camera Root");
     if (!cs || !cs->sempai || !cs->sempai->sequence_array) return;

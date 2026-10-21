@@ -1740,8 +1740,15 @@ HIERARCHY_SHAPE_REPLACEMENT* GetHierarchyAlternateShapeFromId(const char* rif_na
 }
 
 
+#ifdef AVP_XR
+extern "C" void VR_ForgetLevelRigs(void);   /* avpview.c: VR rigs that point into these */
+#endif
+
 void EmptyHierarchyLibrary ()
 {
+#ifdef AVP_XR
+	VR_ForgetLevelRigs();
+#endif
 	while (Global_Hierarchy_Library.size())
 	{
 		delete Global_Hierarchy_Library.first_entry();

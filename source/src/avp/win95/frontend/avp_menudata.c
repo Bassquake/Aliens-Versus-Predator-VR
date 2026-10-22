@@ -25,7 +25,8 @@
 #include "opengl.h"   /* VR_ACTION / VR_SOURCE and the VRBinding table */
 #include "relay_proto.h" /* RELAY_SERVER_LEN */
 
-extern char NetRelayServer[];  /* net.c: the Relay Server setting */
+extern int  RelayServerMode;      /* main.c: Relay Server choice, 0 default / 1 LAN / 2 custom */
+extern char RelayCustomServer[];  /* main.c: the custom address typed for choice 2 */
 extern AVPMENU AvPMenusData[];  /* defined further down */
 
 #define MPLAYER_SUPPORT 0
@@ -745,7 +746,9 @@ static AVPMENU_ELEMENT AvPMenu_Multiplayer[]=
 	{AVPMENU_ELEMENT_GOTOMENU, 	{TEXTSTRING_MULTIPLAYER_STARTGAME},	{AVPMENU_MULTIPLAYER_CONFIG},	{0},	{0},	TEXTSTRING_MULTIPLAYER_STARTGAME_HELP},
 	{AVPMENU_ELEMENT_GOTOMENU, 	{TEXTSTRING_MULTIPLAYER_JOINGAME},	{AVPMENU_MULTIPLAYERJOINGAME},	{0},	{0},	TEXTSTRING_MULTIPLAYER_JOINGAME_HELP},
 	/* Saved to config.cfg when the player leaves this page (Relay_SaveIfChanged). */
-	{AVPMENU_ELEMENT_TEXTFIELD, 	{TEXTSTRING_MULTIPLAYER_RELAYSERVER},	{RELAY_SERVER_LEN-1},	{(int*)NetRelayServer},	{0},	TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP},
+	/* Default relay / LAN only / Custom; the address row below is greyed unless Custom. */
+	{AVPMENU_ELEMENT_TEXTSLIDER, 	{TEXTSTRING_MULTIPLAYER_RELAYSERVER},	{2},	{&RelayServerMode},	{TEXTSTRING_MULTIPLAYER_RELAYMODE_DEFAULT},	TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP},
+	{AVPMENU_ELEMENT_TEXTFIELD, 	{TEXTSTRING_MULTIPLAYER_RELAYCUSTOM},	{RELAY_SERVER_LEN-1},	{(int*)RelayCustomServer},	{0},	TEXTSTRING_MULTIPLAYER_RELAYCUSTOM_HELP},
 
 	{AVPMENU_ELEMENT_ENDOFMENU}
 

@@ -37,7 +37,7 @@
 /* The game's Relay Server setting: "host[:port]", blank for LAN only. The default
    is what a config.cfg with no #RELAY line gets, so set it once a public relay
    exists and players never have to type an address. */
-#define RELAY_DEFAULT_SERVER   ""
+#define RELAY_DEFAULT_SERVER   "bassquake.ddns.net"
 #define RELAY_SERVER_LEN       48
 #define RELAY_MAGIC            0x52505641u   /* 'AVPR' */
 #define RELAY_VERSION          1

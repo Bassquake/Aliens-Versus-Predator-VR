@@ -1607,6 +1607,15 @@ static int MenuElementIsDisabled(const AVPMENU_ELEMENT *elementPtr)
 	   row - see the brightness selection in RenderMenu. */
 	if (MenuElementIsReadOnlyLabel(elementPtr)) return 1;
 
+	/* Multiplayer: the custom relay address only means something while the Relay
+	   Server choice is "Custom". */
+	if (AvPMenus.CurrentMenu == AVPMENU_MULTIPLAYER)
+	{
+		extern int RelayServerMode;
+		return elementPtr->a.TextDescription == TEXTSTRING_MULTIPLAYER_RELAYCUSTOM
+		    && RelayServerMode != 2;
+	}
+
 	/* Both VR Configuration pages: the turn mode is on page 1 and the vignette rows it
 	   greys are on page 2. */
 	if (AvPMenus.CurrentMenu != AVPMENU_VRCONFIG && AvPMenus.CurrentMenu != AVPMENU_VRCONFIG2) return 0;
@@ -4286,6 +4295,7 @@ static void RenderMenuElement(AVPMENU_ELEMENT *elementPtr, int e, int y)
 		case AVPMENU_ELEMENT_RESETMPCONFIG:
 		case AVPMENU_ELEMENT_DELETEMPCONFIG:
 		case AVPMENU_ELEMENT_SAVESETTINGS:
+		case AVPMENU_ELEMENT_RESETCHEATS:
 		{
 			char *textPtr = GetTextString(elementPtr->a.TextDescription);
 			RenderText(textPtr,MENU_CENTREX,y,elementPtr->Brightness,AVPMENUFORMAT_CENTREJUSTIFIED);

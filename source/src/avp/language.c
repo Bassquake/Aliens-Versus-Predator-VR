@@ -18,6 +18,7 @@
 #include "ourasert.h"
 #include "avp_menus.h"
 #include "avp_version.h"
+#include "relay_proto.h" /* RELAY_DEFAULT_SERVER, named in the Relay Server strings */
 
 
 #ifdef AVP_DEBUG_VERSION
@@ -219,7 +220,12 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_CLIMBHOLD_NO:       return "No (Default)";
 			case TEXTSTRING_CLIMBHOLD_YES:      return "Yes";
 			case TEXTSTRING_MULTIPLAYER_RELAYSERVER:      return "Relay Server";
-			case TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP: return "The internet relay server, as an address or name with an optional :port. Leave it blank for local network games only. When it is set, hosting also opens an internet game; its code is shown in the game and on the scores.";
+			case TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP: return "The internet relay server. " RELAY_DEFAULT_SERVER " is the built-in one. (LAN) plays on the local network only. Custom uses the address typed below. With a relay, hosting also opens an internet game; its code is shown in the game and on the scores.";
+			case TEXTSTRING_MULTIPLAYER_RELAYMODE_DEFAULT: return RELAY_DEFAULT_SERVER;
+			case TEXTSTRING_MULTIPLAYER_RELAYMODE_LAN:     return "(LAN)";
+			case TEXTSTRING_MULTIPLAYER_RELAYMODE_CUSTOM:  return "Custom";
+			case TEXTSTRING_MULTIPLAYER_RELAYCUSTOM:       return "Custom Address";
+			case TEXTSTRING_MULTIPLAYER_RELAYCUSTOM_HELP:  return "Another relay server, as an address or name with an optional :port. Left blank, the Relay Server goes back to " RELAY_DEFAULT_SERVER ".";
 			case TEXTSTRING_MULTIPLAYER_JOINFAILED_HELP:  return "Could not join the internet game. Go back to try again.";
 			case TEXTSTRING_BIND_CLIMB_HELP:    return "Grabs a wall or ceiling in front of you, and lets go again. No Long Press controls are offered.";
 			case TEXTSTRING_BIND_CROUCH:        return "Crouch";

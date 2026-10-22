@@ -5665,8 +5665,28 @@ const int TotalVideoModes = sizeof(VideoModeList) / sizeof(VideoModeList[0]);
    built-in default off. */
 #define RELAY_CONFIG_TAG "#RELAY"
 extern char NetRelayServer[];
+extern void Net_SetRelayServer(const char *hostport);
 void SaveDeviceAndVideoModePreferences(void);
 static char RelayServerSaved[RELAY_SERVER_LEN] = RELAY_DEFAULT_SERVER;   /* what config.cfg holds */
+
+/* The Multiplayer page edits these, not NetRelayServer directly: a three-way choice
+   (0 = RELAY_DEFAULT_SERVER, 1 = LAN only, i.e. blank, 2 = the typed custom address)
+   and the custom text. Relay_SaveIfChanged turns them back into NetRelayServer. */
+int  RelayServerMode = 0;
+char RelayCustomServer[RELAY_SERVER_LEN] = "";
+
+/* Set the menu's choice from NetRelayServer, after config.cfg has been read. */
+static void Relay_MenuFromServer(void)
+{
+    if (strcmp(NetRelayServer, RELAY_DEFAULT_SERVER) == 0) {
+        RelayServerMode = 0;
+    } else if (NetRelayServer[0] == '\0') {
+        RelayServerMode = 1;
+    } else {
+        RelayServerMode = 2;
+        strcpy(RelayCustomServer, NetRelayServer);
+    }
+}
 
 /* Does this line carry our setting? Case-insensitive so a hand-edited file
    works either way; the console uppercases everything it reads, we don't. */
@@ -5800,6 +5820,7 @@ void LoadRelayPreference(void)
     }
     fclose(fp);
     strcpy(RelayServerSaved, NetRelayServer);
+    Relay_MenuFromServer();
 }
 
 /* Append the relay setting. Same contract as the lines below, including being
@@ -5812,16 +5833,32 @@ void Relay_WriteConfigLine(FILE *fp)
     fprintf(fp, "%s %s\n", RELAY_CONFIG_TAG, NetRelayServer[0] ? NetRelayServer : "-");
 }
 
-/* The Relay Server field is edited in place, with no "Use these settings" behind
-   it, so the frontend calls this when the player leaves its page. Rewrites
-   config.cfg only if the field actually changed. */
+/* The Relay Server rows have no "Use these settings" behind them, so the frontend
+   calls this when the player leaves their page. It applies the menu's choice to
+   NetRelayServer, and rewrites config.cfg only if that actually changed. A blank
+   custom address falls back to the default. */
 void Relay_SaveIfChanged(void)
 {
-    char *e = NetRelayServer + strlen(NetRelayServer);
-    while (e > NetRelayServer && e[-1] == ' ') *--e = '\0';   /* typed text: trim it */
-    if (strcmp(NetRelayServer, RelayServerSaved) == 0) return;
-    SaveDeviceAndVideoModePreferences();
-    strcpy(RelayServerSaved, NetRelayServer);
+    char *e = RelayCustomServer + strlen(RelayCustomServer);
+    char *s = RelayCustomServer;
+    while (e > RelayCustomServer && e[-1] == ' ') *--e = '\0';   /* typed text: trim it */
+    while (*s == ' ') s++;
+    if (s != RelayCustomServer) memmove(RelayCustomServer, s, strlen(s) + 1);
+
+    if (RelayServerMode == 2 && RelayCustomServer[0] == '\0') RelayServerMode = 0;
+    switch (RelayServerMode) {
+    case 1:  NetRelayServer[0] = '\0'; break;
+    case 2:  strcpy(NetRelayServer, RelayCustomServer); break;
+    default: strcpy(NetRelayServer, RELAY_DEFAULT_SERVER); RelayServerMode = 0; break;
+    }
+
+    if (strcmp(NetRelayServer, RelayServerSaved) != 0) {
+        SaveDeviceAndVideoModePreferences();
+        strcpy(RelayServerSaved, NetRelayServer);
+    }
+
+    /* The AVP_RELAY test override (net.c) outlives a visit to the page, unsaved. */
+    if (getenv("AVP_RELAY")) Net_SetRelayServer(getenv("AVP_RELAY"));
 }
 
 /* Append the menu-video setting. Same contract as IntroMovies_WriteConfigLine,

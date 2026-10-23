@@ -1,4 +1,10 @@
-﻿#include <stdio.h>
+﻿/* Before ANY header: glibc fixes its feature set at the first system include, and
+   the crash report needs dladdr/Dl_info and REG_* from it. Defined further down it
+   was too late to have any effect. */
+#if !defined(_MSC_VER) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -55,9 +61,6 @@
 #include "oglfunc.h"
 
 #if !defined(_MSC_VER)
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
 #include <getopt.h>
 #endif
 

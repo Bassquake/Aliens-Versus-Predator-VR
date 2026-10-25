@@ -1,6 +1,6 @@
 # Aliens Versus Predator: VR and Flat (non-VR)
 
-This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below.
+This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below. I'm not primarily a programmer, this was done with a lot of help from various AI like Claude, Copilot and Gemini.
 
 > [!TIP]
 > Check the new 1.3 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
@@ -11,18 +11,18 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 - Set maximum number of online players to 8.
 - Use built in keyboard for stand-alone and SteamVR for easier text input.
 - Fix direction Alien when fall from wall/ceiling.
-- Remove B for Alien climb and only allow a non-bound button. Default is Left Grip for VR. Recommend resetting keys to defaults then make new edit.
-- Option to turn off/on Melee Attacks.
+- Remove B button for Alien climb and only allow a non-bound button instead. Default is Left Grip for VR. Recommend resetting keys to defaults then make new edit if you want to.
+- Option to turn off/on Melee Attacks in VR Controls.
 - Change button wording "Hold" to "Long Press".
-- Highlight buttons in red that are already used so its easier to see what it already using it.
+- Highlight buttons in red in the Key Configuration screens that are already used so its easier to see what it already using it.
 - Fix weapon vibrations.
 - Stop rapid fire for left pistol as Marine.
 - Fix Pico menus.
 - Add option to keep Messages on-screen for longer in Audio/Video Options.
-- Fix crashes that happened when Alien and use tail, and then when go to next level and use tail it would crash.
+- Fix crashes on Pico that happened when Alien and use tail, and then when go to next level and use tail it would crash.
 
 > [!TIP]
-> Re-center your view (hold Meta button) while standing before starting a level so things aren’t small!
+> Re-center your view (hold Meta button) while standing before starting a level so things aren’t small! There is Sitting Mode option in VR Controls.
 
 Here is list of compatible devices:
 
@@ -37,21 +37,7 @@ Here is list of compatible devices:
 | - SteamVR Linux                            | - Android 8 and above arm64                     |
 | - Pico                                     | - Android 8 and above arm                       |
 
-> [!NOTE]
-> 
-
-## How to Multiplay
-You can multiplay on a local LAN or online against others. Any machine can play against any other so a pc player can play against a pcvr or Quest player!!! Mac coming soon.
-
-Multiplayer is pretty basic seeing as it was based in 1999! Follow these instructions:
-- Organise a group of people to be online and run the game.
-- Check **bassquake.ddns.net** says online at the bottom of the Multiplayer menu. This is my own relay server that's running on a linux server (always online isn't guaranteed!)
-- One of you will host the game so go to Multiplayer > Host Game. 
-- Set the game parameters and Start. A code appears at the top of the screen. Give that code to up to 8 players to join.
-- For people to join, go to Multiplayer > Join Game and enter the code and Start. You should now be in the game!
-
-> [!CAUTION]
-> This build is in playable state. I'm not primarily a programmer, this was done with a lot of help from various AI like Claude, Copilot and Gemini.
+## Screenshots and video demo
 
 ![Screenshot of Aliens Versus Predator: VR menu playing on Meta Quest 2](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-quest-menu.jpg)
 
@@ -72,6 +58,8 @@ Short video of it in action on a Quest 2 here on [YouTube](https://youtu.be/Ixnr
 **[Add CD music](#cd-music)**
 
 **[Controls](#controls)**
+
+**[How to use Multiplayer](#how-to-use-multiplayer)**
 
 **[Extra features](#extra-features)**
 
@@ -150,8 +138,6 @@ Do the following for the files:
 - Or if you downloaded from [moddb.com](https://www.moddb.com/games/aliens-vs-predator/addons/fixed-avp-classic-soundtrack) rename the ogg files as track01.ogg, track02.ogg etc and copy to **cd_tracks** folder.
 - Run the game!
 
-PS: Be aware I may rename the folder **cd_tracks** to **music** at some point.
-
 ## Controls
 
 ### For VR
@@ -174,6 +160,21 @@ Flat versions uses standard keyboard and mouse or joystick (Gamepads). They can 
 ### Gamepad controllers use the following by default
 ![Gamepad controller layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers-gamepad.jpg)
 
+## How to use Multiplayer
+You can multiplay on a local LAN or online against others. Any machine can play against any other so a pc player can play against a pcvr or Quest player!!!
+
+Multiplayer is pretty basic seeing as it was based in 1999! Follow these instructions:
+- Organise a group of people to be online and run the game.
+- Check **bassquake.ddns.net** says online at the bottom of the Multiplayer menu. This is my own relay server that's running on a linux server (always online isn't guaranteed!)
+- One of you will host the game so go to **Multiplayer > Host Game**. 
+- Set the game parameters and Start. A random code appears at the top of the screen. Give that code to up to 8 players to join.
+
+![Screenshot of multiplayer code](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/multiplayer-code.jpg)
+
+- For people to join, go to **Multiplayer > Join Game** and enter the code and Start. You should now be in the game!
+
+![Screenshot of multiplayer join](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/join-multiplayer.jpg)
+
 ## Extra features
 - World Scale added so you're taller in VR.
 - Can choose different refresh rate for VR in Audio/Video Options, runs fine in 120fps mode!
@@ -185,6 +186,7 @@ Flat versions uses standard keyboard and mouse or joystick (Gamepads). They can 
 - Cheat modes can be toggled for those faint of heart!
 - Left-Handed Mode.
 - Can punch/scratch enemies as Predator/Alien in VR.
+- Multiplayer now working.
 
 ## To do
 - ~~Fix Battery Saver crash.~~ Fixed.

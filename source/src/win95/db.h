@@ -286,7 +286,13 @@ struct db_dd_mode_tag
 /* Don't prototype anything or declare globals if NDEBUG is defined. */
 #ifndef NDEBUG
 
+/* Never on MSVC: __cdecl is a real keyword there, and blanking it in a Debug x86
+   build collapses <type_traits>' __cdecl and __thiscall member-pointer overloads
+   into one (C2953 "_Is_memfunptr ... already been defined"). x64 ignores calling
+   conventions, which is why only the x86 Debug builds broke. */
+#if !defined(_MSC_VER)
 #define __cdecl
+#endif
 
 /* New formatted debugging fns. */
 extern void __cdecl db_logf_fired(const char *fmtStrP, ...);

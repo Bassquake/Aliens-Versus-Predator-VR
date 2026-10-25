@@ -24,18 +24,29 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 > [!TIP]
 > Re-center your view (hold Meta button) while standing before starting a level so things aren’t small! There is Sitting Mode option in VR Controls.
 
-Here is list of compatible devices:
+Compatible builds made for these devices:
 
-| **VR**                                     | **Flat**                                        |
-|--------------------------------------------|-------------------------------------------------|
-| - Quest 1                                  | - Windows x64                                   |
-| - Quest 2                                  | - Windows x86                                   |
-| - Quest 3                                  | - Windows arm64                                 |
-| - Quest 3S                                 | - Linux x64                                     |
-| - Quest Pro                                | - Linux x86                                     |
-| - SteamVR Windows                          | - Linux arm64                                   |
-| - SteamVR Linux                            | - Android 8 and above arm64                     |
-| - Pico                                     | - Android 8 and above arm                       |
+| **VR Versions**                                     
+|--------------------------------------------|
+| Quest 1                                  |
+| Quest 2                                  |
+| Quest 3                                  |
+| Quest 3S                                 |
+| Quest Pro                                |
+| SteamVR Windows                          |
+| SteamVR Linux                            |
+| Pico                                     |
+
+| **Flat Versions**                                   |
+|--------------------------------------------|
+| Windows x64                              |
+| Windows x86                              |
+| Windows arm64                            |
+| Linux x64                                |
+| Linux x86                                |
+| Linux arm64                              |
+| Android 8 and above arm64                |
+| Android 8 and above arm                  |
 
 ## Screenshots and video demo
 

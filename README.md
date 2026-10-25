@@ -3,17 +3,23 @@
 This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below.
 
 > [!TIP]
-> Check the new 1.2 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
+> Check the new 1.3 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
 
-## What's new in 1.2?
-- Preliminary RTX Remix code for flat x86 version.
-- Fix deadzone for joysticks.
-- Add separate deadzones for X and Y axis.
-- Added 2 more steps for Adjust HUD Elements to bring them in to field of view more.
-- Refine Alien climb options. Can hold button down for climbing as an option or change to any other button. Reset to defaults your current key mapped settings to avoid conflicts. Then make your changes.
-- Adjust attack range when swiping with controllers for Alien and Predator.
-- Removed 55° limit on gripping weapon. Option to disable gripping weapon is in Controls > VR Controls to free it up if want to use it for something else. Opposing grip is always overrides weapon grip if Marine has a - Jetpack. Can change jetpack button if you prefer.
-- Fix getting stuck on walls as Alien. Possibly fixed jetpack issue on certain angled ceilings as well.
+## What's new in 1.3?
+- Add Sitting Mode (VR Comfort and Display).
+- Add multiplayer to use UDP and created a relay server so anyone can play using a generated code.
+- Set maximum number of online players to 8.
+- Use built in keyboard for stand-alone and SteamVR for easier text input.
+- Fix direction Alien when fall from wall/ceiling.
+- Remove B for Alien climb and only allow a non-bound button. Default is Left Grip for VR. Recommend resetting keys to defaults then make new edit.
+- Option to turn off/on Melee Attacks.
+- Change button wording "Hold" to "Long Press".
+- Highlight buttons in red that are already used so its easier to see what it already using it.
+- Fix weapon vibrations.
+- Stop rapid fire for left pistol as Marine.
+- Fix Pico menus.
+- Add option to keep Messages on-screen for longer in Audio/Video Options.
+- Fix crashes that happened when Alien and use tail, and then when go to next level and use tail it would crash.
 
 > [!TIP]
 > Re-center your view (hold Meta button) while standing before starting a level so things aren’t small!
@@ -140,7 +146,7 @@ PS: Be aware I may rename the folder **cd_tracks** to **music** at some point.
 
 ### For VR
 
-![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers-v1.1.jpg)
+![Control layout](https://github.com/Bassquake/Aliens-Versus-Predator-VR/blob/master/captures/avpvr-controllers-v1.3.jpg)
 
 > [!NOTE]
 > Manual reload is **hold A** (Marine and Predator). A quick press of A still uses switches and doors. It can be rebound in the Controller Configuration for each species.

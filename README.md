@@ -7,7 +7,7 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 
 ## What's new in 1.3?
 - Add Sitting Mode (VR Comfort and Display).
-- Add multiplayer to use UDP and created a relay server so anyone can play using a generated code.
+- Add multiplayer to use UDP and created a relay server so anyone can play using a generated code. Instructions are [further down](#how-to-multiplay).
 - Set maximum number of online players to 8.
 - Use built in keyboard for stand-alone and SteamVR for easier text input.
 - Fix direction Alien when fall from wall/ceiling.
@@ -38,7 +38,17 @@ Here is list of compatible devices:
 | - Pico                                     | - Android 8 and above arm                       |
 
 > [!NOTE]
-> You can multiplay on a local LAN against others including Quest/PCVR users!! Mac coming soon.
+> 
+
+## How to Multiplay
+You can multiplay on a local LAN or online against others. Any machine can play against any other so a pc player can play against a pcvr or Quest player!!! Mac coming soon.
+
+Multiplayer is pretty basic seeing as it was based in 1999! Follow these instructions:
+- Organise a group of people to be online and run the game.
+- Check **bassquake.ddns.net** says online at the bottom of the Multiplayer menu. This is my own relay server that's running on a linux server (always online isn't guaranteed!)
+- One of you will host the game so go to Multiplayer > Host Game. 
+- Set the game parameters and Start. A code appears at the top of the screen. Give that code to up to 8 players to join.
+- For people to join, go to Multiplayer > Join Game and enter the code and Start. You should now be in the game!
 
 > [!CAUTION]
 > This build is in playable state. I'm not primarily a programmer, this was done with a lot of help from various AI like Claude, Copilot and Gemini.

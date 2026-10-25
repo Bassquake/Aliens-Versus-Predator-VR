@@ -1429,7 +1429,8 @@ static int MenuElementIsReadOnlyLabel(const AVPMENU_ELEMENT *elementPtr)
 	   live button name, and must not be editable, or the player would be changing the
 	   vision binding from two places without realising it. Skipped by the cursor. */
 	return (elementPtr->a.TextDescription == TEXTSTRING_VERSION
-	     || elementPtr->a.TextDescription == TEXTSTRING_BIND_ZOOM);
+	     || elementPtr->a.TextDescription == TEXTSTRING_BIND_ZOOM
+	     || elementPtr->a.TextDescription == TEXTSTRING_MULTIPLAYER_RELAYSTATUS);
 }
 
 /* Rows the player has cycled ONTO a control another action already holds, one flag

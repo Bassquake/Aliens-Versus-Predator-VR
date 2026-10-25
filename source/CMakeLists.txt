@@ -941,6 +941,10 @@ INCLUDE_DIRECTORIES(${include})
 # manually include src/include
 INCLUDE_DIRECTORIES(src/include)
 
+# relay_proto.h, the wire protocol shared with the internet relay server, lives with
+# the relay in tools/relay so that folder builds on its own (on a Raspberry Pi, say).
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../tools/relay)
+
 if (WIN32)
     ADD_EXECUTABLE(avp ${source})
 endif ()

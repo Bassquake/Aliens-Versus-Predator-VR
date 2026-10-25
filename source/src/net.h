@@ -16,5 +16,7 @@ void Net_SetRelayServer(const char *hostport);
 extern char NetRelayServer[];        /* the Relay Server setting; see relay_proto.h */
 int Net_RelayRoomCode(char out[6]);
 const char *Net_RelayError(void);
+void Net_RelayProbeStart(const char *hostport, int keepShown);   /* RELAYPROBE_* in relay_proto.h */
+int  Net_RelayProbeStatus(int *ms);
 
 #endif

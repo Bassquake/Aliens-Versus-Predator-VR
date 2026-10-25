@@ -3,7 +3,8 @@
 Internet relay for AvP multiplayer. A host opens a room and gets a 5-character code
 (for example `HVSN7`); players join with that code. The relay only forwards packets
 between a room's host and its players, so it works behind any home router and needs
-no port forwarding on the players' side. The protocol is in `source/src/relay_proto.h`.
+no port forwarding on the players' side. The protocol is in `relay_proto.h`, in this folder; the game includes the same
+file (`source/CMakeLists.txt` adds this folder to its include path).
 
 ## Build
 

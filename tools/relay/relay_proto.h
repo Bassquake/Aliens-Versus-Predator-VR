@@ -23,6 +23,12 @@
  *   RELAY_CLOSE  host -> relay   the room is finished
  *   RELAY_LEAVE  client -> relay this client is finished
  *   RELAY_ERROR  relay -> either val = RELAY_ERR_*
+ *   RELAY_PING   anyone -> relay val = a nonce. Answered with RELAY_PONG and the same
+ *                                val, nothing else. The game's Multiplayer page uses it
+ *                                to show whether the relay is up. Same size both ways,
+ *                                so it cannot be used to amplify traffic. A relay from
+ *                                before 2026-10-25 ignores it (reads as "no answer").
+ *   RELAY_PONG   relay -> sender val = the ping's nonce
  *
  * Clients and hosts are identified by their source address, as the relay sees it
  * (i.e. after NAT). Every packet from them refreshes them; they expire after
@@ -49,7 +55,17 @@
 #define RELAY_HOST_REFRESH_MS  10000         /* host: RELAY_HOST once the room is open */
 #define RELAY_HOST_TIMEOUT_MS  5000          /* host: give up if no RELAY_ROOM by then */
 
-enum { RELAY_HOST = 1, RELAY_ROOM, RELAY_DATA, RELAY_CLOSE, RELAY_LEAVE, RELAY_ERROR };
+enum { RELAY_HOST = 1, RELAY_ROOM, RELAY_DATA, RELAY_CLOSE, RELAY_LEAVE, RELAY_ERROR,
+       RELAY_PING, RELAY_PONG };
+
+/* Game side only: the result of Net_RelayProbeStatus (net.c). */
+enum {
+	RELAYPROBE_OFF,           /* no relay set (LAN) */
+	RELAYPROBE_CHECKING,
+	RELAYPROBE_ONLINE,
+	RELAYPROBE_NOANSWER,
+	RELAYPROBE_BADADDR        /* the name did not resolve */
+};
 
 enum {
 	RELAY_ERR_NOROOM = 1,     /* no room with that code */

@@ -5669,6 +5669,8 @@ const int TotalVideoModes = sizeof(VideoModeList) / sizeof(VideoModeList[0]);
 #define RELAY_CONFIG_TAG "#RELAY"
 extern char NetRelayServer[];
 extern void Net_SetRelayServer(const char *hostport);
+extern void Net_RelayProbeStart(const char *hostport, int keepShown);
+extern int  Net_RelayProbeStatus(int *ms);
 void SaveDeviceAndVideoModePreferences(void);
 static char RelayServerSaved[RELAY_SERVER_LEN] = RELAY_DEFAULT_SERVER;   /* what config.cfg holds */
 
@@ -5862,6 +5864,63 @@ void Relay_SaveIfChanged(void)
 
     /* The AVP_RELAY test override (net.c) outlives a visit to the page, unsaved. */
     if (getenv("AVP_RELAY")) Net_SetRelayServer(getenv("AVP_RELAY"));
+}
+
+/* The value of the Multiplayer page's "Relay Status" row, polled each time the row
+   is drawn. It probes the address the page currently SHOWS (choice + custom text,
+   before any save), so changing the choice is reflected at once. A new address is
+   only probed once it has stopped changing for RELAY_STATUS_SETTLE_MS, so typing
+   does not start a probe per keystroke, and an answer is refreshed every
+   RELAY_STATUS_REFRESH_MS while the row is on screen. */
+#define RELAY_STATUS_SETTLE_MS   800
+#define RELAY_STATUS_REFRESH_MS  15000
+char *Relay_StatusText(void)
+{
+    static char text[64];
+    static char probed[RELAY_SERVER_LEN] = "\x01";   /* never a real address */
+    static char pending[RELAY_SERVER_LEN];
+    static Uint64 pendingSince, probedAt;
+    const char *addr;
+    Uint64 now = SDL_GetTicks();
+    int ms = 0, st;
+    const char *s;
+
+    switch (RelayServerMode) {
+    case 1:  addr = ""; break;
+    case 2:  for (s = RelayCustomServer; *s == ' '; s++) {}
+             addr = *s ? RelayCustomServer : RELAY_DEFAULT_SERVER; break;
+    default: addr = RELAY_DEFAULT_SERVER; break;
+    }
+
+    if (strcmp(addr, pending) != 0) {
+        strncpy(pending, addr, RELAY_SERVER_LEN - 1);
+        pending[RELAY_SERVER_LEN - 1] = '\0';
+        pendingSince = now;
+    }
+    st = Net_RelayProbeStatus(&ms);
+    if (strcmp(pending, probed) != 0) {
+        if (now - pendingSince >= RELAY_STATUS_SETTLE_MS) {
+            strcpy(probed, pending);
+            probedAt = now;
+            Net_RelayProbeStart(probed, 0);
+            st = Net_RelayProbeStatus(&ms);
+        } else {
+            st = pending[0] ? RELAYPROBE_CHECKING : RELAYPROBE_OFF;
+        }
+    } else if (st != RELAYPROBE_CHECKING && st != RELAYPROBE_OFF
+               && now - probedAt >= RELAY_STATUS_REFRESH_MS) {
+        probedAt = now;
+        Net_RelayProbeStart(probed, 1);   /* the last answer stays up until the new one */
+    }
+
+    switch (st) {
+    case RELAYPROBE_ONLINE:   SDL_snprintf(text, sizeof text, "Online (%d ms)", ms); break;
+    case RELAYPROBE_CHECKING: return "Checking...";
+    case RELAYPROBE_NOANSWER: return "No Answer";
+    case RELAYPROBE_BADADDR:  return "Address Not Found";
+    default:                  return "Off (LAN)";
+    }
+    return text;
 }
 
 /* Append the menu-video setting. Same contract as IntroMovies_WriteConfigLine,

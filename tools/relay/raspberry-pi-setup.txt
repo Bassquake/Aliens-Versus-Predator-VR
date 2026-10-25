@@ -1,0 +1,181 @@
+AvP RELAY ON A RASPBERRY PI (SET UP FROM A WINDOWS PC)
+=======================================================
+Written for a Raspberry Pi 1 Model B+ (v1.2). Any later Pi works the same way;
+the only differences are the choices in step 1.
+
+The relay runs ON THE PI, which runs Linux. The Windows PC is only used to set
+the Pi up and copy the files over. Commands are typed in PowerShell on the PC,
+except where a step says "ON THE PI".
+
+
+1. SET UP THE PI
+----------------
+1. Install "Raspberry Pi Imager" on the PC and put a microSD card in.
+2. Choose device "Raspberry Pi 1", then "Raspberry Pi OS Lite (32-bit)".
+   - The Pi 1 can only run 32-bit, so 64-bit images won't work on it. Imager
+     only lists the images that suit the device you picked.
+   - Lite has no desktop, which a relay doesn't need, and suits the Pi 1's
+     512 MB of RAM.
+   - If Imager also offers a "Legacy" Lite image, either one works.
+3. Click "Edit settings" and set:
+     - hostname: avprelay
+     - a username and password (for example: pi)
+     - on the Services tab, turn on SSH
+   (Skip the Wi-Fi settings: the Pi 1 B+ has no Wi-Fi.)
+4. Write the card, connect the Pi to the router with an Ethernet cable, and
+   power it on.
+   - The first boot on a Pi 1 is slow. Give it 3-5 minutes before trying ssh.
+
+   The Pi 1's 10/100 Ethernet is more than enough for the relay.
+
+
+2. COPY THE RELAY OVER AND BUILD IT
+-----------------------------------
+The relay is two files, relay.c and relay_proto.h, both in tools\relay. They
+just need to be in the same folder on the Pi.
+
+In PowerShell on the PC:
+
+    ssh pi@avprelay.local "mkdir -p avp/tools/relay"
+    scp K:\Coding\Aliens-Versus-Predator-VR\tools\relay\relay.c K:\Coding\Aliens-Versus-Predator-VR\tools\relay\relay_proto.h pi@avprelay.local:avp/tools/relay/
+    ssh pi@avprelay.local
+
+If avprelay.local doesn't resolve, use the Pi's IP address from your router's
+device list instead.
+
+ON THE PI (you are now logged in to it through ssh):
+
+    sudo apt update && sudo apt install -y gcc
+    cd ~/avp/tools/relay && cc -O2 -o avp-relay relay.c
+    ./avp-relay
+
+On a Pi 1, "apt update" and the install can take 10+ minutes, and the compile
+about a minute. That is normal.
+
+It should log that it is listening on UDP 27017. Leave it running for the
+first test.
+
+
+3. TEST ON YOUR OWN NETWORK FIRST
+---------------------------------
+- In the game, set "Relay Server" (first Multiplayer page) to the Pi's LOCAL
+  IP address, for example 192.168.1.50.
+- Host a game on one machine; it should show a room code.
+- Join with that code from another machine (a Quest, or a second exe).
+- The Pi's terminal shows the room opening and the player joining.
+
+
+4. RUN IT AS A SERVICE
+----------------------
+Once the test works, press Ctrl+C to stop it. This makes it start on boot and
+restart if it ever dies.
+
+ON THE PI:
+
+    sudo cp avp-relay /usr/local/bin/
+    sudo nano /etc/systemd/system/avp-relay.service
+
+Paste these lines into nano, then press Ctrl+O, Enter, Ctrl+X to save and exit:
+
+    [Unit]
+    Description=AvP multiplayer relay
+    After=network-online.target
+
+    [Service]
+    ExecStart=/usr/local/bin/avp-relay
+    Restart=always
+    DynamicUser=yes
+
+    [Install]
+    WantedBy=multi-user.target
+
+Then:
+
+    sudo systemctl enable --now avp-relay
+    sudo journalctl -u avp-relay -f
+
+journalctl shows the live log. Ctrl+C leaves the log viewer without stopping
+the relay. It needs "sudo" because the relay runs as its own system user, and
+a normal user can't read system logs. To drop the sudo, run this once, then
+log out and back in:
+
+    sudo usermod -aG systemd-journal $USER
+
+To check that the relay is running at all:
+
+    systemctl status avp-relay
+
+
+5. OPEN IT TO THE INTERNET
+--------------------------
+1. Check for CGNAT. Compare the WAN IP on your router's status page with the
+   one whatismyip.com shows. If they differ, your ISP is not giving you a
+   public address, a port forward cannot work, and a cheap VPS (Hetzner,
+   about 5 euros a month) is the way to go instead.
+
+2. Give the Pi a fixed address. In the router, add a DHCP reservation for it,
+   so the port forward can't end up pointing at the wrong device.
+
+3. Port forward UDP 27017 to the Pi's IP address. Raspberry Pi OS has no
+   firewall turned on by default, so nothing needs opening on the Pi itself.
+
+4. Get a free hostname, so your changing home IP doesn't matter:
+   a. Sign up at duckdns.org and pick a name, for example myavp.duckdns.org.
+   b. ON THE PI, run:   crontab -e
+      and add this line at the bottom (use your own name and token):
+
+      */5 * * * * curl -s "https://www.duckdns.org/update?domains=myavp&token=YOUR-TOKEN&ip=" >/dev/null
+
+
+6. WHICH ADDRESS TO TYPE IN THE GAME
+------------------------------------
+- Friends outside your house:  myavp.duckdns.org
+- You, at home:                keep using the Pi's LOCAL IP address.
+
+Many home routers can't loop traffic for their own public address back inside
+the house (NAT hairpinning). It doesn't matter that you and your friends type
+different addresses: it is the same relay, so the room codes work across both.
+
+To test from outside, get one friend to join your room code.
+
+
+7. UPDATING THE RELAY
+--------------------
+When relay.c or relay_proto.h change (for example the 2026-10-25 update that
+lets the game's Multiplayer page show "Relay Status: Online"), copy both files
+over again and rebuild. In PowerShell on the PC:
+
+    scp K:\Coding\Aliens-Versus-Predator-VR\tools\relay\relay.c K:\Coding\Aliens-Versus-Predator-VR\tools\relay\relay_proto.h pi@avprelay.local:avp/tools/relay/
+    ssh pi@avprelay.local
+
+(A relay set up with the older instructions also has avp/source/src/ on the Pi.
+It is no longer used and can be deleted: rm -r ~/avp/source)
+
+ON THE PI:
+
+    cd ~/avp/tools/relay && cc -O2 -o avp-relay relay.c
+    sudo cp avp-relay /usr/local/bin/
+    sudo systemctl restart avp-relay
+
+An older relay still runs games fine, but ignores the status check, so the
+game shows "No Answer" for it until it is updated.
+
+
+NOTES
+-----
+- "Relay Status" on the Multiplayer page: from inside your own house it may
+  say "No Answer" for bassquake.ddns.net even when the relay is fine, if your
+  router can't loop its own public address back in (NAT hairpinning, step 6).
+  Choose Custom and type the Pi's local IP to check it from home.
+- Even a Pi 1 is fine for a few games at once: the relay is one small process
+  that sleeps until a packet arrives and only forwards what it receives.
+- Power the Pi 1 B+ with a proper 5 V micro-USB supply (1-2 A). Weak phone
+  chargers can cause random crashes or a corrupted SD card.
+- The Pi 1 B+ has no Wi-Fi, so a GUEST network only works for it if the
+  router's guest network includes Ethernet ports (most are Wi-Fi only).
+- Limits: 256 rooms, 8 players per room. Rooms and players expire after 60 s
+  of silence. A relay restart drops games in progress; hosts get their code
+  back within 10 s, so players can rejoin with the same code.
+- Once the hostname works from outside, it can be made the game's built-in
+  default (RELAY_DEFAULT_SERVER in tools/relay/relay_proto.h), so nobody has to
+  type the address.

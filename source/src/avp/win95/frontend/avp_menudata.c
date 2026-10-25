@@ -27,6 +27,7 @@
 
 extern int  RelayServerMode;      /* main.c: Relay Server choice, 0 default / 1 LAN / 2 custom */
 extern char RelayCustomServer[];  /* main.c: the custom address typed for choice 2 */
+static int MenuRelayStatusValue = 0;  /* the Relay Status row's slider never moves */
 extern AVPMENU AvPMenusData[];  /* defined further down */
 
 #define MPLAYER_SUPPORT 0
@@ -749,6 +750,9 @@ static AVPMENU_ELEMENT AvPMenu_Multiplayer[]=
 	/* Default relay / LAN only / Custom; the address row below is greyed unless Custom. */
 	{AVPMENU_ELEMENT_TEXTSLIDER, 	{TEXTSTRING_MULTIPLAYER_RELAYSERVER},	{2},	{&RelayServerMode},	{TEXTSTRING_MULTIPLAYER_RELAYMODE_DEFAULT},	TEXTSTRING_MULTIPLAYER_RELAYSERVER_HELP},
 	{AVPMENU_ELEMENT_TEXTFIELD, 	{TEXTSTRING_MULTIPLAYER_RELAYCUSTOM},	{RELAY_SERVER_LEN-1},	{(int*)RelayCustomServer},	{0},	TEXTSTRING_MULTIPLAYER_RELAYCUSTOM_HELP},
+	/* Read-only, like the Version row: a one-value TEXTSLIDER whose value string is
+	   live text (Relay_StatusText, main.c, which also runs the probe). */
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_MULTIPLAYER_RELAYSTATUS},	{0},	{&MenuRelayStatusValue},	{TEXTSTRING_MULTIPLAYER_RELAYSTATUS_VALUE}},
 
 	{AVPMENU_ELEMENT_ENDOFMENU}
 

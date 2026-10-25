@@ -3,7 +3,7 @@
  * Hosts open a room and get a 5-character code; players join with the code. The
  * relay only forwards datagrams between a room's host and its clients - the game's
  * reliable/state protocol runs end to end through it, so nothing here needs to
- * understand a game packet. The protocol is in source/src/relay_proto.h.
+ * understand a game packet. The protocol is in relay_proto.h, next to this file.
  *
  * Single-threaded, one UDP socket. Build:
  *   Linux:   cc -O2 -o avp-relay relay.c
@@ -38,7 +38,7 @@ typedef int rsock;
 #include <stdarg.h>
 #include <time.h>
 
-#include "../../source/src/relay_proto.h"
+#include "relay_proto.h"
 
 #define RELAY_MAX_ROOMS 256
 
@@ -274,6 +274,9 @@ static void on_packet(const struct sockaddr_in *from, unsigned char *buf, int n)
 		if (r) room_close(r, "host closed it");
 		break;
 	}
+	case RELAY_PING:                                /* the game's "is it up?" check */
+		send_ctrl(from, RELAY_PONG, val);
+		break;
 	case RELAY_LEAVE: {
 		Room *r;
 		Client *c = client_by_addr(from, &r);

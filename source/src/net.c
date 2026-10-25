@@ -22,6 +22,7 @@
 #include "net.h"
 #include "avp_menus.h"   /* SESSION_DESC / SessionData for the join session list */
 #include "relay_proto.h"
+#include <SDL3/SDL.h>    /* the relay status probe's thread and lock */
 
 
 DPID AVPDPNetID;
@@ -991,16 +992,13 @@ static void net_udp_open_host(void) {
 	net_setnonblock(net_udp);
 }
 
-/* Resolve NetRelayServer into net_relay_addr. Blocking DNS, but it is called
-   once, from a menu, when hosting or joining starts. */
-static int net_relay_resolve(void) {
+/* Resolve "host[:port]" into out. Blocking DNS. */
+static int net_resolve_hostport(const char *src, struct sockaddr_in *out) {
 	char host[128];
 	char *colon;
 	int port = RELAY_PORT;
 	struct addrinfo hints, *res = NULL;
-	const char *src = NetRelayServer;
 	size_t len;
-	if (!net_relay_configured()) return 0;
 	while (*src == ' ') src++;                     /* typed text: trim it */
 	strncpy(host, src, sizeof host - 1);
 	host[sizeof host - 1] = '\0';
@@ -1016,10 +1014,126 @@ static int net_relay_resolve(void) {
 		fprintf(stderr, "net: cannot resolve relay '%s'\n", host);
 		return 0;
 	}
-	memcpy(&net_relay_addr, res->ai_addr, sizeof net_relay_addr);
-	net_relay_addr.sin_port = htons((unsigned short)port);
+	memcpy(out, res->ai_addr, sizeof *out);
+	out->sin_port = htons((unsigned short)port);
 	freeaddrinfo(res);
 	return 1;
+}
+
+/* Resolve NetRelayServer into net_relay_addr. Blocking DNS, but it is called
+   once, from a menu, when hosting or joining starts. */
+static int net_relay_resolve(void) {
+	if (!net_relay_configured()) return 0;
+	return net_resolve_hostport(NetRelayServer, &net_relay_addr);
+}
+
+/* ---------------------------------------------------------------------------
+ * Relay status probe, for the Multiplayer page's "Relay Status" row: resolve the
+ * address and send RELAY_PING until a RELAY_PONG comes back. It runs on its own
+ * thread because DNS blocks, sometimes for seconds, and the menu must not. Each
+ * start bumps a generation, so a probe overtaken by a newer one (the address was
+ * changed) throws its answer away. Its socket is its own, never the game's.
+ * ------------------------------------------------------------------------- */
+#define RELAY_PROBE_TRIES     3
+#define RELAY_PROBE_WAIT_MS   1000
+
+static SDL_Mutex *probe_lock;
+static unsigned   probe_gen;
+static int        probe_status = RELAYPROBE_OFF;
+static int        probe_ms;
+
+typedef struct { unsigned gen; char addr[RELAY_SERVER_LEN]; } ProbeJob;
+
+static void probe_finish(unsigned gen, int status, int ms) {
+	SDL_LockMutex(probe_lock);
+	if (gen == probe_gen) { probe_status = status; probe_ms = ms; }
+	SDL_UnlockMutex(probe_lock);
+}
+
+static int SDLCALL probe_thread(void *data) {
+	ProbeJob job = *(ProbeJob *)data;
+	struct sockaddr_in to;
+	NetSocket s;
+	int t, status = RELAYPROBE_NOANSWER, ms = 0;
+	free(data);
+
+	if (!net_resolve_hostport(job.addr, &to)) { probe_finish(job.gen, RELAYPROBE_BADADDR, 0); return 0; }
+	s = socket(AF_INET, SOCK_DGRAM, 0);
+	if (s == NET_BAD) { probe_finish(job.gen, RELAYPROBE_NOANSWER, 0); return 0; }
+
+	for (t = 0; t < RELAY_PROBE_TRIES && status == RELAYPROBE_NOANSWER; t++) {
+		unsigned char pkt[RELAY_MAX_PAYLOAD];
+		uint32_t nonce = (job.gen << 4) | (uint32_t)t;
+		uint32_t sent = net_now_ms(), now;
+		memset(pkt, 0, RELAY_HDR);
+		net_wr32(pkt, (int32_t)RELAY_MAGIC);
+		pkt[4] = RELAY_PING;
+		pkt[5] = RELAY_VERSION;
+		net_wr32(pkt + 8, (int32_t)nonce);
+		sendto(s, (const char *)pkt, RELAY_HDR, 0, (struct sockaddr *)&to, sizeof to);
+
+		while ((now = net_now_ms()) - sent < RELAY_PROBE_WAIT_MS) {
+			fd_set rd;
+			struct timeval tv;
+			uint32_t left = RELAY_PROBE_WAIT_MS - (now - sent);
+			int n;
+			FD_ZERO(&rd);
+			FD_SET(s, &rd);
+			tv.tv_sec = (long)(left / 1000);
+			tv.tv_usec = (long)(left % 1000) * 1000;
+			if (select((int)s + 1, &rd, NULL, NULL, &tv) <= 0) break;
+			n = (int)recv(s, (char *)pkt, sizeof pkt, 0);
+			if (n >= RELAY_HDR && (uint32_t)net_rd32(pkt) == RELAY_MAGIC && pkt[4] == RELAY_PONG
+			    && (uint32_t)net_rd32(pkt + 8) == nonce) {
+				status = RELAYPROBE_ONLINE;
+				ms = (int)(net_now_ms() - sent);
+				break;
+			}
+		}
+	}
+	net_closesock(s);
+	probe_finish(job.gen, status, ms);
+	return 0;
+}
+
+/* Probe "host[:port]"; blank means no relay, which needs no probe. keepShown leaves
+   the previous answer in place until this one arrives (a periodic refresh of the
+   same address), instead of showing "checking" in between. */
+void Net_RelayProbeStart(const char *hostport, int keepShown) {
+	ProbeJob *job;
+	SDL_Thread *th;
+	const char *p;
+	for (p = hostport; *p == ' '; p++) {}
+
+	if (!probe_lock) probe_lock = SDL_CreateMutex();
+	if (!probe_lock) return;
+	SDL_LockMutex(probe_lock);
+	probe_gen++;
+	if (!*p) probe_status = RELAYPROBE_OFF;
+	else if (!keepShown) probe_status = RELAYPROBE_CHECKING;
+	SDL_UnlockMutex(probe_lock);
+	if (!*p) return;
+
+	net_winsock_init();
+	job = (ProbeJob *)malloc(sizeof *job);
+	if (!job) { probe_finish(probe_gen, RELAYPROBE_NOANSWER, 0); return; }
+	job->gen = probe_gen;
+	strncpy(job->addr, p, sizeof job->addr - 1);
+	job->addr[sizeof job->addr - 1] = '\0';
+	th = SDL_CreateThread(probe_thread, "relayprobe", job);
+	if (th) SDL_DetachThread(th);
+	else { free(job); probe_finish(probe_gen, RELAYPROBE_NOANSWER, 0); }
+}
+
+/* RELAYPROBE_*; *ms is the round trip when ONLINE. */
+int Net_RelayProbeStatus(int *ms) {
+	int st;
+	if (!probe_lock) { if (ms) *ms = 0; return RELAYPROBE_OFF; }
+	SDL_LockMutex(probe_lock);
+	st = probe_status;
+	if (ms) *ms = probe_ms;
+	SDL_UnlockMutex(probe_lock);
+	return st;
 }
 
 static int net_start_host(void) {

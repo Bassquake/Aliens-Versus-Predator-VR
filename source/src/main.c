@@ -8549,6 +8549,236 @@ static void AvP_InstallCrashHandler(void)
     for (i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++)
         sigaction(sigs[i], &sa, &avp_crash_prev[sigs[i]]);
 }
+#elif defined(_WIN32)
+/* ---- Crash report into the log (Windows) ------------------------------------------
+ *
+ * Same "CRASH:" lines as above, from an unhandled-exception filter, plus a minidump,
+ * avp_crash.dmp, beside the log. Open the dump in Visual Studio with the matching exe
+ * and .pdb to get the full stack and locals. The offsets in the log are RVAs: with the
+ * PDB, "ln avp_x64.exe+0xOFFSET" in WinDbg, or Debug > Go To Address in VS on the dump.
+ *
+ * dbghelp is loaded at run time, so nothing new is linked, and a missing dbghelp only
+ * loses the backtrace and the dump. The filter returns CONTINUE_SEARCH, so Windows
+ * Error Reporting (and the Event Viewer entry) still happen. abort() comes in through
+ * SIGABRT. Not covered: __fastfail (/GS cookie failures, some CRT checks), which ends
+ * the process without running any handler. */
+#include <dbghelp.h>
+#include <signal.h>
+
+#define AVP_CRASH_MAX_FRAMES 32
+
+typedef BOOL (WINAPI *AvpSymInitializeFn)(HANDLE, PCSTR, BOOL);
+typedef BOOL (WINAPI *AvpSymFromAddrFn)(HANDLE, DWORD64, PDWORD64, PSYMBOL_INFO);
+typedef DWORD (WINAPI *AvpSymSetOptionsFn)(DWORD);
+typedef BOOL (WINAPI *AvpStackWalk64Fn)(DWORD, HANDLE, HANDLE, LPSTACKFRAME64, PVOID,
+    PREAD_PROCESS_MEMORY_ROUTINE64, PFUNCTION_TABLE_ACCESS_ROUTINE64,
+    PGET_MODULE_BASE_ROUTINE64, PTRANSLATE_ADDRESS_ROUTINE64);
+typedef BOOL (WINAPI *AvpMiniDumpWriteDumpFn)(HANDLE, DWORD, HANDLE, MINIDUMP_TYPE,
+    PMINIDUMP_EXCEPTION_INFORMATION, PMINIDUMP_USER_STREAM_INFORMATION,
+    PMINIDUMP_CALLBACK_INFORMATION);
+
+static AvpSymFromAddrFn avp_sym_from_addr = NULL;
+
+static void AvP_CrashWrite(const char *s)
+{
+    if (avp_log_fp) {
+        fputs(s, avp_log_fp);
+        fflush(avp_log_fp);
+    }
+    OutputDebugStringA(s);
+}
+
+static void AvP_CrashFrame(int n, DWORD64 pc)
+{
+    char line[512];
+    char path[MAX_PATH];
+    HMODULE mod = NULL;
+    const char *name;
+
+    if (pc && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                 GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                 (LPCSTR)(uintptr_t)pc, &mod) &&
+        GetModuleFileNameA(mod, path, sizeof(path))) {
+        union { SYMBOL_INFO info; char buf[sizeof(SYMBOL_INFO) + 256]; } sym;
+        DWORD64 disp = 0;
+
+        name = SDL_strrchr(path, '\\');
+        name = name ? name + 1 : path;
+
+        SDL_memset(&sym, 0, sizeof(sym));
+        sym.info.SizeOfStruct = sizeof(SYMBOL_INFO);
+        sym.info.MaxNameLen = 255;
+        if (avp_sym_from_addr && avp_sym_from_addr(GetCurrentProcess(), pc, &disp, &sym.info))
+            SDL_snprintf(line, sizeof(line), "CRASH: #%02d pc %s+0x%llx (%s+0x%llx)\n", n, name,
+                         (unsigned long long)(pc - (uintptr_t)mod), sym.info.Name,
+                         (unsigned long long)disp);
+        else
+            SDL_snprintf(line, sizeof(line), "CRASH: #%02d pc %s+0x%llx\n", n, name,
+                         (unsigned long long)(pc - (uintptr_t)mod));
+    } else {
+        SDL_snprintf(line, sizeof(line), "CRASH: #%02d pc 0x%llx\n", n, (unsigned long long)pc);
+    }
+    AvP_CrashWrite(line);
+}
+
+static const char *AvP_ExceptionName(DWORD code)
+{
+    switch (code) {
+    case EXCEPTION_ACCESS_VIOLATION:      return "access violation";
+    case EXCEPTION_STACK_OVERFLOW:        return "stack overflow";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:    return "integer divide by zero";
+    case EXCEPTION_ILLEGAL_INSTRUCTION:   return "illegal instruction";
+    case EXCEPTION_PRIV_INSTRUCTION:      return "privileged instruction";
+    case EXCEPTION_IN_PAGE_ERROR:         return "in-page error";
+    case EXCEPTION_DATATYPE_MISALIGNMENT: return "misaligned data";
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED: return "array bounds exceeded";
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO:    return "float divide by zero";
+    case EXCEPTION_FLT_INVALID_OPERATION: return "float invalid operation";
+    case 0xE06D7363:                      return "C++ exception";
+    default:                              return "exception";
+    }
+}
+
+/* Backtrace from ctx (the faulting context, or the caller's for abort), then the dump.
+   ep is NULL for abort, which still gets a dump, just without an exception record. */
+static void AvP_CrashReport(CONTEXT *ctx, EXCEPTION_POINTERS *ep)
+{
+    static volatile LONG entered = 0;
+    HANDLE process = GetCurrentProcess();
+    HANDLE thread = GetCurrentThread();
+    HMODULE dbghelp;
+    AvpSymInitializeFn sym_init = NULL;
+    AvpSymSetOptionsFn sym_opts = NULL;
+    AvpStackWalk64Fn stack_walk = NULL;
+    AvpMiniDumpWriteDumpFn write_dump = NULL;
+    PFUNCTION_TABLE_ACCESS_ROUTINE64 fn_table = NULL;
+    PGET_MODULE_BASE_ROUTINE64 mod_base = NULL;
+
+    if (InterlockedExchange(&entered, 1))
+        return;   /* a second crash while reporting the first */
+
+    dbghelp = LoadLibraryA("dbghelp.dll");
+    if (dbghelp) {
+        sym_init   = (AvpSymInitializeFn)GetProcAddress(dbghelp, "SymInitialize");
+        sym_opts   = (AvpSymSetOptionsFn)GetProcAddress(dbghelp, "SymSetOptions");
+        stack_walk = (AvpStackWalk64Fn)GetProcAddress(dbghelp, "StackWalk64");
+        write_dump = (AvpMiniDumpWriteDumpFn)GetProcAddress(dbghelp, "MiniDumpWriteDump");
+        fn_table   = (PFUNCTION_TABLE_ACCESS_ROUTINE64)GetProcAddress(dbghelp, "SymFunctionTableAccess64");
+        mod_base   = (PGET_MODULE_BASE_ROUTINE64)GetProcAddress(dbghelp, "SymGetModuleBase64");
+        avp_sym_from_addr = (AvpSymFromAddrFn)GetProcAddress(dbghelp, "SymFromAddr");
+    }
+    if (sym_opts) sym_opts(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS);
+    if (!sym_init || !sym_init(process, NULL, TRUE))
+        avp_sym_from_addr = NULL;
+
+    if (ep) {
+        AvP_CrashWrite("CRASH: at fault:\n");
+        AvP_CrashFrame(0, (DWORD64)(uintptr_t)ep->ExceptionRecord->ExceptionAddress);
+    }
+    AvP_CrashWrite("CRASH: backtrace:\n");
+    if (stack_walk && fn_table && mod_base && ctx) {
+        CONTEXT walk = *ctx;   /* StackWalk64 modifies it */
+        STACKFRAME64 frame;
+        DWORD machine;
+        int n;
+
+        SDL_memset(&frame, 0, sizeof(frame));
+#if defined(_M_X64)
+        machine = IMAGE_FILE_MACHINE_AMD64;
+        frame.AddrPC.Offset    = walk.Rip;
+        frame.AddrStack.Offset = walk.Rsp;
+        frame.AddrFrame.Offset = walk.Rbp;
+#elif defined(_M_ARM64)
+        machine = IMAGE_FILE_MACHINE_ARM64;
+        frame.AddrPC.Offset    = walk.Pc;
+        frame.AddrStack.Offset = walk.Sp;
+        frame.AddrFrame.Offset = walk.Fp;
+#else
+        machine = IMAGE_FILE_MACHINE_I386;
+        frame.AddrPC.Offset    = walk.Eip;
+        frame.AddrStack.Offset = walk.Esp;
+        frame.AddrFrame.Offset = walk.Ebp;
+#endif
+        frame.AddrPC.Mode = frame.AddrStack.Mode = frame.AddrFrame.Mode = AddrModeFlat;
+
+        for (n = 0; n < AVP_CRASH_MAX_FRAMES; n++) {
+            if (!stack_walk(machine, process, thread, &frame, &walk, NULL, fn_table, mod_base, NULL))
+                break;
+            if (!frame.AddrPC.Offset)
+                break;
+            AvP_CrashFrame(n, frame.AddrPC.Offset);
+        }
+    }
+
+    if (write_dump) {
+        const char *base = AvP_LogDirectory();
+        char path[512];
+        HANDLE file;
+
+        if (base) {
+            size_t len = SDL_strlen(base);
+            SDL_snprintf(path, sizeof(path), "%s%savp_crash.dmp", base,
+                         (len && (base[len-1] == '/' || base[len-1] == '\\')) ? "" : "\\");
+            file = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL, NULL);
+            if (file != INVALID_HANDLE_VALUE) {
+                MINIDUMP_EXCEPTION_INFORMATION mei;
+                char line[600];
+                mei.ThreadId = GetCurrentThreadId();
+                mei.ExceptionPointers = ep;
+                mei.ClientPointers = FALSE;
+                if (write_dump(process, GetCurrentProcessId(), file,
+                               (MINIDUMP_TYPE)(MiniDumpNormal | MiniDumpWithThreadInfo),
+                               ep ? &mei : NULL, NULL, NULL)) {
+                    SDL_snprintf(line, sizeof(line), "CRASH: minidump written to %s\n", path);
+                    AvP_CrashWrite(line);
+                }
+                CloseHandle(file);
+            }
+        }
+    }
+    AvP_CrashWrite("CRASH: end\n");
+}
+
+static LONG WINAPI AvP_CrashFilter(EXCEPTION_POINTERS *ep)
+{
+    char line[256];
+    EXCEPTION_RECORD *er = ep->ExceptionRecord;
+
+    SDL_snprintf(line, sizeof(line), "CRASH: exception 0x%08lx (%s) at %p\n",
+                 (unsigned long)er->ExceptionCode, AvP_ExceptionName(er->ExceptionCode),
+                 er->ExceptionAddress);
+    AvP_CrashWrite(line);
+    if ((er->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
+         er->ExceptionCode == EXCEPTION_IN_PAGE_ERROR) && er->NumberParameters >= 2) {
+        ULONG_PTR kind = er->ExceptionInformation[0];
+        SDL_snprintf(line, sizeof(line), "CRASH: %s of address 0x%llx\n",
+                     kind == 0 ? "read" : kind == 1 ? "write" : "execute",
+                     (unsigned long long)er->ExceptionInformation[1]);
+        AvP_CrashWrite(line);
+    }
+
+    AvP_CrashReport(ep->ContextRecord, ep);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void __cdecl AvP_CrashAbort(int sig)
+{
+    CONTEXT ctx;
+    (void)sig;
+    AvP_CrashWrite("CRASH: abort()\n");
+    RtlCaptureContext(&ctx);
+    AvP_CrashReport(&ctx, NULL);
+}
+
+static void AvP_InstallCrashHandler(void)
+{
+    /* Head room so a stack overflow can still run the filter and dbghelp. */
+    ULONG guarantee = 64 * 1024;
+    SetThreadStackGuarantee(&guarantee);
+    SetUnhandledExceptionFilter(AvP_CrashFilter);
+    signal(SIGABRT, AvP_CrashAbort);
+}
 #else
 static void AvP_InstallCrashHandler(void) {}
 #endif

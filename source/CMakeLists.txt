@@ -1219,7 +1219,21 @@ elseif (WIN32)
             target_link_options(avp PRIVATE /SAFESEH:NO)
         endif()
     endif()
-    
+
+    # A .pdb for Release builds, so crash reports name functions. The crash handler in
+    # main.c resolves frames through dbghelp, which finds <exe>.pdb next to the exe, and
+    # avp_crash.dmp opens with full stacks in Visual Studio against it. The PDB must
+    # come from the SAME build as the exe, so keep it with each release you hand out.
+    # /DEBUG turns off /OPT:REF and /OPT:ICF unless they are asked for, so they are put
+    # back: the exe's code is the same as a build without the PDB.
+    if(MSVC)
+        target_compile_options(avp PRIVATE $<$<CONFIG:Release>:/Zi>)
+        target_link_options(avp PRIVATE
+            $<$<CONFIG:Release>:/DEBUG>
+            $<$<CONFIG:Release>:/OPT:REF>
+            $<$<CONFIG:Release>:/OPT:ICF>)
+    endif()
+
     install (TARGETS avp DESTINATION .)
 
     # The PCVR build gets its own exe name AND its own output folder

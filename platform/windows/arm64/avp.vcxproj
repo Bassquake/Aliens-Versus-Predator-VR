@@ -190,6 +190,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalIncludeDirectories>K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\include;K:\Coding\Aliens-Versus-Predator-VR\source\src;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\shapes;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\support;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\frontend;K:\Coding\Aliens-Versus-Predator-VR\source\src\avp\win95\gadgets;K:\Coding\Aliens-Versus-Predator-VR\source\src\win95;K:\Coding\Aliens-Versus-Predator-VR\source\..\platform\windows;K:\Coding\Aliens-Versus-Predator-VR\source\src\include;K:\Coding\Aliens-Versus-Predator-VR\source\..\tools\relay;K:\Coding\Aliens-Versus-Predator-VR\source\extern;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <ExceptionHandling>Sync</ExceptionHandling>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <MinimalRebuild>
@@ -202,8 +203,6 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <UseFullPaths>false</UseFullPaths>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
-      <DebugInformationFormat>
-      </DebugInformationFormat>
       <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
     </ClCompile>
     <ResourceCompile>
@@ -272,9 +271,11 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalDependencies>K:\Coding\Aliens-Versus-Predator-VR\source\extern\SDL3\lib\windows\arm64\SDL3.lib;opengl32.lib;K:\Coding\Aliens-Versus-Predator-VR\source\extern\OpenAL32\lib\windows\arm64\OpenAL32.lib;shlwapi.lib;winmm.lib;ws2_32.lib;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\lib\windows\arm64\avcodec.lib;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\lib\windows\arm64\avformat.lib;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\lib\windows\arm64\avutil.lib;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\lib\windows\arm64\swscale.lib;K:\Coding\Aliens-Versus-Predator-VR\source\extern\FFmpeg\lib\windows\arm64\swresample.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:ARM64</AdditionalOptions>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <ImportLibrary>K:/Coding/Aliens-Versus-Predator-VR/platform/windows/arm64/Release/avp_arm64.lib</ImportLibrary>
+      <OptimizeReferences>true</OptimizeReferences>
       <ProgramDataBaseFile>K:/Coding/Aliens-Versus-Predator-VR/build/windows/arm64/Release/avp_arm64.pdb</ProgramDataBaseFile>
       <SubSystem>Console</SubSystem>
     </Link>

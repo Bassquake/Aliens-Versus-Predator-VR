@@ -3504,6 +3504,8 @@ static void shutdown_xr_session(void)
         handle_xr_events();
         SDL_Delay(5);
     }
+    SDL_Log("EXIT: XR session %s", xr_should_quit ? "reached EXITING"
+            : xr_session_running ? "timed out still running" : "timed out after STOPPING");
 }
 #endif /* AVP_XR */
 
@@ -9353,7 +9355,30 @@ int main(int argc, char *argv[])
     
     SoundSys_StopAll();
     SoundSys_RemoveAll();
-    
+
+#ifdef AVP_XR
+    /* End the OpenXR session and destroy all XR/GLES resources so the Quest
+     * compositor isn't left holding a live session (which otherwise leaves the
+     * headset on a black screen).
+     *
+     * BEFORE ExitSystem, because ExitWindowsSystem destroys the GL context, and the
+     * swapchains are GL objects: releasing them, and the GL programs and FBOs in
+     * destroy_xr_resources, needs the context still current. SteamVR tolerated the
+     * old order; Virtual Desktop hung on quit (2026-10-27), and its GL swapchains are
+     * shared with D3D11, which is the part that needs the context to release.
+     *
+     * Crucially we do NOT call exit() here: returning from main() lets
+     * SDLMain.run() finish the Activity through the normal Android lifecycle
+     * (onDestroy -> SDL_Quit). Killing the process with exit() from this
+     * native thread instead tears the Activity down out of order, which makes
+     * Meta's OVRMetricsToolClient crash on shutdown
+     * ("IllegalArgumentException: Service not registered"). */
+    SDL_Log("EXIT: shutting down the XR session");
+    shutdown_xr_session();
+    destroy_xr_resources();
+    SDL_Log("EXIT: XR resources destroyed");
+#endif
+
     ExitSystem();
 
     CDDA_End();
@@ -9366,20 +9391,6 @@ int main(int argc, char *argv[])
     R9_Shutdown();
 #endif
 
-#ifdef AVP_XR
-    /* End the OpenXR session and destroy all XR/GLES resources so the Quest
-     * compositor isn't left holding a live session (which otherwise leaves the
-     * headset on a black screen).
-     *
-     * Crucially we do NOT call exit() here: returning from main() lets
-     * SDLMain.run() finish the Activity through the normal Android lifecycle
-     * (onDestroy -> SDL_Quit). Killing the process with exit() from this
-     * native thread instead tears the Activity down out of order, which makes
-     * Meta's OVRMetricsToolClient crash on shutdown
-     * ("IllegalArgumentException: Service not registered"). */
-    shutdown_xr_session();
-    destroy_xr_resources();
-#endif
-
+    SDL_Log("EXIT: returning from main");
     return 0;
 }

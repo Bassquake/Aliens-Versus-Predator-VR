@@ -35,6 +35,57 @@
 static char *local_dir;
 static char *global_dir;
 
+#ifdef __ANDROID__
+/*
+Android: folders the game creates must stay readable over adb (SideQuest).
+They used to be made with mode 0700, and app processes run with umask 077, so
+user_profiles came out owner-only. Some devices map that straight through
+(Quest 3: "readdir ... user_profiles failed" in SideQuest, while the adb-pushed
+folders beside it were fine). Clear the umask, and open up folders and files
+made by older builds.
+*/
+static void AndroidOpenUpDirectory(const char *base, const char *name)
+{
+	char path[1024];
+	char filepath[1024];
+	struct stat buf;
+	DIR *dir;
+	struct dirent *ent;
+
+	snprintf(path, sizeof(path), "%s/%s", base, name);
+	if (stat(path, &buf) == -1 || !S_ISDIR(buf.st_mode))
+		return;
+
+	if ((buf.st_mode & 0777) != 0777) {
+		if (chmod(path, 0777) == 0)
+			SDL_Log("FILES: opened up %s", path);
+		else
+			SDL_Log("FILES: chmod %s failed", path);
+	}
+
+	dir = opendir(path);
+	if (dir == NULL)
+		return;
+	while ((ent = readdir(dir)) != NULL) {
+		if (ent->d_name[0] == '.')
+			continue;
+		snprintf(filepath, sizeof(filepath), "%s/%s", path, ent->d_name);
+		if (stat(filepath, &buf) == 0 && S_ISREG(buf.st_mode) && (buf.st_mode & 0666) != 0666)
+			chmod(filepath, 0666);
+	}
+	closedir(dir);
+}
+
+static void AndroidOpenUpGameDirectories(const char *base)
+{
+	umask(0);
+	AndroidOpenUpDirectory(base, "user_profiles");
+	AndroidOpenUpDirectory(base, "mpconfig");
+	AndroidOpenUpDirectory(base, "ip_address");
+	AndroidOpenUpDirectory(base, "custom");
+}
+#endif
+
 /*
 Sets the local and global directories used by the other functions.
 Local = ~/.dir, where config and user-installed files are kept.
@@ -57,6 +108,10 @@ int SetGameDirectories(const char *local, const char *global)
 #endif
 
 	}
+
+#ifdef __ANDROID__
+	AndroidOpenUpGameDirectories(local_dir);
+#endif
 
 	return 0;
 }
@@ -379,20 +434,27 @@ int CreateGameDirectory(const char *dirname)
 	char *rfilename;
 	int ret;
 
+/* Android: readable over adb, see AndroidOpenUpDirectory. */
+#ifdef __ANDROID__
+#define GAME_DIR_MODE 0777
+#else
+#define GAME_DIR_MODE S_IRWXU
+#endif
+
 	rfilename = FixFilename(dirname, local_dir, 0);
 #ifdef _WIN32
 	ret = _mkdir(rfilename);
 #else
-	ret = mkdir(rfilename, S_IRWXU);
+	ret = mkdir(rfilename, GAME_DIR_MODE);
 #endif
 	free(rfilename);
-	
+
 	if (ret == -1) {
 		rfilename = FixFilename(dirname, local_dir, 1);
 #ifdef _WIN32
 		ret = _mkdir(rfilename);
 #else
-		ret = mkdir(rfilename, S_IRWXU);
+		ret = mkdir(rfilename, GAME_DIR_MODE);
 #endif
 		free(rfilename);
 	}

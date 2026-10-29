@@ -3,27 +3,11 @@
 This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below. I'm not primarily a programmer, this was done with a lot of help from various AI like Claude, Copilot and Gemini.
 
 > [!TIP]
-> Check the new 1.3.1 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
+> Check the new 1.4 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
 
-## What's new in 1.3.1?
-- Add Sitting Mode (VR Comfort and Display).
-- Add multiplayer to use UDP and created a relay server so anyone can play using a generated code. Instructions are [further down](#how-to-multiplay).
-- Set maximum number of online players to 8.
-- Use built in keyboard for stand-alone and SteamVR for easier text input.
-- Fix direction Alien when fall from wall/ceiling.
-- Remove B button for Alien climb and only allow a non-bound button instead. Default is Left Grip for VR. Recommend resetting keys to defaults then make new edit if you want to.
-- Option to turn off/on Melee Attacks in VR Controls.
-- Change button wording "Hold" to "Long Press".
-- Highlight buttons in red in the Key Configuration screens that are already used so its easier to see what it already using it.
-- Fix weapon vibrations.
-- Stop rapid fire for left pistol as Marine.
-- Fix Pico menus.
-- Add option to keep Messages on-screen for longer in Audio/Video Options.
-- Fix crashes on Pico that happened when Alien and use tail, and then when go to next level and use tail it would crash.
-- Fix access to user_profiles folder for Quest 3 via Sidequest so you can backup game profiles. Quest 2 unaffected.
-- Add crash logging for windows builds.
-- Fix hang when exiting game in Virtual Desktop.
-- Fix crash on pcvr if using different language.
+## What's new in 1.4?
+- Added Environment Reverb option in Audio/Video Options menu to reflect the original games EAX audio. You can choose different strengths or off. Gives it a new dimension!
+- Moved antialiasing options to Audio/Video Options > Details Levels Menu due to running out of space.
 
 > [!TIP]
 > Re-center your view (hold Meta button) while standing before starting a level so things aren’t small! There is Sitting Mode option in VR Controls.

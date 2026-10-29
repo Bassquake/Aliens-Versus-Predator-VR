@@ -194,7 +194,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_VRVIGNETTE_HELP:     return "Darkens your peripheral vision while smooth turning to reduce motion sickness.";
 			case TEXTSTRING_VRVIGNETTE_OFF:      return "Off";
 			case TEXTSTRING_VRVIGNETTE_ON:       return "On (Default)";
-			case TEXTSTRING_VRVIGNETTE_STRENGTH: return "Vignette strength";
+			case TEXTSTRING_VRVIGNETTE_STRENGTH: return "Vignette Strength";
 			case TEXTSTRING_VRVIGNETTE_STRENGTH_HELP:return "How much the peripheral vision closes in while smooth turning.";
 			case TEXTSTRING_VRCLIMBVIGNETTE:     return "Comfort Vignette On Alien Climbing";
 			case TEXTSTRING_VRCLIMBVIGNETTE_HELP:return "Darkens your peripheral vision while the view swings onto a wall or ceiling. Clears once you are on the surface.";
@@ -222,7 +222,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_BIND_FIRESECONDARY: return "Secondary Fire";
 			case TEXTSTRING_BIND_JUMP:          return "Jump";
 			case TEXTSTRING_BIND_CLIMB:         return "Trigger Climb";
-			case TEXTSTRING_CLIMBHOLD:          return "Stay On Walls if Hold Trigger Climb button?";
+			case TEXTSTRING_CLIMBHOLD:          return "Stay On Walls If Hold Trigger Climb button?";
 			case TEXTSTRING_CLIMBHOLD_HELP:     return "No: press Trigger Climb to grab a wall and press again to let go. Yes: you only stay on the wall while the Trigger Climb control is held, and letting go of it drops you off.";
 			case TEXTSTRING_CLIMBHOLD_NO:       return "No (Default)";
 			case TEXTSTRING_CLIMBHOLD_YES:      return "Yes";

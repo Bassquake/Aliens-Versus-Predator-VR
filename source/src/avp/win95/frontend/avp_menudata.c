@@ -617,9 +617,6 @@ static AVPMENU_ELEMENT AvPMenu_InGameAVOptions[] =
 #if defined(__ANDROID__) && !defined(AVP_DISABLE_XR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE},  {3}, {&VRRefreshRateIndex},  {TEXTSTRING_VR_REFRESH_72},	TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP},
 #endif
-#if !defined(__ANDROID__) || !defined(AVP_DISABLE_XR)
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
-#endif
 	/* PCVR only. The headset is presented by the OpenXR compositor; the desktop
 	 * window is a separate copy the game makes for onlookers, so its rate is
 	 * free to be lowered or dropped. Quest has no monitor to mirror to, and on
@@ -628,13 +625,7 @@ static AVPMENU_ELEMENT AvPMenu_InGameAVOptions[] =
 #ifdef AVP_PCVR
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MIRROR},           {3}, {&DesktopMirrorIndex},  {TEXTSTRING_AVOPTIONS_MIRROR_EVERY},	TEXTSTRING_AVOPTIONS_MIRROR_HELP},
 #endif
-	/* Texture filtering is NOT behind the guard above. MSAA and refresh rate are
-	 * gated because they need a 3D/XR path the phone flavor does not have, but
-	 * every target — Quest, PCVR, flat desktop and phone — goes through the same
-	 * texture upload in opengl.c, so all four get these three rows. */
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_ANISO},            {4}, {&AnisotropicFilterIndex}, {TEXTSTRING_AVOPTIONS_ANISO_16X},	TEXTSTRING_AVOPTIONS_ANISO_HELP},
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_TEXFILTER},        {2}, {&TextureFilterIndex},     {TEXTSTRING_AVOPTIONS_TEXFILTER_TRILINEAR},	TEXTSTRING_AVOPTIONS_TEXFILTER_HELP},
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_NPOTMIPS},         {1}, {&NPOTMipmapsEnabled},     {TEXTSTRING_AVOPTIONS_NPOTMIPS_OFF},	TEXTSTRING_AVOPTIONS_NPOTMIPS_HELP},
+	/* MSAA and the texture filtering rows live on Detail Levels. */
 	{AVPMENU_ELEMENT_GOTOMENU,		{TEXTSTRING_DETAILLEVELS_TITLE},	{AVPMENU_DETAILLEVELS}},
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},{0},{0},{0},	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
 	{AVPMENU_ELEMENT_ENDOFMENU}
@@ -675,9 +666,6 @@ static AVPMENU_ELEMENT AvPMenu_MainMenuAVOptions[] =
 #if defined(__ANDROID__) && !defined(AVP_DISABLE_XR)
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE},  {3}, {&VRRefreshRateIndex},  {TEXTSTRING_VR_REFRESH_72},	TEXTSTRING_AVOPTIONS_VR_REFRESH_RATE_HELP},
 #endif
-#if !defined(__ANDROID__) || !defined(AVP_DISABLE_XR)
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
-#endif
 	/* PCVR only. The headset is presented by the OpenXR compositor; the desktop
 	 * window is a separate copy the game makes for onlookers, so its rate is
 	 * free to be lowered or dropped. Quest has no monitor to mirror to, and on
@@ -686,13 +674,7 @@ static AVPMENU_ELEMENT AvPMenu_MainMenuAVOptions[] =
 #ifdef AVP_PCVR
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MIRROR},           {3}, {&DesktopMirrorIndex},  {TEXTSTRING_AVOPTIONS_MIRROR_EVERY},	TEXTSTRING_AVOPTIONS_MIRROR_HELP},
 #endif
-	/* Texture filtering is NOT behind the guard above. MSAA and refresh rate are
-	 * gated because they need a 3D/XR path the phone flavor does not have, but
-	 * every target — Quest, PCVR, flat desktop and phone — goes through the same
-	 * texture upload in opengl.c, so all four get these three rows. */
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_ANISO},            {4}, {&AnisotropicFilterIndex}, {TEXTSTRING_AVOPTIONS_ANISO_16X},	TEXTSTRING_AVOPTIONS_ANISO_HELP},
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_TEXFILTER},        {2}, {&TextureFilterIndex},     {TEXTSTRING_AVOPTIONS_TEXFILTER_TRILINEAR},	TEXTSTRING_AVOPTIONS_TEXFILTER_HELP},
-	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_NPOTMIPS},         {1}, {&NPOTMipmapsEnabled},     {TEXTSTRING_AVOPTIONS_NPOTMIPS_OFF},	TEXTSTRING_AVOPTIONS_NPOTMIPS_HELP},
+	/* MSAA and the texture filtering rows live on Detail Levels. */
 	{AVPMENU_ELEMENT_GOTOMENU,		{TEXTSTRING_DETAILLEVELS_TITLE},	{AVPMENU_DETAILLEVELS},	{0},	{0},	TEXTSTRING_DETAILLEVELS_TITLE_HELP},
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},{0},{0},{0}, 	TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
 	{AVPMENU_ELEMENT_ENDOFMENU}
@@ -1279,6 +1261,16 @@ static AVPMENU_ELEMENT AvPMenu_DetailLevels[] =
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_DETAILLEVELS_DEFORMABLEEXPLOSIONS},	{1},	{&MenuDetailLevelOptions.DeformableExplosions},	{TEXTSTRING_DETAILLEVELS_OFF},		TEXTSTRING_DETAILLEVELS_DEFORMABLEEXPLOSIONS_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_DETAILLEVELS_CHARACTERCOMPLEXITY},	{3},	{&MenuDetailLevelOptions.CharacterComplexity},	{TEXTSTRING_DETAILLEVELS_VERYLOW},	TEXTSTRING_DETAILLEVELS_CHARACTERCOMPLEXITY_HELP},
 	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_DETAILLEVELS_PARTICLECOMPLEXITY},		{1},	{&MenuDetailLevelOptions.ParticleComplexity},		{TEXTSTRING_DETAILLEVELS_OFF},		TEXTSTRING_DETAILLEVELS_PARTICLECOMPLEXITY_HELP},
+	/* Moved here from AV Options. They are plain globals stored in the profile,
+	 * not MenuDetailLevelOptions fields, and apply live (opengl.c polls them).
+	 * MSAA is gated because the phone flavor has no 3D/XR path for it; the
+	 * texture rows are not, since every target shares the texture upload. */
+#if !defined(__ANDROID__) || !defined(AVP_DISABLE_XR)
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_MSAA},             {2}, {&MSAASampleIndex},     {TEXTSTRING_AVOPTIONS_MSAA_OFF},	TEXTSTRING_AVOPTIONS_MSAA_HELP},
+#endif
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_ANISO},            {4}, {&AnisotropicFilterIndex}, {TEXTSTRING_AVOPTIONS_ANISO_16X},	TEXTSTRING_AVOPTIONS_ANISO_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_TEXFILTER},        {2}, {&TextureFilterIndex},     {TEXTSTRING_AVOPTIONS_TEXFILTER_TRILINEAR},	TEXTSTRING_AVOPTIONS_TEXFILTER_HELP},
+	{AVPMENU_ELEMENT_TEXTSLIDER,	{TEXTSTRING_AVOPTIONS_NPOTMIPS},         {1}, {&NPOTMipmapsEnabled},     {TEXTSTRING_AVOPTIONS_NPOTMIPS_OFF},	TEXTSTRING_AVOPTIONS_NPOTMIPS_HELP},
 	{AVPMENU_ELEMENT_SAVESETTINGS,	{TEXTSTRING_AVOPTIONS_USETHESESETTINGS},			{0},	{0},												{0}, 									TEXTSTRING_AVOPTIONS_USETHESESETTINGS_HELP},
 	{AVPMENU_ELEMENT_ENDOFMENU}
 };

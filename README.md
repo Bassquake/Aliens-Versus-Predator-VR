@@ -6,8 +6,8 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 > Check the new 1.4 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
 
 ## What's new in 1.4?
-- Added Environment Reverb option in Audio/Video Options menu to reflect the original games EAX audio. You can choose different strengths or off. Gives it a new dimension!
-- Moved antialiasing options to Audio/Video Options > Details Levels Menu due to running out of space.
+- Added **Environment Reverb** option in **Audio/Video Options** menu to reflect the original games EAX audio. You can choose different strengths or off. Gives it a new dimension!
+- Moved antialiasing options to **Audio/Video Options** > **Details Levels Menu** due to running out of space.
 
 > [!TIP]
 > Re-center your view (hold Meta button) while standing before starting a level so things aren’t small! There is Sitting Mode option in VR Controls.

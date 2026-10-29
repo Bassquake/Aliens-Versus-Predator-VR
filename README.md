@@ -3,9 +3,9 @@
 This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com/atsb/NakedAVP) v1.2.3. Game asset files are NOT included. Instructions on how to add them can be found below. I'm not primarily a programmer, this was done with a lot of help from various AI like Claude, Copilot and Gemini.
 
 > [!TIP]
-> Check the new 1.3 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
+> Check the new 1.3.1 update on releases page. A 7 min YouTube video about v1.0 can be found [here](https://youtu.be/Qk7m4Clpcos).
 
-## What's new in 1.3?
+## What's new in 1.3.1?
 - Add Sitting Mode (VR Comfort and Display).
 - Add multiplayer to use UDP and created a relay server so anyone can play using a generated code. Instructions are [further down](#how-to-multiplay).
 - Set maximum number of online players to 8.
@@ -20,6 +20,10 @@ This is based on the code from _atsb_ over at [atsb/NakedAvP](https://github.com
 - Fix Pico menus.
 - Add option to keep Messages on-screen for longer in Audio/Video Options.
 - Fix crashes on Pico that happened when Alien and use tail, and then when go to next level and use tail it would crash.
+- Fix access to user_profiles folder for Quest 3 via Sidequest so you can backup game profiles. Quest 2 unaffected.
+- Add crash logging for windows builds.
+- Fix hang when exiting game in Virtual Desktop.
+- Fix crash on pcvr if using different language.
 
 > [!TIP]
 > Re-center your view (hold Meta button) while standing before starting a level so things aren’t small! There is Sitting Mode option in VR Controls.

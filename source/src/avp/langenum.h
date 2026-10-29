@@ -1720,6 +1720,16 @@ enum TEXTSTRING_ID
 	TEXTSTRING_MULTIPLAYER_RELAYSTATUS,
 	TEXTSTRING_MULTIPLAYER_RELAYSTATUS_VALUE,
 
+	/* AV Options "Environmental Reverb". */
+	TEXTSTRING_AVOPTIONS_REVERB,
+	TEXTSTRING_AVOPTIONS_REVERB_HELP,
+	/* These four must stay consecutive and in this order - TEXTSLIDER base + value,
+	   and the value is EnvironmentalReverbIndex (0..3). */
+	TEXTSTRING_AVOPTIONS_REVERB_NORMAL,      // value 0 (default)
+	TEXTSTRING_AVOPTIONS_REVERB_STRONG,      // value 1
+	TEXTSTRING_AVOPTIONS_REVERB_VERYSTRONG,  // value 2
+	TEXTSTRING_AVOPTIONS_REVERB_OFF,         // value 3
+
 	MAX_NEW_TEXTSTRINGS
 };
 

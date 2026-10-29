@@ -179,7 +179,11 @@ typedef struct
 	   plain, since the zero every older profile has here is the default. Taken from
 	   the front of Padding, so nothing after it moves. */
 	unsigned char MessageTimeoutIndex;        //(was Padding)
-	char Padding[11];
+	/* AV Options "Environmental Reverb": 0 Normal (default), 1 Strong,
+	   2 Very Strong, 3 Off. Stored plain, since the zero every older profile has
+	   here is the default. Also taken from the front of Padding. */
+	unsigned char EnvironmentalReverbIndex;   //(was Padding)
+	char Padding[10];
 
 	int CDPlayerVolume;
 

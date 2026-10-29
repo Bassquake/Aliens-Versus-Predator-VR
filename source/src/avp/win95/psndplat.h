@@ -157,6 +157,8 @@ extern void PlatUpdatePlayer();
 	float. Negative means let the card deal with reverb.
 	---------------------------------------------------------------------------*/
 extern void PlatSetEnviroment(unsigned int env_index, float reverb_mix);
+/* Clears the level's reverb environment on the way back to the menus (openal.c). */
+extern void ResetEaxEnvironment(void);
 extern unsigned int PlatMaxHWSounds();
 
 /* Davew 11/11/98 --------------------------------------------------------------

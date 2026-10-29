@@ -44,6 +44,279 @@ static struct {
 	unsigned int env_index;
 } SoundConfig;
 
+/* Environmental reverb: the game's EAX environments rebuilt on OpenAL EFX.
+
+   The level data never lost them. Every module carries an EAX 1 environment index
+   and a reverb mix (projload.cpp), and game.c hands the player's module to
+   PlatSetEnviroment every frame. Under DirectSound that was an EAX property set
+   (psndplat.c, no longer compiled); this backend used to drop it, so the port had
+   no reverb at all. EFX is OpenAL's portable successor and OpenAL Soft always has
+   it, so this works on every target.
+
+   The environment table is the original's, verbatim: an EAX 1 environment plus
+   its volume / decay / damping overrides. Each is applied the way OpenAL Soft's
+   own EAX 1 emulation does: the EAX 2 preset for that environment (EFX ships them
+   as EFX_REVERB_PRESET_*), then volume -> late reverb gain, decay -> decay time,
+   damping -> decay HF ratio.
+
+   Routing follows the original's intent: every game sound sends to the one
+   reverb slot except those played with the 'r' flag, which only the menu sounds
+   use. The module's reverb mix (0..1, or negative for "let the card decide") is
+   the slot gain, since in 1999 it was one global value applied to every buffer.
+   CD music and FMV audio are separate sources and stay dry.
+
+   Two things on top of a plain port, because at the presets' own levels the tail
+   sat ~25 dB under the sound and players could not hear it (measured through the
+   bundled OpenAL Soft's loopback device, 2026-10-29):
+   - Strength (the AV option): scales the reverb gain x1 / x2 / x3.16, the last
+     being EFX's ceiling for these presets (their gain is 0.3162, max 1.0).
+   - Distance wetness (EFX_SetDistanceGains): EAX's "use distance" mix made far
+     sounds wetter than near ones. The game attenuates by distance itself
+     (AL_NONE), which faded dry and wet together, so a distant sound never sounded
+     in the room. Now the source gain follows a slower WET falloff and a flat
+     direct filter brings the dry path back down to the game's own level, so the
+     dry sound is exactly as loud as before and only the reverb changes. */
+#include "efx.h"
+#include "efx-presets.h"
+
+/* AV Options "Environmental Reverb": 0 Normal (the default), 1 Strong,
+   2 Very Strong, 3 Off. Index 0 is the default because the profile byte that
+   stores it is zero in every older profile. */
+int EnvironmentalReverbIndex = 0;
+#define REVERB_INDEX_OFF 3
+static const float ReverbStrengthGain[] = { 1.0f, 2.0f, 3.1623f, 0.0f };
+
+static int EFX_ReverbIndex(void)
+{
+	return (EnvironmentalReverbIndex >= 0 && EnvironmentalReverbIndex <= REVERB_INDEX_OFF)
+		? EnvironmentalReverbIndex : 0;
+}
+
+static LPALGENEFFECTS                efx_GenEffects;
+static LPALDELETEEFFECTS             efx_DeleteEffects;
+static LPALEFFECTI                   efx_Effecti;
+static LPALEFFECTF                   efx_Effectf;
+static LPALEFFECTFV                  efx_Effectfv;
+static LPALGENAUXILIARYEFFECTSLOTS   efx_GenAuxiliaryEffectSlots;
+static LPALDELETEAUXILIARYEFFECTSLOTS efx_DeleteAuxiliaryEffectSlots;
+static LPALAUXILIARYEFFECTSLOTI      efx_AuxiliaryEffectSloti;
+static LPALAUXILIARYEFFECTSLOTF      efx_AuxiliaryEffectSlotf;
+static LPALGENFILTERS                efx_GenFilters;
+static LPALDELETEFILTERS             efx_DeleteFilters;
+static LPALFILTERI                   efx_Filteri;
+static LPALFILTERF                   efx_Filterf;
+
+static int    efx_available = 0;
+static int    efx_eaxreverb = 0;   /* AL_EFFECT_EAXREVERB, else the plain reverb */
+static ALuint efx_effect = 0;
+static ALuint efx_slot = 0;
+static ALuint efx_filter = 0;      /* flat lowpass: the dry path's share, see EFX_SetDistanceGains */
+static int    efx_applied_index = -1;
+static float  efx_applied_gain = -1.0f;
+static int    efx_loaded_index = -1;   /* strength the loaded environment was built with */
+
+typedef struct {
+	EFXEAXREVERBPROPERTIES preset;
+	float volume, decay, damping;   /* the EAX 1 overrides, as in psndplat.c */
+} AVP_REVERB_ENV;
+
+/* Index order is the EAX 1 environment enum, which is what the level data stores.
+   The last entry is the original's "PLAIN at zero volume", in effect no reverb. */
+static const AVP_REVERB_ENV ReverbEnvironments[] =
+{
+	{EFX_REVERB_PRESET_GENERIC,         0.5f,   1.493f,  0.5f},
+	{EFX_REVERB_PRESET_PADDEDCELL,      0.25f,  0.1f,    0.0f},
+	{EFX_REVERB_PRESET_ROOM,            0.417f, 0.4f,    0.666f},
+	{EFX_REVERB_PRESET_BATHROOM,        0.653f, 1.499f,  0.166f},
+	{EFX_REVERB_PRESET_LIVINGROOM,      0.208f, 0.478f,  0.0f},
+	{EFX_REVERB_PRESET_STONEROOM,       0.5f,   2.309f,  0.888f},
+	{EFX_REVERB_PRESET_AUDITORIUM,      0.403f, 4.279f,  0.5f},
+	{EFX_REVERB_PRESET_CONCERTHALL,     0.5f,   3.961f,  0.5f},
+	{EFX_REVERB_PRESET_CAVE,            0.5f,   2.886f,  1.304f},
+	{EFX_REVERB_PRESET_ARENA,           0.361f, 7.284f,  0.332f},
+	{EFX_REVERB_PRESET_HANGAR,          0.5f,   10.0f,   0.3f},
+	{EFX_REVERB_PRESET_CARPETEDHALLWAY, 0.153f, 0.259f,  2.0f},
+	{EFX_REVERB_PRESET_HALLWAY,         0.361f, 1.493f,  0.0f},
+	{EFX_REVERB_PRESET_STONECORRIDOR,   0.444f, 2.697f,  0.638f},
+	{EFX_REVERB_PRESET_ALLEY,           0.25f,  1.752f,  0.776f},
+	{EFX_REVERB_PRESET_FOREST,          0.111f, 3.145f,  0.472f},
+	{EFX_REVERB_PRESET_CITY,            0.111f, 2.767f,  0.224f},
+	{EFX_REVERB_PRESET_MOUNTAINS,       0.194f, 7.841f,  0.472f},
+	{EFX_REVERB_PRESET_QUARRY,          1.0f,   1.499f,  0.5f},
+	{EFX_REVERB_PRESET_PLAIN,           0.097f, 2.767f,  0.224f},
+	{EFX_REVERB_PRESET_PARKINGLOT,      0.208f, 1.652f,  1.5f},
+	{EFX_REVERB_PRESET_SEWERPIPE,       0.652f, 2.886f,  0.25f},
+	{EFX_REVERB_PRESET_UNDERWATER,      1.0f,   1.499f,  0.0f},
+	{EFX_REVERB_PRESET_DRUGGED,         0.875f, 8.392f,  1.388f},
+	{EFX_REVERB_PRESET_DIZZY,           0.139f, 17.234f, 0.666f},
+	{EFX_REVERB_PRESET_PSYCHOTIC,       0.486f, 7.563f,  0.806f},
+	{EFX_REVERB_PRESET_PLAIN,           0.0f,   0.1f,    0.5f}
+};
+#define NUM_REVERB_ENVIRONMENTS ((unsigned int)(sizeof(ReverbEnvironments)/sizeof(ReverbEnvironments[0])))
+
+static float EFX_Clamp(float v, float lo, float hi)
+{
+	return v < lo ? lo : (v > hi ? hi : v);
+}
+
+/* Loads the entry points and makes the one effect and slot. Needs the context
+   current. Any failure leaves the game dry, exactly as before. */
+static void EFX_Init(void)
+{
+	efx_available = 0;
+	if (!alcIsExtensionPresent(AvpSoundDevice, "ALC_EXT_EFX")) {
+		SDL_Log("OPENAL: no ALC_EXT_EFX, environmental reverb unavailable");
+		return;
+	}
+
+	efx_GenEffects                 = (LPALGENEFFECTS)alGetProcAddress("alGenEffects");
+	efx_DeleteEffects              = (LPALDELETEEFFECTS)alGetProcAddress("alDeleteEffects");
+	efx_Effecti                    = (LPALEFFECTI)alGetProcAddress("alEffecti");
+	efx_Effectf                    = (LPALEFFECTF)alGetProcAddress("alEffectf");
+	efx_Effectfv                   = (LPALEFFECTFV)alGetProcAddress("alEffectfv");
+	efx_GenAuxiliaryEffectSlots    = (LPALGENAUXILIARYEFFECTSLOTS)alGetProcAddress("alGenAuxiliaryEffectSlots");
+	efx_DeleteAuxiliaryEffectSlots = (LPALDELETEAUXILIARYEFFECTSLOTS)alGetProcAddress("alDeleteAuxiliaryEffectSlots");
+	efx_AuxiliaryEffectSloti       = (LPALAUXILIARYEFFECTSLOTI)alGetProcAddress("alAuxiliaryEffectSloti");
+	efx_AuxiliaryEffectSlotf       = (LPALAUXILIARYEFFECTSLOTF)alGetProcAddress("alAuxiliaryEffectSlotf");
+	efx_GenFilters                 = (LPALGENFILTERS)alGetProcAddress("alGenFilters");
+	efx_DeleteFilters              = (LPALDELETEFILTERS)alGetProcAddress("alDeleteFilters");
+	efx_Filteri                    = (LPALFILTERI)alGetProcAddress("alFilteri");
+	efx_Filterf                    = (LPALFILTERF)alGetProcAddress("alFilterf");
+	if (!efx_GenEffects || !efx_DeleteEffects || !efx_Effecti || !efx_Effectf || !efx_Effectfv ||
+	    !efx_GenAuxiliaryEffectSlots || !efx_DeleteAuxiliaryEffectSlots ||
+	    !efx_AuxiliaryEffectSloti || !efx_AuxiliaryEffectSlotf ||
+	    !efx_GenFilters || !efx_DeleteFilters || !efx_Filteri || !efx_Filterf) {
+		SDL_Log("OPENAL: EFX entry points missing, environmental reverb unavailable");
+		return;
+	}
+
+	alGetError();
+	efx_GenEffects(1, &efx_effect);
+	efx_GenAuxiliaryEffectSlots(1, &efx_slot);
+	efx_GenFilters(1, &efx_filter);
+	if (alGetError() != AL_NO_ERROR) {
+		SDL_Log("OPENAL: could not create the reverb effect/slot");
+		return;
+	}
+	efx_Filteri(efx_filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
+	efx_Filterf(efx_filter, AL_LOWPASS_GAINHF, 1.0f);   /* flat: a pure gain */
+	if (alGetError() != AL_NO_ERROR) {
+		SDL_Log("OPENAL: no lowpass filter, environmental reverb unavailable");
+		return;
+	}
+
+	efx_Effecti(efx_effect, AL_EFFECT_TYPE, AL_EFFECT_EAXREVERB);
+	efx_eaxreverb = (alGetError() == AL_NO_ERROR);
+	if (!efx_eaxreverb) {
+		efx_Effecti(efx_effect, AL_EFFECT_TYPE, AL_EFFECT_REVERB);
+		if (alGetError() != AL_NO_ERROR) {
+			SDL_Log("OPENAL: no reverb effect type, environmental reverb unavailable");
+			return;
+		}
+	}
+
+	/* Left unattached (silent) until a level sets an environment, so the
+	   frontend never hears a default room. */
+	efx_AuxiliaryEffectSlotf(efx_slot, AL_EFFECTSLOT_GAIN, 0.0f);
+
+	efx_available = 1;
+	efx_applied_index = -1;
+	efx_applied_gain = 0.0f;
+	efx_loaded_index = -1;
+	SoundConfig.reverb_mix = 0.0f;
+	SDL_Log("OPENAL: environmental reverb ready (%s)", efx_eaxreverb ? "EAX reverb" : "standard reverb");
+}
+
+static void EFX_Shutdown(void)
+{
+	if (efx_slot)   efx_DeleteAuxiliaryEffectSlots(1, &efx_slot);
+	if (efx_effect) efx_DeleteEffects(1, &efx_effect);
+	if (efx_filter) efx_DeleteFilters(1, &efx_filter);
+	efx_slot = efx_effect = efx_filter = 0;
+	efx_available = 0;
+}
+
+/* Loads one environment into the effect and re-attaches it, since a slot takes a
+   copy of the effect's parameters at attach time. */
+static void EFX_LoadEnvironment(unsigned int env_index)
+{
+	const AVP_REVERB_ENV *env = &ReverbEnvironments[env_index];
+	EFXEAXREVERBPROPERTIES r = env->preset;
+
+	r.flLateReverbGain = EFX_Clamp(env->volume, 0.0f, 10.0f);
+	if (EFX_ReverbIndex() != REVERB_INDEX_OFF)
+		r.flGain = EFX_Clamp(r.flGain * ReverbStrengthGain[EFX_ReverbIndex()], 0.0f, 1.0f);
+	efx_loaded_index = EFX_ReverbIndex();
+	r.flDecayTime      = EFX_Clamp(env->decay, 0.1f, 20.0f);
+	r.flDecayHFRatio   = EFX_Clamp(env->damping, 0.1f, 2.0f);
+
+	if (efx_eaxreverb) {
+		efx_Effectf (efx_effect, AL_EAXREVERB_DENSITY, r.flDensity);
+		efx_Effectf (efx_effect, AL_EAXREVERB_DIFFUSION, r.flDiffusion);
+		efx_Effectf (efx_effect, AL_EAXREVERB_GAIN, r.flGain);
+		efx_Effectf (efx_effect, AL_EAXREVERB_GAINHF, r.flGainHF);
+		efx_Effectf (efx_effect, AL_EAXREVERB_GAINLF, r.flGainLF);
+		efx_Effectf (efx_effect, AL_EAXREVERB_DECAY_TIME, r.flDecayTime);
+		efx_Effectf (efx_effect, AL_EAXREVERB_DECAY_HFRATIO, r.flDecayHFRatio);
+		efx_Effectf (efx_effect, AL_EAXREVERB_DECAY_LFRATIO, r.flDecayLFRatio);
+		efx_Effectf (efx_effect, AL_EAXREVERB_REFLECTIONS_GAIN, r.flReflectionsGain);
+		efx_Effectf (efx_effect, AL_EAXREVERB_REFLECTIONS_DELAY, r.flReflectionsDelay);
+		efx_Effectfv(efx_effect, AL_EAXREVERB_REFLECTIONS_PAN, r.flReflectionsPan);
+		efx_Effectf (efx_effect, AL_EAXREVERB_LATE_REVERB_GAIN, r.flLateReverbGain);
+		efx_Effectf (efx_effect, AL_EAXREVERB_LATE_REVERB_DELAY, r.flLateReverbDelay);
+		efx_Effectfv(efx_effect, AL_EAXREVERB_LATE_REVERB_PAN, r.flLateReverbPan);
+		efx_Effectf (efx_effect, AL_EAXREVERB_ECHO_TIME, r.flEchoTime);
+		efx_Effectf (efx_effect, AL_EAXREVERB_ECHO_DEPTH, r.flEchoDepth);
+		efx_Effectf (efx_effect, AL_EAXREVERB_MODULATION_TIME, r.flModulationTime);
+		efx_Effectf (efx_effect, AL_EAXREVERB_MODULATION_DEPTH, r.flModulationDepth);
+		efx_Effectf (efx_effect, AL_EAXREVERB_AIR_ABSORPTION_GAINHF, r.flAirAbsorptionGainHF);
+		efx_Effectf (efx_effect, AL_EAXREVERB_HFREFERENCE, r.flHFReference);
+		efx_Effectf (efx_effect, AL_EAXREVERB_LFREFERENCE, r.flLFReference);
+		efx_Effectf (efx_effect, AL_EAXREVERB_ROOM_ROLLOFF_FACTOR, r.flRoomRolloffFactor);
+		efx_Effecti (efx_effect, AL_EAXREVERB_DECAY_HFLIMIT, r.iDecayHFLimit);
+	} else {
+		efx_Effectf(efx_effect, AL_REVERB_DENSITY, r.flDensity);
+		efx_Effectf(efx_effect, AL_REVERB_DIFFUSION, r.flDiffusion);
+		efx_Effectf(efx_effect, AL_REVERB_GAIN, r.flGain);
+		efx_Effectf(efx_effect, AL_REVERB_GAINHF, r.flGainHF);
+		efx_Effectf(efx_effect, AL_REVERB_DECAY_TIME, r.flDecayTime);
+		efx_Effectf(efx_effect, AL_REVERB_DECAY_HFRATIO, r.flDecayHFRatio);
+		efx_Effectf(efx_effect, AL_REVERB_REFLECTIONS_GAIN, EFX_Clamp(r.flReflectionsGain, 0.0f, 3.16f));
+		efx_Effectf(efx_effect, AL_REVERB_REFLECTIONS_DELAY, r.flReflectionsDelay);
+		efx_Effectf(efx_effect, AL_REVERB_LATE_REVERB_GAIN, r.flLateReverbGain);
+		efx_Effectf(efx_effect, AL_REVERB_LATE_REVERB_DELAY, r.flLateReverbDelay);
+		efx_Effectf(efx_effect, AL_REVERB_AIR_ABSORPTION_GAINHF, r.flAirAbsorptionGainHF);
+		efx_Effectf(efx_effect, AL_REVERB_ROOM_ROLLOFF_FACTOR, r.flRoomRolloffFactor);
+		efx_Effecti(efx_effect, AL_REVERB_DECAY_HFLIMIT, r.iDecayHFLimit);
+	}
+	efx_AuxiliaryEffectSloti(efx_slot, AL_EFFECTSLOT_EFFECT, (ALint)efx_effect);
+}
+
+/* The slot gain carries both the module's reverb mix and the AV option, so
+   switching it off silences the tail at once. */
+static void EFX_ApplySlotGain(void)
+{
+	float gain;
+
+	if (!efx_available) return;
+	gain = (EFX_ReverbIndex() != REVERB_INDEX_OFF) ? SoundConfig.reverb_mix : 0.0f;
+	if (gain == efx_applied_gain && EFX_ReverbIndex() == efx_applied_index) return;
+	efx_AuxiliaryEffectSlotf(efx_slot, AL_EFFECTSLOT_GAIN, gain);
+	efx_applied_gain = gain;
+	efx_applied_index = EFX_ReverbIndex();
+}
+
+/* Called as each sound starts: route it to the reverb, or keep it dry. Also
+   clears any direct filter left by the source's previous sound, since sources
+   are reused between 3D and 2D sounds; PlatDo3dSound sets a fresh one. */
+static void EFX_RouteSource(ALuint source, int reverb_off)
+{
+	if (!efx_available || !source) return;
+	alSource3i(source, AL_AUXILIARY_SEND_FILTER,
+	           reverb_off ? AL_EFFECTSLOT_NULL : (ALint)efx_slot, 0, AL_FILTER_NULL);
+	alSourcei(source, AL_DIRECT_FILTER, AL_FILTER_NULL);
+}
+
 /* start simplistic riff wave parsing */
 #define lsb8 (buf, x)  (((unsigned int)buf[(x)+0] <<  0))
 #define lsb16(buf, x)  (((unsigned int)buf[(x)+0] <<  0) | ((unsigned int)buf[(x)+1] <<  8))
@@ -152,7 +425,7 @@ static int SimpleLoadWAV( const unsigned char* data, FormatChunk* pFmtChunk, Dat
 
 /*
 openal.c TODO:
-1. There is no EAX/Reverb.  But there's probably not much I can do...
+1. (Done: EAX environments are rebuilt on EFX, see EFX_Init above.)
 2. Restarting sound system may or may not work.
 3. Better Error Handling (device not avail, etc).
 4. Implement sample offsets in psnd.c using AL_SAMPLE_OFFSET (add api here)
@@ -165,8 +438,8 @@ int PlatStartSoundSys()
 	ALfloat vel[] = { 0.0, 0.0, 0.0 };
 	ALfloat or[]  = { 0.0, 0.0, 1.0, 0.0, -1.0, 0.0 };
 		
-	int attrlist[6];
-	
+	int attrlist[8];
+
 	/* Set the globals. */
 	SoundConfig.flags = 0;
 	SoundConfig.reverb_changed = TRUE;
@@ -189,6 +462,13 @@ int PlatStartSoundSys()
 		return 0;
 	}
 
+	/* One auxiliary send per source, for the environmental reverb. */
+	if (alcIsExtensionPresent(AvpSoundDevice, "ALC_EXT_EFX")) {
+		attrlist[4] = ALC_MAX_AUXILIARY_SENDS;
+		attrlist[5] = 1;
+		attrlist[6] = 0;
+	}
+
 	AvpSoundContext = alcCreateContext(AvpSoundDevice, attrlist);
 	if (AvpSoundContext == NULL) {
 		/* TODO: destroy sound device */
@@ -203,7 +483,9 @@ int PlatStartSoundSys()
 	alListenerfv(AL_ORIENTATION, or);
 	
 	alDistanceModel(AL_NONE);
-	
+
+	EFX_Init();
+
 	if (alGetError() != AL_NO_ERROR) {
 		// TODO: this shouldn't exit abruptly..
 		// TODO: better error handling throughout
@@ -256,10 +538,34 @@ int PlatStartSoundSys()
 	return 1;
 }
 
+/* Closes OpenAL down properly. Until 2026-10-29 nothing did: this was an empty
+   TODO and main.c never called SoundSys_End, so the device was still open at
+   process exit. OpenAL Soft's mixer thread was then still waiting when the DLL's
+   static destructors ran, and the MinGW-built OpenAL32.dll's libstdc++ printed
+   "std::__condvar::~__condvar(): Assertion '__e != 16' failed" on quit. */
 void PlatEndSoundSys()
 {
-/* TODO - free everything */
-	fprintf(stderr, "OPENAL: PlatEndSoundSys()\n");
+	int i;
+
+	if (!SoundActivated) return;
+
+	for (i = 0; i < SOUND_MAXACTIVE; i++) {
+		if (ActiveSounds[i].ds3DBufferP) {
+			alSourceStop(ActiveSounds[i].ds3DBufferP);
+			alSourcei(ActiveSounds[i].ds3DBufferP, AL_BUFFER, 0);
+			alDeleteSources(1, &ActiveSounds[i].ds3DBufferP);
+			ActiveSounds[i].ds3DBufferP = 0;
+		}
+	}
+	EFX_Shutdown();
+
+	alcMakeContextCurrent(NULL);
+	if (AvpSoundContext) alcDestroyContext(AvpSoundContext);
+	if (AvpSoundDevice)  alcCloseDevice(AvpSoundDevice);
+	AvpSoundContext = NULL;
+	AvpSoundDevice = NULL;
+	SoundActivated = 0;
+	SDL_Log("OPENAL: device closed");
 }
 
 // this table plots the frequency change for
@@ -537,7 +843,10 @@ int PlatPlaySound(int activeIndex)
 	if (1 || ActiveSounds[activeIndex].pitch != GameSounds[si].pitch) {
 		PlatChangeSoundPitch(activeIndex, ActiveSounds[activeIndex].pitch);
 	}
-	
+
+	/* Before the branch: PlatDo3dSound sets the direct filter this would clear. */
+	EFX_RouteSource(ActiveSounds[activeIndex].ds3DBufferP, ActiveSounds[activeIndex].reverb_off);
+
 	if (ActiveSounds[activeIndex].threedee) {			
 		alSourcei(ActiveSounds[activeIndex].ds3DBufferP, AL_SOURCE_RELATIVE, AL_FALSE);
 		alSourcef(ActiveSounds[activeIndex].ds3DBufferP, AL_REFERENCE_DISTANCE, ActiveSounds[activeIndex].threedeedata.inner_range);
@@ -558,12 +867,6 @@ int PlatPlaySound(int activeIndex)
 		ActiveSounds[activeIndex].volume = newVolume;
 		
 		PlatChangeSoundVolume (activeIndex, ActiveSounds[activeIndex].volume);
-	}
-
-	if (!ActiveSounds[activeIndex].reverb_off) {
-		// TODO: DSPROPERTY_EAXBUFFER_REVERBMIX set to &SoundConfig.reverb_mix
-	} else {
-		// TODO: DSPROPERTY_EAXBUFFER_REVERBMIX set to 0
 	}
 	
 	if (!ActiveSounds[activeIndex].paused) {
@@ -852,6 +1155,48 @@ static void SoundPan_Report(int activeIndex, VECTORCH *rel, int distance)
 
 #endif /* AVP_SOUND_DIAGNOSTICS */
 
+/* Sets a 3D sound's gains from its full and distance-attenuated volumes.
+
+   With reverb off (or unavailable, or the sound opted out) this is exactly the old
+   PlatChangeSoundVolume(dryVolume). With reverb on, the WET level falls off at half
+   the rate - the square root of the dry fraction, so a sound at a quarter volume
+   keeps half its reverb - and becomes the source gain, which both paths share. The
+   flat lowpass on the direct path then scales the dry path by dry/wet, so what
+   reaches the speakers dry is unchanged. Past the outer range both are zero. */
+static void EFX_SetDistanceGains(int activeIndex, int fullVolume, int dryVolume)
+{
+	ALuint src = ActiveSounds[activeIndex].ds3DBufferP;
+	float dryGain = vol_to_gain_table[dryVolume];
+	float wetGain, frac;
+	int wetVolume;
+
+	if (!efx_available || efx_applied_gain <= 0.0f || ActiveSounds[activeIndex].reverb_off ||
+	    fullVolume <= 0 || dryVolume <= 0) {
+		if (efx_available) alSourcei(src, AL_DIRECT_FILTER, AL_FILTER_NULL);
+		alSourcef(src, AL_GAIN, dryGain);
+		return;
+	}
+
+	frac = (float)dryVolume / (float)fullVolume;
+	if (frac > 1.0f) frac = 1.0f;
+	wetVolume = (int)((float)fullVolume * sqrtf(frac) + 0.5f);
+	if (wetVolume > VOLUME_MAX) wetVolume = VOLUME_MAX;
+	if (wetVolume < dryVolume)  wetVolume = dryVolume;
+	wetGain = vol_to_gain_table[wetVolume];
+
+	if (wetGain <= 0.0f || wetGain <= dryGain) {
+		alSourcei(src, AL_DIRECT_FILTER, AL_FILTER_NULL);
+		alSourcef(src, AL_GAIN, dryGain);
+		return;
+	}
+
+	/* The source copies the filter's parameters at attach time, so one shared
+	   filter object serves every source. */
+	efx_Filterf(efx_filter, AL_LOWPASS_GAIN, dryGain / wetGain);
+	alSourcei(src, AL_DIRECT_FILTER, (ALint)efx_filter);
+	alSourcef(src, AL_GAIN, wetGain);
+}
+
 int PlatDo3dSound(int activeIndex)
 {
 	int distance;
@@ -923,8 +1268,10 @@ int PlatDo3dSound(int activeIndex)
 	fprintf(stderr, "OPENAL: PlatDo3dSound: idx = %d, volume = %d, distance = %d\n", activeIndex, newVolume, distance);
 #endif
 
-	if (PlatChangeSoundVolume (activeIndex, newVolume) == SOUND_PLATFORMERROR) {
-		return SOUND_PLATFORMERROR;
+	{
+		int fullVolume = ActiveSounds[activeIndex].volume;
+		if (fullVolume > VOLUME_MAX) fullVolume = VOLUME_MAX;
+		EFX_SetDistanceGains(activeIndex, fullVolume, newVolume);
 	}
 	
 	if (distance < ActiveSounds[activeIndex].threedeedata.outer_range) {
@@ -1208,11 +1555,6 @@ void PlatUpdatePlayer()
 		alListenerfv (AL_POSITION, pos);
 	}
 
-#if defined( _MSC_VER )
-	if( SoundConfig.reverb_changed ) {
-		// TODO: reverb handling
-	}
-#endif
 }
 
 void PlatSetEnviroment(unsigned int env_index, float reverb_mix)
@@ -1220,6 +1562,33 @@ void PlatSetEnviroment(unsigned int env_index, float reverb_mix)
 #ifdef OPENAL_DEBUG
 	fprintf(stderr, "OPENAL: PlatSetEnvironment(%d, %f)\n", env_index, reverb_mix);
 #endif
+	if (!SoundActivated || !efx_available) return;
+
+	/* Out-of-range data falls back to Generic, the original's default room. */
+	if (env_index >= NUM_REVERB_ENVIRONMENTS) env_index = 0;
+
+	if (SoundConfig.env_index != env_index ||
+	    (efx_loaded_index != EFX_ReverbIndex() && EFX_ReverbIndex() != REVERB_INDEX_OFF)) {
+		EFX_LoadEnvironment(env_index);
+		SoundConfig.env_index = env_index;
+		SDL_Log("OPENAL: reverb environment %u, mix %.2f", env_index, reverb_mix);
+	}
+
+	/* Negative was EAX_REVERBMIX_USEDISTANCE, "let the card decide": full send. */
+	SoundConfig.reverb_mix = (reverb_mix < 0.0f || reverb_mix > 1.0f) ? 1.0f : reverb_mix;
+	EFX_ApplySlotGain();
+}
+
+/* Back to the menus: drop the level's room so nothing in the frontend reverbs,
+   and force the next level to load its own. The 1999 game called this on level
+   exit (winmain.c); the port's main.c had lost the call along with the stub. */
+void ResetEaxEnvironment(void)
+{
+	SoundConfig.env_index = 1000;
+	SoundConfig.reverb_mix = 0.0f;
+	if (!efx_available) return;
+	efx_AuxiliaryEffectSloti(efx_slot, AL_EFFECTSLOT_EFFECT, AL_EFFECT_NULL);
+	EFX_ApplySlotGain();
 }
 
 void PlatEndGameSound(SOUNDINDEX index)

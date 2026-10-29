@@ -100,6 +100,7 @@
 #include "version.h"
 #include "fmv.h"
 #include "relay_proto.h"
+#include "psndplat.h"   /* ResetEaxEnvironment, at level exit */
 
 #if defined(__APPLE__)
 #include <strings.h>
@@ -7650,6 +7651,10 @@ void CheckForWindowsMessages()
                 destroy_xr_resources();
 #endif
                 SDL_StopTextInput(window);
+                /* exit() runs the DLLs' static destructors, so OpenAL must be shut
+                   first; see PlatEndSoundSys. */
+                CDDA_End();
+                SoundSys_End();
                 exit(0); //TODO
                 break;
 /* Hot-plug, on EVERY target. These were Android-only, so on desktop a pad
@@ -9336,6 +9341,7 @@ int main(int argc, char *argv[])
         ExitGame();
         
         SoundSys_StopAll();
+        ResetEaxEnvironment();   /* no level reverb in the menus */
         
         SoundSys_ResetFadeLevel();
         
@@ -9382,6 +9388,7 @@ int main(int argc, char *argv[])
     ExitSystem();
 
     CDDA_End();
+    SoundSys_End();   /* closes the OpenAL device; after CDDA_End, which deletes its own source */
     ClearMemoryPool();
 
 #ifdef AVP_RTX_REMIX

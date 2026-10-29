@@ -398,6 +398,12 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 			case TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_5:    return "5 Seconds (Default)";
 			case TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_10:   return "10 Seconds";
 			case TEXTSTRING_AVOPTIONS_MESSAGETIMEOUT_20:   return "20 Seconds";
+			case TEXTSTRING_AVOPTIONS_REVERB:      return "Environmental Reverb";
+			case TEXTSTRING_AVOPTIONS_REVERB_HELP: return "The echo of each area, from the level's original EAX settings: hangars ring, corridors and rooms sound different, and distant sounds carry more of the room.";
+			case TEXTSTRING_AVOPTIONS_REVERB_NORMAL:     return "Normal (Default)";
+			case TEXTSTRING_AVOPTIONS_REVERB_STRONG:     return "Strong";
+			case TEXTSTRING_AVOPTIONS_REVERB_VERYSTRONG: return "Very Strong";
+			case TEXTSTRING_AVOPTIONS_REVERB_OFF:        return "Off";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO:      return "Use Video Background For Menu";
 			case TEXTSTRING_AVOPTIONS_MENUVIDEO_HELP: return "Play the animated video behind the menus like Gold Edition instead of the still background from Classic 2000.";
 			case TEXTSTRING_AUTOTWOHANDED:      return "Auto Two-Handed Weapons";

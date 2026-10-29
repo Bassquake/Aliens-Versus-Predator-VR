@@ -19,6 +19,7 @@
 #include "avp_menus.h"
 #include "avp_version.h"
 #include "relay_proto.h" /* RELAY_DEFAULT_SERVER, named in the Relay Server strings */
+#include <SDL3/SDL.h>      /* SDL_Log for a short language.txt */
 
 
 #ifdef AVP_DEBUG_VERSION
@@ -82,9 +83,15 @@ void InitTextStrings(void)
 		/* scan for a quote mark */
 		while (*textPtr++ != '"')  {
 			if (*textPtr == '@') {
-				// should be an error as this language file
-				// doesn't match the game.
-				return; /* '@' should be EOF */
+				/* '@' is EOF: this language.txt holds fewer strings than the game
+				   expects (another edition or language). The remaining entries were
+				   left NULL, and the first menu to read one crashed (a PCVR player's
+				   profile screen, 2026-10-27). Fill them with "" so it shows blank. */
+				SDL_Log("LANG: %s has only %d of %d strings; the rest show blank",
+					filename, i - 1, MAX_NO_OF_TEXTSTRINGS - 1);
+				for (; i<MAX_NO_OF_TEXTSTRINGS; i++)
+					TextStringPtr[i] = EmptyString;
+				return;
 			}
 		}
 
@@ -444,7 +451,7 @@ char *GetTextString(enum TEXTSTRING_ID stringID)
 	}
 
 	LOCALASSERT(stringID<MAX_NO_OF_TEXTSTRINGS);
-	if (stringID < MAX_NO_OF_TEXTSTRINGS) {
+	if (stringID < MAX_NO_OF_TEXTSTRINGS && TextStringPtr[stringID]) {
 		return TextStringPtr[stringID];
 	}
 	return EmptyString;

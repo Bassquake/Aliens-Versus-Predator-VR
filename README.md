@@ -186,6 +186,8 @@ Multiplayer is pretty basic seeing as it was based in 1999! Follow these instruc
 - Left-Handed Mode.
 - Can punch/scratch enemies as Predator/Alien in VR.
 - Multiplayer now working.
+- Seated Mode added.
+- EAX Environmental Reverb Added.
 
 ## To do
 - ~~Fix Battery Saver crash.~~ Fixed.

@@ -25,7 +25,11 @@
 # Prerequisites on Debian/Ubuntu:
 #   x64    sudo apt install build-essential cmake ninja-build libgl-dev
 #   x86    sudo dpkg --add-architecture i386 && sudo apt update
-#          sudo apt install gcc-multilib g++-multilib libgl-dev:i386
+#          sudo apt install gcc-i686-linux-gnu g++-i686-linux-gnu libgl-dev:i386
+#          (gcc-multilib also works, but Ubuntu will not install it beside the
+#          arm64 cross compiler, so with it you can build x86 or arm64, not both)
+#   arm64 on Ubuntu also needs ports.ubuntu.com as its apt source: archive.ubuntu.com
+#          has no arm64 packages.
 #   arm64  sudo dpkg --add-architecture arm64 && sudo apt update
 #          sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libgl-dev:arm64
 #   --vr   additionally: sudo apt install libx11-dev   (the OpenXR GLX binding)
